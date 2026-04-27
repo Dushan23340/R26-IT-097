@@ -1,4 +1,5 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
+import { AppHeader } from "@/components/AppHeader";
 
 import appCss from "../styles.css?url";
 
@@ -29,11 +30,11 @@ export const Route = createRootRoute({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "Lovable App" },
-      { name: "description", content: "Lovable Generated Project" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "Lovable App" },
-      { property: "og:description", content: "Lovable Generated Project" },
+      { title: "AdaptiveMind — AI-Powered Adaptive Learning" },
+      { name: "description", content: "Real-time emotion-aware adaptive learning platform for students, teachers, and administrators." },
+      { name: "author", content: "SLIIT R26-IT-097" },
+      { property: "og:title", content: "AdaptiveMind — AI-Powered Adaptive Learning" },
+      { property: "og:description", content: "Real-time emotion-aware adaptive learning platform." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
@@ -65,5 +66,12 @@ function RootShell({ children }: { children: React.ReactNode }) {
 }
 
 function RootComponent() {
-  return <Outlet />;
+  return (
+    <div className="min-h-screen">
+      <AppHeader />
+      <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+        <Outlet />
+      </main>
+    </div>
+  );
 }
