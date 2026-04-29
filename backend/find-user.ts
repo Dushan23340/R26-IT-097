@@ -10,37 +10,57 @@ dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 async function findUser() {
   try {
-    console.log('Connecting to MongoDB Atlas...');
+    console.log('🔗 Connecting to MongoDB...');
     await mongoose.connect(process.env.MONGODB_URI!);
     
-    console.log('Database name:', mongoose.connection.name);
-    console.log('Full URI:', process.env.MONGODB_URI);
+    const db = mongoose.connection.db;
+    const adminDb = db?.admin();
+    const databases = await adminDb!.listDatabases();
     
-    // List all collections
-    const collections = await mongoose.connection.db!.collections();
-    console.log('\n📁 All collections:', collections.map(c => c.collectionName));
+    console.log('\n🔍 Searching for dasanayakadushan@gmail.com across ALL databases...\n');
     
-    // Try to find users in different possible collection names
-    const possibleNames = ['users', 'user', 'User'];
-    
-    for (const name of possibleNames) {
-      const collection = mongoose.connection.collection(name);
-      const count = await collection.countDocuments();
-      console.log(`\nCollection "${name}": ${count} documents`);
+    for (const dbInfo of databases.databases) {
+      const dbName = dbInfo.name;
       
-      if (count > 0) {
-        const docs = await collection.find({}).limit(5).toArray();
-        console.log('Sample documents:');
-        docs.forEach((doc, i) => {
-          console.log(`${i + 1}.`, doc.name || doc.email || doc._id);
-        });
+      // Skip system databases
+      if (['admin', 'local', 'config'].includes(dbName)) {
+        continue;
+      }
+      
+      console.log(`\n📊 Checking database: ${dbName}`);
+      
+      // Connect to this specific database
+      const dbUri = process.env.MONGODB_URI!.replace(/\?.*/, '').replace(/\/[^/?]*$/, `/${dbName}`) + 
+                    (process.env.MONGODB_URI!.includes('?') ? process.env.MONGODB_URI!.substring(process.env.MONGODB_URI!.indexOf('?')) : '');
+      
+      const conn = await mongoose.createConnection(dbUri).asPromise();
+      
+      try {
+        const Users = conn.collection('users');
+        const user = await Users.findOne({ email: 'dasanayakadushan@gmail.com' });
+        
+        if (user) {
+          console.log(`  ✅ FOUND!`);
+          console.log(`     Name: ${user.name}`);
+          console.log(`     Email: ${user.email}`);
+          console.log(`     Role: ${user.role}`);
+          console.log(`     ID: ${user._id}`);
+          console.log(`     Created: ${user.createdAt}`);
+        } else {
+          console.log(`  ❌ Not found`);
+        }
+      } catch (e: any) {
+        console.log(`  ⚠️  Error checking: ${e.message}`);
+      } finally {
+        await conn.close();
       }
     }
     
     await mongoose.disconnect();
+    console.log('\n✅ Search complete');
     process.exit(0);
   } catch (error) {
-    console.error('Error:', error);
+    console.error('❌ Error:', error);
     process.exit(1);
   }
 }

@@ -60,12 +60,14 @@ function StudentView() {
   const [mastery, setMastery] = useState(64);
   const [selected, setSelected] = useState<number | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [faceConfidence, setFaceConfidence] = useState(87);
 
   useEffect(() => {
     const id = setInterval(() => {
       setTick((t) => t + 1);
       setEmotion(EMOTION_SEQUENCE[(tick + 1) % EMOTION_SEQUENCE.length]);
       setMastery((m) => Math.min(98, m + Math.random() * 1.5));
+      setFaceConfidence(Math.round(85 + Math.random() * 10));
     }, 3000);
     return () => clearInterval(id);
   }, [tick]);
@@ -127,7 +129,7 @@ function StudentView() {
                  style={{ border: `2px dashed ${e.color}`, boxShadow: `0 0 24px ${e.color}` }}>
               <div className="absolute -top-7 left-0 text-[11px] font-mono px-2 py-0.5 rounded"
                    style={{ background: e.color, color: "var(--background)" }}>
-                FACE · {Math.round(85 + Math.random() * 10)}%
+                FACE · {faceConfidence}%
               </div>
             </div>
             <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">

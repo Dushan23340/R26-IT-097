@@ -1,9 +1,6 @@
 import { createRouter, useRouter } from "@tanstack/react-router";
 import { routeTree } from "./routeTree.gen";
 
-// Import mock auth handler for development
-import "@/lib/mockAuth";
-
 function DefaultErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   const router = useRouter();
 

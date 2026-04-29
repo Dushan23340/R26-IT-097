@@ -51,13 +51,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string) => {
     try {
+      console.log('🔐 Login attempt:', { email, api_url: import.meta.env.VITE_API_URL || 'http://localhost:3001/api' });
       const response = await api.post("/auth/login", { email, password });
+      console.log('✅ Login response:', response);
       if (response.success && response.user) {
         setUser(response.user);
         localStorage.setItem("user", JSON.stringify(response.user));
       }
       return response;
     } catch (error: any) {
+      console.error('❌ Login error:', error.message);
       return { success: false, message: error.message || "Login failed" };
     }
   };
