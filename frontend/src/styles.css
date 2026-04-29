@@ -103,9 +103,7 @@
   --chart-5: oklch(0.65 0.18 290);
 
   /* Gradients & shadows */
-  --gradient-mesh: radial-gradient(at 20% 10%, oklch(0.3 0.12 195 / 0.35) 0px, transparent 50%),
-    radial-gradient(at 80% 0%, oklch(0.35 0.12 80 / 0.25) 0px, transparent 50%),
-    radial-gradient(at 50% 80%, oklch(0.28 0.1 270 / 0.3) 0px, transparent 50%);
+  --gradient-mesh: radial-gradient(at 20% 10%, oklch(0.3 0.12 195 / 0.35) 0px, transparent 50%), radial-gradient(at 80% 0%, oklch(0.35 0.12 80 / 0.25) 0px, transparent 50%), radial-gradient(at 50% 80%, oklch(0.28 0.1 270 / 0.3) 0px, transparent 50%);
   --gradient-primary: linear-gradient(135deg, var(--teal), var(--teal-glow));
   --gradient-accent: linear-gradient(135deg, var(--amber), oklch(0.78 0.18 60));
   --shadow-glow: 0 0 40px -8px color-mix(in oklab, var(--teal) 50%, transparent);

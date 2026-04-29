@@ -22,7 +22,7 @@ export function AppHeader() {
 
   // Filter tabs based on user role
   const tabs = allTabs.filter(tab => {
-    if (!user) return true; // Show all tabs when not logged in
+    if (!user) return false; // Don't show any tabs when not logged in
     return tab.roles.includes(user.role);
   });
 
