@@ -1,0 +1,81 @@
+import { useState, type ChangeEvent } from "react";
+import { Input } from "@/components/ui/input";
+
+interface OtpInputProps {
+  length?: number;
+  onComplete: (otp: string) => void;
+}
+
+export function OtpInput({ length = 6, onComplete }: OtpInputProps) {
+  const [otp, setOtp] = useState<string[]>(new Array(length).fill(""));
+
+  const handleChange = (index: number, event: ChangeEvent<HTMLInputElement>) => {
+    const value = event.target.value;
+    if (isNaN(Number(value))) return;
+
+    const newOtp = [...otp];
+    newOtp[index] = value.substring(value.length - 1);
+    setOtp(newOtp);
+
+    // Auto-focus next input
+    if (value && index < length - 1) {
+      const nextInput = document.getElementById(`otp-input-${index + 1}`);
+      nextInput?.focus();
+    }
+
+    // Check if OTP is complete
+    const otpString = newOtp.join("");
+    if (otpString.length === length && !otpString.includes("")) {
+      onComplete(otpString);
+    }
+  };
+
+  const handleKeyDown = (index: number, event: React.KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Backspace" && !otp[index] && index > 0) {
+      const prevInput = document.getElementById(`otp-input-${index - 1}`);
+      prevInput?.focus();
+    }
+  };
+
+  const handlePaste = (event: React.ClipboardEvent) => {
+    event.preventDefault();
+    const pastedData = event.clipboardData.getData("text").slice(0, length);
+    if (isNaN(Number(pastedData))) return;
+
+    const newOtp = [...otp];
+    for (let i = 0; i < pastedData.length; i++) {
+      newOtp[i] = pastedData[i];
+    }
+    setOtp(newOtp);
+
+    // Focus last filled input
+    const lastIndex = Math.min(pastedData.length, length) - 1;
+    const lastInput = document.getElementById(`otp-input-${lastIndex}`);
+    lastInput?.focus();
+
+    // Check if OTP is complete
+    const otpString = newOtp.join("");
+    if (otpString.length === length && !otpString.includes("")) {
+      onComplete(otpString);
+    }
+  };
+
+  return (
+    <div className="flex gap-2 justify-center">
+      {otp.map((digit, index) => (
+        <Input
+          key={index}
+          id={`otp-input-${index}`}
+          type="text"
+          inputMode="numeric"
+          maxLength={1}
+          value={digit}
+          onChange={(e) => handleChange(index, e)}
+          onKeyDown={(e) => handleKeyDown(index, e)}
+          onPaste={handlePaste}
+          className="w-12 h-14 text-center text-2xl font-bold"
+        />
+      ))}
+    </div>
+  );
+}

@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute, HeadContent, Scripts } from "@tanstack/react-router";
 import { AppHeader } from "@/components/AppHeader";
+import { AuthProvider } from "@/lib/auth";
 
 import appCss from "../styles.css?url";
 
@@ -67,11 +68,13 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   return (
-    <div className="min-h-screen">
-      <AppHeader />
-      <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
-        <Outlet />
-      </main>
-    </div>
+    <AuthProvider>
+      <div className="min-h-screen">
+        <AppHeader />
+        <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
+          <Outlet />
+        </main>
+      </div>
+    </AuthProvider>
   );
 }

@@ -1,11 +1,12 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend,
 } from "recharts";
-import { Users, Gamepad2, Lightbulb, TrendingUp, AlertTriangle } from "lucide-react";
+import { Users, Gamepad2, Lightbulb, TrendingUp, AlertTriangle, Loader2 } from "lucide-react";
 import { EMOTIONS, type EmotionKey } from "@/lib/emotions";
 import { EmotionBadge } from "@/components/EmotionBadge";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/teacher")({
   head: () => ({
@@ -16,8 +17,39 @@ export const Route = createFileRoute("/teacher")({
       { property: "og:description", content: "Live class-wide emotion analytics and interventions." },
     ],
   }),
-  component: TeacherView,
+  component: TeacherDashboard,
 });
+
+// Export the component for use in other files
+export { TeacherView };
+
+function TeacherDashboard() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+
+  // Redirect to login if not authenticated
+  if (!isLoading && !user) {
+    router.navigate({ to: "/login" });
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Redirect students to student dashboard
+  if (user?.role === "student") {
+    router.navigate({ to: "/" });
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Show teacher dashboard for teachers
+  return <TeacherView />;
+}
 
 const STUDENT_NAMES = [
   "Aisha K.", "Ben R.", "Chen W.", "Diya P.", "Eli M.", "Fatima A.",

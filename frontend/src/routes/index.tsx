@@ -1,12 +1,13 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useRouter } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
-import { Camera, Sparkles, BookOpen, PlayCircle, FileText, ChevronRight, CheckCircle2, XCircle } from "lucide-react";
+import { Camera, Sparkles, BookOpen, PlayCircle, FileText, ChevronRight, CheckCircle2, XCircle, Loader2 } from "lucide-react";
 import { EMOTIONS, type EmotionKey } from "@/lib/emotions";
 import { EmotionBadge } from "@/components/EmotionBadge";
 import { MasteryRing } from "@/components/MasteryRing";
+import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -17,10 +18,41 @@ export const Route = createFileRoute("/")({
       { property: "og:description", content: "Live emotion-aware adaptive learning view." },
     ],
   }),
-  component: StudentView,
+  component: SmartDashboard,
 });
 
+// Export the component for use in other files
+export { StudentView };
+
 const EMOTION_SEQUENCE: EmotionKey[] = ["neutral", "happy", "neutral", "confused", "confused", "bored", "neutral", "happy"];
+
+function SmartDashboard() {
+  const { user, isLoading } = useAuth();
+  const router = useRouter();
+
+  // Redirect to login if not authenticated
+  if (!isLoading && !user) {
+    router.navigate({ to: "/login" });
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Redirect teachers to teacher dashboard
+  if (user?.role === "teacher") {
+    router.navigate({ to: "/teacher" });
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  // Show student dashboard for students
+  return <StudentView />;
+}
 
 function StudentView() {
   const [tick, setTick] = useState(0);
