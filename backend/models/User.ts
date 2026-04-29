@@ -100,8 +100,6 @@ userSchema.methods.generatePasswordHash = async function (password: string): Pro
   return await bcrypt.hash(password, salt);
 };
 
-// Create index for email lookups
-userSchema.index({ email: 1 });
 
 const User = mongoose.model<IUser>('User', userSchema);
 
