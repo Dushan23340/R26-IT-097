@@ -38,7 +38,6 @@ export const Route = createRootRoute({
       { property: "og:description", content: "Real-time emotion-aware adaptive learning platform." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
     ],
     links: [
       {
