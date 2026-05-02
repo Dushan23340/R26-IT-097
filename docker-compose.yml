@@ -1,0 +1,18 @@
+# Local MongoDB for development — same connection string for everyone.
+# Start:  docker compose up -d
+# Stop:   docker compose down
+# Logs:   docker compose logs -f mongo
+
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_dev_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: test
+
+volumes:
+  mongo_dev_data:
