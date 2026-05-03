@@ -6,6 +6,7 @@ import time
 import cv2
 
 from utils.face_detection import detect_faces
+from utils.emotion_model import predict_emotion
 
 
 WINDOW_TITLE = "Face Detection - Emotion Service Step 1"
@@ -34,13 +35,21 @@ def main() -> int:
                 print("Warning: failed to read frame from webcam.")
                 break
 
-            faces = detect_faces(frame)
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = detect_faces(frame, gray_frame=gray)
 
             for (x, y, w, h) in faces:
+                face_roi = gray[y : y + h, x : x + w]
+                try:
+                    emotion_label = predict_emotion(face_roi)
+                except Exception as exc:
+                    emotion_label = "Unknown"
+                    print(f"Warning: {exc}")
+
                 cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
                 cv2.putText(
                     frame,
-                    "Face",
+                    emotion_label,
                     (x, max(y - 10, 0)),
                     cv2.FONT_HERSHEY_SIMPLEX,
                     0.6,
@@ -73,6 +82,9 @@ def main() -> int:
         print(f"Error: {exc}")
         return 1
     except RuntimeError as exc:
+        print(f"Error: {exc}")
+        return 1
+    except ValueError as exc:
         print(f"Error: {exc}")
         return 1
     finally:

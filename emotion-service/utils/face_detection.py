@@ -27,7 +27,10 @@ def _load_face_cascade() -> cv2.CascadeClassifier:
 FACE_CASCADE = _load_face_cascade()
 
 
-def detect_faces(frame: np.ndarray) -> list[tuple[int, int, int, int]]:
+def detect_faces(
+    frame: np.ndarray,
+    gray_frame: np.ndarray | None = None,
+) -> list[tuple[int, int, int, int]]:
     """
     Detect faces in a BGR frame and return bounding boxes.
 
@@ -37,7 +40,7 @@ def detect_faces(frame: np.ndarray) -> list[tuple[int, int, int, int]]:
     if frame is None or frame.size == 0:
         return []
 
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = gray_frame if gray_frame is not None else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     faces = FACE_CASCADE.detectMultiScale(
         gray,
         scaleFactor=1.1,
