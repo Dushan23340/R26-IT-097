@@ -17,7 +17,7 @@ class EmotionEvent(BaseModel):
     student_id: str
     emotion: EmotionType
     subject: Optional[str] = None
-    timestamp: datetime
+    timestamp: Optional[datetime] = None
     confidence: float = 1.0
 
 
