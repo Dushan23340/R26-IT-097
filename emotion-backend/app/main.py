@@ -56,6 +56,7 @@ async def root():
             "ingest_emotion": {"method": "POST", "path": "/emotions"},
             "analytics_current": {"method": "GET", "path": "/analytics/current"},
             "analytics_trend": {"method": "GET", "path": "/analytics/trend"},
+            "analytics_pattern": {"method": "GET", "path": "/analytics/pattern"},
             "recommendation_latest": {"method": "GET", "path": "/recommendation/latest"}
         }
     }

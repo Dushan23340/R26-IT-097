@@ -4,6 +4,7 @@ from typing import List, Dict
 from app.models.schemas import CurrentAnalyticsResponse, EmotionTrendResponse, TrendResponse, TrendPoint
 from app.services.emotion_store import emotion_store
 from app.services.analytics_service import calculate_emotion_distribution, get_window_stats
+from app.services.pattern_detection_service import pattern_detector
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -79,3 +80,12 @@ async def get_window_statistics() -> Dict:
     dominant emotion, and active student count.
     """
     return get_window_stats(emotion_store.events)
+
+
+@router.get("/pattern")
+async def get_detected_pattern():
+    """
+    Detect dominant emotional pattern that persists for 2 consecutive cycles.
+    Returns detected emotion or null.
+    """
+    return pattern_detector.get_pattern_status()

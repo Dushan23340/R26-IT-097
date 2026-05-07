@@ -3,6 +3,7 @@ from typing import Dict, List
 from collections import defaultdict
 
 from app.models.schemas import EmotionEvent, EmotionType
+from app.services.pattern_detection_service import pattern_detector
 
 
 WINDOW_SECONDS = 60
@@ -44,6 +45,9 @@ def calculate_emotion_distribution(
     for emotion_name, count in emotion_counts.items():
         percentage = round((count / total) * 100, 1)
         distribution[emotion_name] = percentage
+
+    # Store result for pattern detection (last 2 cycles)
+    pattern_detector.store_aggregation_result(distribution)
 
     return distribution
 
