@@ -1,6 +1,7 @@
 from fastapi import APIRouter, status
 from datetime import datetime
 import uuid
+from typing import List
 
 from app.models.schemas import EmotionEvent, EmotionEventInput, EmotionType
 from app.services.emotion_store import emotion_store
@@ -19,14 +20,10 @@ async def ingest_emotion(event: EmotionEvent):
     Receive a real-time emotion event from a student.
     Automatically updates the sliding window and triggers analytics.
     """
-    # Auto-fill timestamp if not provided
     if event.timestamp is None:
         event.timestamp = datetime.utcnow()
 
-    # Store the event
     emotion_store.add_event(event)
-
-    # Get updated dominant emotion
     dominant = emotion_store.get_dominant_emotion()
 
     return {
@@ -46,6 +43,23 @@ async def create_emotion_event(event: EmotionEventInput):
     """
     result = emotion_service.record_event(event)
     return result
+
+
+@event_router.post("/emotion-event/batch", status_code=status.HTTP_201_CREATED)
+async def create_emotion_events_batch(events: List[EmotionEventInput]):
+    """
+    Ingest multiple emotion events in a single request.
+    """
+    results = []
+    for event in events:
+        result = emotion_service.record_event(event)
+        results.append(result)
+
+    return {
+        "success": True,
+        "processed_count": len(results),
+        "results": results
+    }
 
 
 @event_router.get("/emotion-event/history")
