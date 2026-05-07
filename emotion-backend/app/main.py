@@ -40,6 +40,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 # Include routers
 app.include_router(emotions.router)
+app.include_router(emotions.event_router)
 app.include_router(analytics.router)
 app.include_router(recommendations.router)
 

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Dict, Optional
 from datetime import datetime
 from enum import Enum
@@ -11,6 +11,16 @@ class EmotionType(str, Enum):
     BORED = "BORED"
     FRUSTRATED = "FRUSTRATED"
     ANGRY = "ANGRY"
+
+
+class EmotionEventInput(BaseModel):
+    """Input schema for POST /emotion-event with camelCase support."""
+    model_config = ConfigDict(populate_by_name=True)
+
+    student_id: int = Field(..., alias="studentId", description="Student identifier (number)")
+    session_id: str = Field(..., alias="sessionId", description="Session identifier")
+    emotion: EmotionType
+    timestamp: datetime = Field(..., description="ISO 8601 timestamp (auto-parsed from string)")
 
 
 class EmotionEvent(BaseModel):
