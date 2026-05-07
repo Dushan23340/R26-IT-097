@@ -2,11 +2,19 @@ from __future__ import annotations
 
 import sys
 import time
+from pathlib import Path
 
 import cv2
 
-from utils.face_detection import detect_faces
-from utils.emotion_model import predict_emotion
+# Make the `emotion_service` package importable when running this file directly:
+#   python emotion-service/app.py
+_SERVICE_DIR = Path(__file__).resolve().parent
+_SRC_DIR = _SERVICE_DIR / "src"
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+
+from emotion_service.ml.face_detection import detect_faces
+from emotion_service.ml.emotion_model import predict_emotion
 
 
 WINDOW_TITLE = "Face Detection - Emotion Service Step 1"
