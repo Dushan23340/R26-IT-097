@@ -1,8 +1,9 @@
 from fastapi import APIRouter
-from typing import List
+from typing import List, Dict
 
 from app.models.schemas import CurrentAnalyticsResponse, EmotionTrendResponse, TrendResponse, TrendPoint
 from app.services.emotion_store import emotion_store
+from app.services.analytics_service import calculate_emotion_distribution, get_window_stats
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -59,3 +60,22 @@ async def get_emotion_trend(points: int = 12):
         trends=trends,
         time_range=f"Last {emotion_store.window_seconds} seconds"
     )
+
+
+@router.get("/distribution")
+async def get_distribution() -> Dict[str, float]:
+    """
+    Get clean emotion percentage distribution.
+    Returns only emotions with count > 0.
+    Example: {"HAPPY": 20.0, "BORED": 30.0, "CONFUSED": 25.0}
+    """
+    return calculate_emotion_distribution(emotion_store.events)
+
+
+@router.get("/window-stats")
+async def get_window_statistics() -> Dict:
+    """
+    Get full sliding window statistics including distribution,
+    dominant emotion, and active student count.
+    """
+    return get_window_stats(emotion_store.events)
