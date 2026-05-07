@@ -41,3 +41,6 @@ dist-ssr
 **/.venv/
 __pycache__/
 *.pyc
+
+# Large local training artifacts
+emotion-service/dataset/

@@ -5,6 +5,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+
 CASCADE_FILENAME = "haarcascade_frontalface_default.xml"
 CASCADE_PATH = Path(cv2.data.haarcascades) / CASCADE_FILENAME
 
@@ -48,3 +49,4 @@ def detect_faces(
         minSize=(30, 30),
     )
     return [tuple(map(int, face)) for face in faces]
+
