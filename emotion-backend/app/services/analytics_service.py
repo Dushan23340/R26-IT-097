@@ -4,6 +4,7 @@ from collections import defaultdict
 
 from app.models.schemas import EmotionEvent, EmotionType
 from app.services.pattern_detection_service import pattern_detector
+from app.services.dashboard_store import dashboard_store
 
 
 WINDOW_SECONDS = 60
@@ -48,6 +49,10 @@ def calculate_emotion_distribution(
 
     # Store result for pattern detection (last 2 cycles)
     pattern_detector.store_aggregation_result(distribution)
+
+    # Store snapshot for dashboard trend
+    dominant = max(distribution, key=distribution.get) if distribution else None
+    dashboard_store.add_snapshot(distribution, dominant)
 
     return distribution
 

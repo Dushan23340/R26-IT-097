@@ -54,10 +54,15 @@ async def root():
         "health": "/health",
         "endpoints": {
             "ingest_emotion": {"method": "POST", "path": "/emotions"},
+            "ingest_emotion_event": {"method": "POST", "path": "/emotion-event"},
             "analytics_current": {"method": "GET", "path": "/analytics/current"},
-            "analytics_trend": {"method": "GET", "path": "/analytics/trend"},
+            "analytics_trend": {"method": "GET", "path": "/analytics/trend?n=10"},
+            "analytics_distribution": {"method": "GET", "path": "/analytics/distribution"},
+            "analytics_window_stats": {"method": "GET", "path": "/analytics/window-stats"},
             "analytics_pattern": {"method": "GET", "path": "/analytics/pattern"},
-            "recommendation_latest": {"method": "GET", "path": "/recommendation/latest"}
+            "recommendation_latest": {"method": "GET", "path": "/recommendation/latest"},
+            "recommendation_generate": {"method": "GET", "path": "/recommendation/generate?emotion=BORED&subject=Math"},
+            "recommendation_history": {"method": "GET", "path": "/recommendation/history"}
         }
     }
 

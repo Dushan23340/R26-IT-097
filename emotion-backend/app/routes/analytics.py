@@ -5,6 +5,7 @@ from app.models.schemas import CurrentAnalyticsResponse, EmotionTrendResponse, T
 from app.services.emotion_store import emotion_store
 from app.services.analytics_service import calculate_emotion_distribution, get_window_stats
 from app.services.pattern_detection_service import pattern_detector
+from app.services.dashboard_store import dashboard_store
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -30,37 +31,18 @@ async def get_current_analytics():
     )
 
 
-@router.get("/trend", response_model=EmotionTrendResponse)
-async def get_emotion_trend(points: int = 12):
+@router.get("/trend")
+async def get_emotion_trend(n: int = 10):
     """
-    Get emotion trend over time for line/area charts.
-    Returns time-bucketed emotion counts.
+    Get the last N stored aggregation results for trend charts.
+    Returns clean JSON: [{timestamp, distribution, dominant_emotion}, ...]
     """
-    raw_trends = emotion_store.get_trend_data(points=points)
-
-    # Group by emotion
-    emotion_groups = {}
-    for item in raw_trends:
-        emotion = item["emotion"]
-        if emotion not in emotion_groups:
-            emotion_groups[emotion] = []
-        emotion_groups[emotion].append(
-            TrendPoint(
-                timestamp=item["timestamp"],
-                emotion=emotion,
-                student_count=item["student_count"]
-            )
-        )
-
-    trends = [
-        TrendResponse(emotion=emotion, data=data)
-        for emotion, data in emotion_groups.items()
-    ]
-
-    return EmotionTrendResponse(
-        trends=trends,
-        time_range=f"Last {emotion_store.window_seconds} seconds"
-    )
+    snapshots = dashboard_store.get_last_n(n)
+    return {
+        "count": len(snapshots),
+        "time_range": f"Last {len(snapshots)} snapshots",
+        "snapshots": snapshots
+    }
 
 
 @router.get("/distribution")
