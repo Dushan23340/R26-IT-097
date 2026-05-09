@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import {
   Play,
   Calendar,
@@ -22,20 +22,23 @@ import {
 } from "lucide-react";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
+import EmotionDetector from "@/components/EmotionDetector";
 function StudentDashboard() {
   const { user } = useAuth();
-  const [emotion, setEmotion] = useState("happy");
+  const [emotion, setEmotion] = useState("neutral");
   const [inLiveClass, setInLiveClass] = useState(false);
   const [currentLiveClass, setCurrentLiveClass] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  useEffect(() => {
-    const emotions = ["happy", "neutral", "confused", "happy", "neutral"];
-    const interval = setInterval(() => {
-      setEmotion(emotions[Math.floor(Math.random() * emotions.length)]);
-    }, 1e4);
-    return () => clearInterval(interval);
-  }, []);
+
+  const mapStudentStateToUiKey = (state) => {
+    const s = (state || "").toLowerCase();
+    if (s.includes("engaged")) return "happy";
+    if (s.includes("bored")) return "neutral";
+    if (s.includes("confused")) return "confused";
+    if (s.includes("frustrated")) return "angry";
+    return "neutral";
+  };
   const overallProgress = 72;
   const liveClasses = [
     {
@@ -226,9 +229,14 @@ function StudentDashboard() {
       /* Webcam & Emotion */
     }
               <div className="glass rounded-2xl p-4">
-                <div className="aspect-video rounded-xl bg-gradient-to-br from-secondary/50 to-background mb-3 flex items-center justify-center">
-                  <div className="text-6xl">{currentEmotion.emoji}</div>
-                </div>
+                <EmotionDetector
+                  className="mb-3"
+                  intervalMs={2500}
+                  onEmotion={({ emotion: studentState }) => {
+                    if (studentState === "No face detected") return;
+                    setEmotion(mapStudentStateToUiKey(studentState));
+                  }}
+                />
                 <div className="text-center">
                   <p className="text-sm font-medium mb-1">You</p>
                   <div
@@ -425,6 +433,7 @@ function StudentDashboard() {
                 {emotion === "happy" && "You're doing great! Keep it up!"}
                 {emotion === "neutral" && "Steady focus detected. Good pace!"}
                 {emotion === "confused" && "Take your time. We're here to help."}
+                {emotion === "angry" && "It's okay to feel stuck. Try a short break or ask for help."}
               </p>
             </div>
           </div>
