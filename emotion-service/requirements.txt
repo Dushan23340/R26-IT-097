@@ -1,2 +1,8 @@
 opencv-python
 numpy
+flask
+flask-cors
+tensorflow
+keras
+pandas
+tqdm
