@@ -1,6 +1,10 @@
 # AI Adaptive Learning Platform
 
-Monorepo: **Vite + React (JavaScript / JSX)** in `frontend/`, **Express + MongoDB (JavaScript)** in `backend/`.
+Monorepo:
+
+- `frontend/`: Vite + React (JavaScript / JSX)
+- `backend/`: Express + MongoDB (JavaScript)
+- `emotion-service/`: Flask + TensorFlow/Keras emotion inference service
 
 ## Prerequisites
 
@@ -31,9 +35,9 @@ Monorepo: **Vite + React (JavaScript / JSX)** in `frontend/`, **Express + MongoD
    npm run install:all
    ```
 
-## Run locally
+## Run locally (backend + frontend)
 
-From the repository root (runs API + UI together):
+From the repository root (runs API + UI together, without emotion-service):
 
 ```bash
 npm run dev
@@ -42,6 +46,44 @@ npm run dev
 - Frontend: [http://localhost:3000](http://localhost:3000)
 - API: [http://localhost:3001/api](http://localhost:3001/api)  
 - Health: [http://localhost:3001/api/health](http://localhost:3001/api/health)
+
+## Real-time Emotion Detection Setup
+
+Use this startup order:
+
+1. **Emotion service**
+
+   ```bash
+   cd emotion-service
+   python3 -m venv .venv
+   source .venv/bin/activate
+   pip install -r requirements.txt
+   cp .env.example .env
+   EMOTION_SERVICE_PORT=5002 python flask_api.py
+   ```
+
+   Endpoints:
+   - [http://127.0.0.1:5002/](http://127.0.0.1:5002/)
+   - [http://127.0.0.1:5002/health](http://127.0.0.1:5002/health)
+   - `POST /predict` (base64 image payload)
+
+2. **Frontend**
+
+   ```bash
+   cd frontend
+   cp .env.example .env
+   npm run dev -- --port 3002
+   ```
+
+   Default frontend emotion API target:
+   - `VITE_EMOTION_API_BASE_URL=http://127.0.0.1:5002`
+
+3. **Backend (optional for emotion-only UI testing)**
+
+   ```bash
+   cd backend
+   npm run dev
+   ```
 
 Stop Mongo when finished:
 
@@ -65,3 +107,13 @@ docker compose down
 | `npm run dev:frontend` | UI only |
 | `npm run dev:backend` | API only |
 | `npm run build` | Production build (frontend + backend check) |
+
+## Emotion Service Troubleshooting
+
+| Issue | What to try |
+|--------|-------------|
+| `Port 5002 is in use` | `lsof -nP -iTCP:5002 -sTCP:LISTEN` then `kill <PID>`, or run with a different `EMOTION_SERVICE_PORT`. |
+| Webcam denied / not available | Allow camera access in browser site permissions, then reload page. |
+| Frontend says AI disconnected | Verify Flask is running and `VITE_EMOTION_API_BASE_URL` matches service port, then restart Vite. |
+| `POST /predict` returns `No face detected` | Improve lighting, move face closer/center, avoid backlight. |
+| Shape mismatch errors from model | Ensure `emotion-service/src/emotion_service/ml/emotion_model.py` is the updated dynamic-preprocess version and restart Flask. |
