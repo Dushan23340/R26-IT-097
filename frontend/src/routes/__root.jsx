@@ -1,6 +1,7 @@
 import { Outlet, Link, createRootRoute } from "@tanstack/react-router";
 import { AppHeader } from "@/components/AppHeader";
 import { AuthProvider } from "@/lib/auth";
+import { Toaster } from "@/components/ui/sonner";
 function NotFoundComponent() {
   return <div className="flex min-h-screen items-center justify-center bg-background px-4">
       <div className="max-w-md text-center">
@@ -31,6 +32,7 @@ function RootComponent() {
         <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
           <Outlet />
         </main>
+        <Toaster richColors position="top-right" />
       </div>
     </AuthProvider>;
 }
