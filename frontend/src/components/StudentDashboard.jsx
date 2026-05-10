@@ -353,47 +353,13 @@ function StudentDashboard() {
       </div>
 
       {
-    /* 2. Live Class Section */
+    /* 2. Live Classes and Status & Quick Stats - Side by side */
   }
-      <RealtimeEmotionSection
-        studentId={user?.id || user?.email || "student_dashboard"}
-        onEngagementUpdate={(payload) => {
-          setLatestEngagement(payload);
-          const state = (payload?.dominantEmotion || "").toLowerCase();
-          if (state.includes("engaged")) setEmotion("happy");
-          else if (state.includes("bored")) setEmotion("bored");
-          else if (state.includes("confused")) setEmotion("confused");
-          else if (state.includes("frustrated")) setEmotion("frustrated");
-        }}
-      />
-
-      <div className="glass rounded-2xl p-4">
-        <h3 className="text-sm font-semibold mb-2">Research Integration Feed</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Latest engagement payload exposed for adaptive content, teacher dashboard, and analytics module.
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Engagement Score</p>
-            <p className="font-semibold">{latestEngagement?.engagementScore ?? "--"}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Dominant Emotion</p>
-            <p className="font-semibold">{latestEngagement?.dominantEmotion ?? "--"}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Stability</p>
-            <p className="font-semibold">{latestEngagement?.stabilityScore?.toFixed?.(2) ?? "--"}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Transition Rate</p>
-            <p className="font-semibold">{latestEngagement?.transitionRate?.toFixed?.(3) ?? "--"}</p>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 glass rounded-2xl p-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {
+    /* Live Classes Section */
+  }
+        <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-bold flex items-center gap-2">
               <Video className="h-5 w-5 text-primary" />
@@ -455,48 +421,55 @@ function StudentDashboard() {
         </div>
 
         {
-    /* 3. Quick Stats & Emotion */
+    /* Your Status & Quick Stats Section */
   }
-        <div className="space-y-6">
-          {
+        <div className="glass rounded-2xl p-6">
+          <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
+            <Target className="h-5 w-5 text-primary" />
+            Your Status & Quick Stats
+          </h2>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {
     /* Simple Emotion Status */
   }
-          <div className="glass rounded-2xl p-6">
-            <h3 className="text-sm font-semibold mb-4">Your Status</h3>
-            <div className="text-center mb-4">
-              <div className="text-6xl mb-3">{currentEmotion.emoji}</div>
-              <p className="font-semibold text-lg" style={{ color: currentEmotion.color }}>
-                {currentEmotion.label}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">
-                {emotion === "happy" && "You're doing great! Keep it up!"}
-                {emotion === "neutral" && "Steady focus detected. Good pace!"}
-                {emotion === "confused" && "Take your time. We're here to help."}
-                {emotion === "angry" && "It's okay to feel stuck. Try a short break or ask for help."}
-              </p>
+            <div>
+              <h3 className="text-sm font-semibold mb-4">Your Status</h3>
+              <div className="text-center mb-4">
+                <div className="text-6xl mb-3">{currentEmotion.emoji}</div>
+                <p className="font-semibold text-lg" style={{ color: currentEmotion.color }}>
+                  {currentEmotion.label}
+                </p>
+                <p className="text-xs text-muted-foreground mt-2">
+                  {emotion === "happy" && "You're doing great! Keep it up!"}
+                  {emotion === "neutral" && "Steady focus detected. Good pace!"}
+                  {emotion === "confused" && "Take your time. We're here to help."}
+                  {emotion === "angry" && "It's okay to feel stuck. Try a short break or ask for help."}
+                </p>
+              </div>
             </div>
-          </div>
 
-          {
+            {
     /* Quick Progress */
   }
-          <div className="glass rounded-2xl p-6">
-            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <Target className="h-4 w-4" />
-              Quick Stats
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Quizzes Completed</span>
-                <span className="font-semibold">12</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Avg. Score</span>
-                <span className="font-semibold">78%</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Study Streak</span>
-                <span className="font-semibold">5 days 🔥</span>
+            <div>
+              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+                <Target className="h-4 w-4" />
+                Quick Stats
+              </h3>
+              <div className="space-y-3">
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Quizzes Completed</span>
+                  <span className="font-semibold">12</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Avg. Score</span>
+                  <span className="font-semibold">78%</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-sm text-muted-foreground">Study Streak</span>
+                  <span className="font-semibold">5 days 🔥</span>
+                </div>
               </div>
             </div>
           </div>
