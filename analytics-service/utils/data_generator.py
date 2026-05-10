@@ -14,9 +14,11 @@ Usage:
 
 import random
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 from faker import Faker
+from dotenv import load_dotenv
 
 from config.database import get_cursor
 
@@ -451,10 +453,8 @@ class SyntheticDataGenerator:
 # CLI entry point
 # =========================================================================
 if __name__ == "__main__":
-    from dotenv import load_dotenv
-
     # Load root .env so ANALYTICS_DB_* variables are available
-    project_root = __file__.resolve().parents[2]
+    project_root = Path(__file__).resolve().parents[2]
     load_dotenv(project_root / ".env")
 
     generator = SyntheticDataGenerator()

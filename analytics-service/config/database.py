@@ -22,10 +22,16 @@ Usage:
 import os
 import logging
 import time
+from pathlib import Path
 
+from dotenv import load_dotenv
 import psycopg2
 from psycopg2 import OperationalError
 from psycopg2.pool import SimpleConnectionPool
+
+# Load root .env before reading DB_* variables
+_project_root = Path(__file__).resolve().parents[2]
+load_dotenv(_project_root / ".env")
 
 # ---------------------------------------------------------------------------
 # Logging
