@@ -62,7 +62,11 @@ async def root():
             "analytics_pattern": {"method": "GET", "path": "/analytics/pattern"},
             "recommendation_latest": {"method": "GET", "path": "/recommendation/latest"},
             "recommendation_generate": {"method": "GET", "path": "/recommendation/generate?emotion=BORED&subject=Math"},
-            "recommendation_history": {"method": "GET", "path": "/recommendation/history"}
+            "recommendation_history": {"method": "GET", "path": "/recommendation/history"},
+            "recommendation_effectiveness": {"method": "GET", "path": "/recommendation/effectiveness"},
+            "recommendation_variation_window": {"method": "GET", "path": "/recommendation/variation-window"},
+            "recommendation_pending": {"method": "GET", "path": "/recommendation/pending"},
+            "recommendation_feedback": {"method": "POST", "path": "/recommendation/intervention/{id}/feedback"}
         }
     }
 
