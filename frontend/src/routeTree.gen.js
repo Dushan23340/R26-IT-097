@@ -15,7 +15,7 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as TeacherAnalyticsStudentIdRouteImport } from './routes/teacher.analytics.$studentId'
+import { Route as AnalyticsStudentIdRouteImport } from './routes/analytics.$studentId'
 
 const TeacherRoute = TeacherRouteImport.update({
   id: '/teacher',
@@ -47,19 +47,11 @@ const IndexRoute = IndexRouteImport.update({
   path: '/',
   getParentRoute: () => rootRouteImport,
 })
-const TeacherAnalyticsStudentIdRoute =
-  TeacherAnalyticsStudentIdRouteImport.update({
-    id: '/analytics/$studentId',
-    path: '/analytics/$studentId',
-    getParentRoute: () => TeacherRoute,
-  })
-
-const TeacherRouteChildren = {
-  TeacherAnalyticsStudentIdRoute: TeacherAnalyticsStudentIdRoute,
-}
-
-const TeacherRouteWithChildren =
-  TeacherRoute._addFileChildren(TeacherRouteChildren)
+const AnalyticsStudentIdRoute = AnalyticsStudentIdRouteImport.update({
+  id: '/analytics/$studentId',
+  path: '/analytics/$studentId',
+  getParentRoute: () => rootRouteImport,
+})
 
 const rootRouteChildren = {
   IndexRoute: IndexRoute,
@@ -67,6 +59,7 @@ const rootRouteChildren = {
   LoginRoute: LoginRoute,
   ProfileRoute: ProfileRoute,
   SignupRoute: SignupRoute,
-  TeacherRoute: TeacherRouteWithChildren,
+  TeacherRoute: TeacherRoute,
+  AnalyticsStudentIdRoute: AnalyticsStudentIdRoute,
 }
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)

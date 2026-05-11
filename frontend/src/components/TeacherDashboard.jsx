@@ -353,7 +353,7 @@ function TeacherDashboard() {
                 <p className="text-sm font-medium truncate mb-1">{student.name}</p>
                 <p className="text-xs" style={{ color: e.color }}>{e.label}</p>
                 <RouterLink
-                  to="/teacher/analytics/$studentId"
+                  to="/analytics/$studentId"
                   params={{ studentId: student.id }}
                   className="mt-2 block w-full text-center px-2 py-1.5 rounded-lg text-[11px] font-medium border border-primary/40 text-primary hover:bg-primary/10 transition-colors"
                 >

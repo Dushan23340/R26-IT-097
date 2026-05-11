@@ -3,7 +3,7 @@ import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { StudentAnalytics } from "@/components/StudentAnalytics";
 
-const Route = createFileRoute("/teacher/analytics/$studentId")({
+const Route = createFileRoute("/analytics/$studentId")({
   head: () => ({
     meta: [
       { title: "Student Analytics — AdaptiveMind" },
