@@ -19,6 +19,7 @@ import {
   Clock,
   Zap
 } from "lucide-react";
+import { Link as RouterLink } from "@tanstack/react-router";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
 function TeacherDashboard() {
@@ -49,18 +50,18 @@ function TeacherDashboard() {
     return () => clearInterval(interval);
   }, [isLive]);
   const students = [
-    { id: "1", name: "Aisha K.", emotion: "happy", status: "active", score: 85 },
-    { id: "2", name: "Ben R.", emotion: "confused", status: "active", score: 62 },
-    { id: "3", name: "Chen W.", emotion: "happy", status: "active", score: 90 },
-    { id: "4", name: "Diya P.", emotion: "neutral", status: "active", score: 75 },
-    { id: "5", name: "Eli M.", emotion: "bored", status: "inactive", score: 55 },
-    { id: "6", name: "Fatima A.", emotion: "happy", status: "active", score: 88 },
-    { id: "7", name: "Gabe S.", emotion: "confused", status: "active", score: 60 },
-    { id: "8", name: "Hana L.", emotion: "neutral", status: "active", score: 72 },
-    { id: "9", name: "Ivan O.", emotion: "happy", status: "active", score: 82 },
-    { id: "10", name: "Jules N.", emotion: "frustrated", status: "inactive", score: 48 },
-    { id: "11", name: "Kavi T.", emotion: "happy", status: "active", score: 87 },
-    { id: "12", name: "Lina B.", emotion: "neutral", status: "active", score: 70 }
+    { id: "STU_001", name: "Aisha K.", emotion: "happy", status: "active", score: 85 },
+    { id: "STU_002", name: "Ben R.", emotion: "confused", status: "active", score: 62 },
+    { id: "STU_003", name: "Chen W.", emotion: "happy", status: "active", score: 90 },
+    { id: "STU_004", name: "Diya P.", emotion: "neutral", status: "active", score: 75 },
+    { id: "STU_005", name: "Eli M.", emotion: "bored", status: "inactive", score: 55 },
+    { id: "STU_006", name: "Fatima A.", emotion: "happy", status: "active", score: 88 },
+    { id: "STU_007", name: "Gabe S.", emotion: "confused", status: "active", score: 60 },
+    { id: "STU_008", name: "Hana L.", emotion: "neutral", status: "active", score: 72 },
+    { id: "STU_009", name: "Ivan O.", emotion: "happy", status: "active", score: 82 },
+    { id: "STU_010", name: "Jules N.", emotion: "frustrated", status: "inactive", score: 48 },
+    { id: "STU_011", name: "Kavi T.", emotion: "happy", status: "active", score: 87 },
+    { id: "STU_012", name: "Lina B.", emotion: "neutral", status: "active", score: 70 }
   ];
   const alerts = [
     {
@@ -351,6 +352,13 @@ function TeacherDashboard() {
                 </div>
                 <p className="text-sm font-medium truncate mb-1">{student.name}</p>
                 <p className="text-xs" style={{ color: e.color }}>{e.label}</p>
+                <RouterLink
+                  to="/teacher/analytics/$studentId"
+                  params={{ studentId: student.id }}
+                  className="mt-2 block w-full text-center px-2 py-1.5 rounded-lg text-[11px] font-medium border border-primary/40 text-primary hover:bg-primary/10 transition-colors"
+                >
+                  View Analytics
+                </RouterLink>
               </div>;
   })}
         </div>
