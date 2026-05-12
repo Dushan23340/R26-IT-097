@@ -1,4 +1,6 @@
 const ADAPTIVE_API_BASE = import.meta.env.VITE_ADAPTIVE_API_URL || "http://localhost:5000/api";
+const NODE_API_BASE = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+const EMOTION_API_BASE = import.meta.env.VITE_EMOTION_API_BASE_URL || "http://localhost:8000/api";
 
 async function parseBody(response) {
   const text = await response.text();
@@ -10,10 +12,20 @@ async function parseBody(response) {
   }
 }
 
-async function request(endpoint, options = {}) {
-  const url = `${ADAPTIVE_API_BASE}${endpoint}`;
+async function request(endpoint, options = {}, baseUrl = ADAPTIVE_API_BASE, includeAuth = false) {
+  const url = `${baseUrl}${endpoint}`;
+  const headers = { "Content-Type": "application/json", ...options.headers };
+
+  // Add auth token if needed (for Node.js backend)
+  if (includeAuth) {
+    const token = localStorage.getItem("token");
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
+  }
+
   const config = {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers,
     ...options,
   };
   const response = await fetch(url, config);
@@ -25,23 +37,38 @@ async function request(endpoint, options = {}) {
 }
 
 const adaptiveApi = {
-  get: (endpoint) => request(endpoint, { method: "GET" }),
-  post: (endpoint, body) => request(endpoint, { method: "POST", body: JSON.stringify(body) }),
+  get: (endpoint, baseUrl, includeAuth) => request(endpoint, { method: "GET" }, baseUrl, includeAuth),
+  post: (endpoint, body, baseUrl, includeAuth) => request(endpoint, { method: "POST", body: JSON.stringify(body) }, baseUrl, includeAuth),
 };
 
 export const adaptiveApiService = {
-  health: () => adaptiveApi.get("/health"),
-  getLearningOutcomes: () => adaptiveApi.get("/learning-outcomes"),
+  // Emotion detection (no auth needed)
+  getCurrentEmotion: () => adaptiveApi.get("/emotions/current-emotion", EMOTION_API_BASE, false).catch(() => ({ emotion: "Normal" })),
+
+  // Quiz endpoints (Flask backend - no auth needed)
+  getUnits: () => adaptiveApi.get("/quiz/units", ADAPTIVE_API_BASE, false),
+  getQuizQuestions: (unit, quizSet) => adaptiveApi.get(`/quiz/${encodeURIComponent(unit)}/${quizSet}`, ADAPTIVE_API_BASE, false),
+  submitQuizAnswers: (payload) => adaptiveApi.post("/quiz/submit", payload, ADAPTIVE_API_BASE, false),
+  getRecommendationResources: (payload) => adaptiveApi.post("/recommendations/get", payload, ADAPTIVE_API_BASE, false),
+  getAttempt: (attemptId) => adaptiveApi.get(`/quiz/attempt/${attemptId}`, ADAPTIVE_API_BASE, false),
+
+  // Authenticated endpoints (Node.js backend - requires auth)
+  getAttempts: () => adaptiveApi.get("/adaptive/attempts", NODE_API_BASE, true),
+  saveAttempt: (payload) => adaptiveApi.post("/adaptive/attempt", payload, NODE_API_BASE, true),
+
+  // Legacy endpoints (for backward compatibility)
+  health: () => adaptiveApi.get("/health", ADAPTIVE_API_BASE, false),
+  getLearningOutcomes: () => adaptiveApi.get("/learning-outcomes", ADAPTIVE_API_BASE, false),
   submitQuiz: (results, studentId = "anonymous") =>
-    adaptiveApi.post("/quiz/submit", { results, student_id: studentId }),
+    adaptiveApi.post("/quiz/submit", { results, student_id: studentId }, ADAPTIVE_API_BASE, false),
   simulateQuiz: (studentId = "anonymous") =>
-    adaptiveApi.post("/quiz/simulate", { student_id: studentId }),
+    adaptiveApi.post("/quiz/simulate", { student_id: studentId }, ADAPTIVE_API_BASE, false),
   getRecommendations: (results, studentId = "anonymous") =>
-    adaptiveApi.post("/recommendations", { results, student_id: studentId }),
+    adaptiveApi.post("/recommendations", { results, student_id: studentId }, ADAPTIVE_API_BASE, false),
   getAdaptivePath: (results, studentId = "anonymous") =>
-    adaptiveApi.post("/adaptive-path", { results, student_id: studentId }),
+    adaptiveApi.post("/adaptive-path", { results, student_id: studentId }, ADAPTIVE_API_BASE, false),
   getFullReport: (results, studentId = "anonymous") =>
-    adaptiveApi.post("/full-report", { results, student_id: studentId }),
+    adaptiveApi.post("/full-report", { results, student_id: studentId }, ADAPTIVE_API_BASE, false),
   getTimeEstimate: (results, studentId = "anonymous") =>
-    adaptiveApi.post("/time-estimate", { results, student_id: studentId }),
+    adaptiveApi.post("/time-estimate", { results, student_id: studentId }, ADAPTIVE_API_BASE, false),
 };

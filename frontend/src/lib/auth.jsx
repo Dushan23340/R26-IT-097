@@ -18,6 +18,11 @@ function AuthProvider({ children }) {
   const signup = async (email, password, name, role) => {
     try {
       const response = await api.post("/auth/signup", { email, password, name, role });
+      if (response.success && response.user && response.token) {
+        setUser(response.user);
+        localStorage.setItem("user", JSON.stringify(response.user));
+        localStorage.setItem("token", response.token);
+      }
       return response;
     } catch (error) {
       return { success: false, message: error.message || "Signup failed" };
@@ -28,9 +33,10 @@ function AuthProvider({ children }) {
       console.log("\u{1F510} Login attempt:", { email, api_url: import.meta.env.VITE_API_URL || "http://localhost:3001/api" });
       const response = await api.post("/auth/login", { email, password });
       console.log("\u2705 Login response:", response);
-      if (response.success && response.user) {
+      if (response.success && response.user && response.token) {
         setUser(response.user);
         localStorage.setItem("user", JSON.stringify(response.user));
+        localStorage.setItem("token", response.token);
       }
       return response;
     } catch (error) {
@@ -41,9 +47,10 @@ function AuthProvider({ children }) {
   const verifyOtp = async (email, otp) => {
     try {
       const response = await api.post("/auth/verify-otp", { email, otp });
-      if (response.success && response.user) {
+      if (response.success && response.user && response.token) {
         setUser(response.user);
         localStorage.setItem("user", JSON.stringify(response.user));
+        localStorage.setItem("token", response.token);
       }
       return response;
     } catch (error) {

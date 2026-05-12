@@ -1,41 +1,64 @@
+# HOW TO RUN:
+# 1. Seed the database (one time only):
+#    node backend/seeds/seedAdaptiveData.js
+#
+# 2. Start the Node.js backend:
+#    cd backend && node index.js
+#
+# 3. Start the Python adaptive backend:
+#    cd adaptive-learning/backend
+#    pip install -r requirements.txt
+#    python app.py
+#
+# 4. Start the frontend:
+#    cd frontend && npm run dev
+
 """
-app.py — Flask API for Learning Outcome Achievement & Adaptive Support
+app.py — Flask API for Adaptive Learning Quiz System
+Connects to MongoDB to manage quizzes, results, and recommendations.
+
 Endpoints:
-  GET  /api/learning-outcomes     → List all Bloom's LOs
-  POST /api/quiz/submit           → Submit quiz, get score + weak areas
-  POST /api/recommendations       → Get resource recommendations
-  POST /api/adaptive-path         → Generate personalized learning path
-  POST /api/full-report           → Complete adaptive learning report
-  POST /api/time-estimate         → Estimate mastery time
-  GET  /api/health                → Health check
+  GET  /api/quiz/units                  → List available units
+  GET  /api/quiz/:unit/:quizSet         → Fetch quiz questions
+  POST /api/quiz/submit                 → Submit quiz, calculate results
+  POST /api/recommendations/get         → Get personalized resources
+  GET  /api/quiz/attempt/:attemptId     → Retrieve saved attempt
+  GET  /api/health                      → Health check
 """
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from pymongo import MongoClient
+from bson import ObjectId
 import os
-import sys
+from dotenv import load_dotenv
 
-# Ensure data.py and recommendation.py are importable
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from data import LEARNING_OUTCOMES, LO_DESCRIPTIONS, SAMPLE_QUIZ_RESULTS
-from recommendation import (
-    calculate_score,
-    get_weak_LOs,
-    get_strong_LOs,
-    classify_support_level,
-    get_recommendations,
-    generate_adaptive_path,
-    estimate_time_to_master,
-    generate_full_report
-)
+# Load environment variables
+# Load .env from project root (two levels up from adaptive-learning/backend/)
+_root_env = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', '..', '.env')
+load_dotenv(dotenv_path=_root_env)
 
 # ───────────────────────────────────────────────
-# Flask App Setup
+# Flask App & MongoDB Setup
 # ───────────────────────────────────────────────
 
 app = Flask(__name__)
-CORS(app)  # Enable CORS for frontend integration
+CORS(app)
+
+MONGODB_URI = os.getenv("MONGODB_URI", "mongodb+srv://dasanayakadushan_db_user:Dushan23340@cluster0.1jmbism.mongodb.net/test?appName=Cluster0")
+DB_NAME = os.getenv("MONGODB_DB_NAME", "test")
+
+try:
+    client = MongoClient(MONGODB_URI)
+    db = client[DB_NAME]
+    quizzes_collection = db["quizzes"]
+    recommendations_collection = db["recommendations"]
+    quizattempts_collection = db["quizattempts"]
+    print(f"✅ Connected to MongoDB database: {DB_NAME}")
+except Exception as e:
+    print(f"❌ MongoDB connection error: {e}")
+    db = None
+
 
 # ───────────────────────────────────────────────
 # Health Check
@@ -43,243 +66,372 @@ CORS(app)  # Enable CORS for frontend integration
 
 @app.route("/api/health", methods=["GET"])
 def health_check():
-    return jsonify({
-        "status": "healthy",
-        "service": "adaptive-learning-api",
-        "version": "1.0.0"
-    })
+    """Health check endpoint."""
+    try:
+        if db:
+            db.command("ping")
+            db_status = "connected"
+        else:
+            db_status = "disconnected"
+
+        return jsonify({
+            "status": "healthy",
+            "service": "adaptive-learning-api",
+            "database": db_status,
+            "version": "2.0.0"
+        })
+    except Exception as e:
+        return jsonify({
+            "status": "unhealthy",
+            "error": str(e)
+        }), 500
 
 
 # ───────────────────────────────────────────────
-# GET Learning Outcomes
+# GET /api/quiz/units
 # ───────────────────────────────────────────────
 
-@app.route("/api/learning-outcomes", methods=["GET"])
-def get_learning_outcomes():
-    """Return all defined learning outcomes with descriptions."""
-    outcomes = [
-        {
-            "name": lo,
-            "description": LO_DESCRIPTIONS.get(lo, ""),
-            "level": idx + 1
-        }
-        for idx, lo in enumerate(LEARNING_OUTCOMES)
-    ]
-    return jsonify({
-        "success": True,
-        "data": outcomes
-    })
+@app.route("/api/quiz/units", methods=["GET"])
+def get_units():
+    """Get list of available quiz units."""
+    try:
+        units = quizzes_collection.distinct("unit")
+        return jsonify({
+            "success": True,
+            "data": sorted(units)
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 # ───────────────────────────────────────────────
-# POST Submit Quiz
+# GET /api/quiz/:unit/:quizSet
+# ───────────────────────────────────────────────
+
+@app.route("/api/quiz/<unit>/<quiz_set>", methods=["GET"])
+def get_quiz(unit, quiz_set):
+    """
+    Fetch quiz questions for a unit.
+    Returns questions WITHOUT correctIndex for security.
+    """
+    try:
+        quiz = quizzes_collection.find_one({
+            "unit": unit,
+            "quizSet": quiz_set,
+            "isActive": True
+        })
+
+        if not quiz:
+            return jsonify({
+                "success": False,
+                "error": f"Quiz not found: {unit} {quiz_set}"
+            }), 404
+
+        # Strip correctIndex from questions
+        # NEW — uses questionNumber as fallback ID when _id is absent
+        questions = []
+        for idx, q in enumerate(quiz.get("questions", [])):
+            q_id = str(q["_id"]) if "_id" in q else f"q{q.get('questionNumber', idx + 1)}"
+            question_data = {
+                 "_id": q_id,
+                 "questionNumber": q.get("questionNumber", idx + 1),
+                 "bloomLevel": q.get("bloomLevel", ""),
+                "text": q.get("text", ""),
+                "options": q.get("options", []),
+            }
+            questions.append(question_data)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "unit": quiz["unit"],
+                "quizSet": quiz["quizSet"],
+                "questions": questions
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ───────────────────────────────────────────────
+# POST /api/quiz/submit
 # ───────────────────────────────────────────────
 
 @app.route("/api/quiz/submit", methods=["POST"])
 def submit_quiz():
     """
-    Submit quiz results and receive:
-    - Overall score
-    - Weak areas
-    - Strong areas
-    - Support level classification
+    Submit quiz answers, calculate Bloom level results, and save attempt.
+
+    Body: {
+        "unit": "Number Patterns",
+        "quizSet": "Q1",
+        "emotion": "Confused",
+        "studentId": "507f1f77bcf86cd799439011",
+        "answers": [
+            {"questionId": "507f1f77bcf86cd799439012", "selectedIndex": 0},
+            ...
+        ]
+    }
     """
-    data = request.get_json() or {}
-    results = data.get("results", SAMPLE_QUIZ_RESULTS)
-    student_id = data.get("student_id", "anonymous")
+    try:
+        data = request.get_json()
+        unit = data.get("unit")
+        quiz_set = data.get("quizSet")
+        emotion = data.get("emotion")
+        student_id = data.get("studentId", "anonymous")
+        answers = data.get("answers", [])
 
-    # Validate results
-    if not isinstance(results, dict):
-        return jsonify({"success": False, "error": "results must be a dict {lo: bool}"}), 400
+        if not unit or not quiz_set:
+            return jsonify({
+                "success": False,
+                "error": "unit and quizSet are required"
+            }), 400
 
-    score = calculate_score(results)
-    weak = get_weak_LOs(results)
-    strong = get_strong_LOs(results)
-    support = classify_support_level(score, len(weak), len(results))
-
-    return jsonify({
-        "success": True,
-        "student_id": student_id,
-        "data": {
-            "overall_score": score,
-            "total_los": len(results),
-            "mastered_count": len(strong),
-            "weak_count": len(weak),
-            "mastered_areas": strong,
-            "weak_areas": weak,
-            "support_level": support["name"],
-            "support_description": support["description"],
-            "check_in_frequency": support["check_in_frequency"]
-        }
-    })
-
-
-# ───────────────────────────────────────────────
-# POST Get Recommendations
-# ───────────────────────────────────────────────
-
-@app.route("/api/recommendations", methods=["POST"])
-def recommendations():
-    """
-    Get personalized resource recommendations for weak areas.
-    
-    Body: { "results": {lo: bool}, "student_id": "..." }
-    """
-    data = request.get_json() or {}
-    results = data.get("results", SAMPLE_QUIZ_RESULTS)
-    student_id = data.get("student_id", "anonymous")
-
-    if not isinstance(results, dict):
-        return jsonify({"success": False, "error": "results must be a dict {lo: bool}"}), 400
-
-    score = calculate_score(results)
-    weak = get_weak_LOs(results)
-    support = classify_support_level(score, len(weak), len(results))
-    recs = get_recommendations(weak, support)
-
-    # Format response with LO descriptions
-    formatted_recs = []
-    for lo, resources in recs.items():
-        formatted_recs.append({
-            "learning_outcome": lo,
-            "description": LO_DESCRIPTIONS.get(lo, ""),
-            "resources": resources
+        # Fetch the quiz from MongoDB
+        quiz = quizzes_collection.find_one({
+            "unit": unit,
+            "quizSet": quiz_set,
+            "isActive": True
         })
 
-    return jsonify({
-        "success": True,
-        "student_id": student_id,
-        "data": {
-            "overall_score": score,
-            "support_level": support["name"],
-            "weak_areas_count": len(weak),
-            "recommendations": formatted_recs
+        if not quiz:
+            return jsonify({
+                "success": False,
+                "error": f"Quiz not found: {unit} {quiz_set}"
+            }), 404
+
+        # Build a map of questions by ID
+        # NEW — uses same fallback ID so submit can match what get_quiz returned
+        question_map = {}
+        for idx, q in enumerate(quiz.get("questions", [])):
+            q_id = str(q["_id"]) if "_id" in q else f"q{q.get('questionNumber', idx + 1)}"
+            question_map[q_id] = q
+
+        # Calculate results
+        bloom_results = {
+            "Remembering": {"correct": 0, "total": 0, "passed": False},
+            "Understanding": {"correct": 0, "total": 0, "passed": False},
+            "Applying": {"correct": 0, "total": 0, "passed": False},
+            "Analyzing": {"correct": 0, "total": 0, "passed": False},
+            "Evaluating": {"correct": 0, "total": 0, "passed": False},
+            "Creating": {"correct": 0, "total": 0, "passed": False},
         }
-    })
 
+        scored_answers = []
+        total_correct = 0
 
-# ───────────────────────────────────────────────
-# POST Generate Adaptive Path
-# ───────────────────────────────────────────────
+        for answer in answers:
+            question_id = answer.get("questionId")
+            selected_index = answer.get("selectedIndex")
 
-@app.route("/api/adaptive-path", methods=["POST"])
-def adaptive_path():
-    """
-    Generate a step-by-step personalized learning path.
-    
-    Body: { "results": {lo: bool}, "student_id": "..." }
-    """
-    data = request.get_json() or {}
-    results = data.get("results", SAMPLE_QUIZ_RESULTS)
-    student_id = data.get("student_id", "anonymous")
+            if question_id not in question_map:
+                continue
 
-    if not isinstance(results, dict):
-        return jsonify({"success": False, "error": "results must be a dict {lo: bool}"}), 400
+            question = question_map[question_id]
+            correct_index = question.get("correctIndex")
+            bloom_level = question.get("bloomLevel")
 
-    path = generate_adaptive_path(results)
+            is_correct = selected_index == correct_index
+            if is_correct:
+                total_correct += 1
 
-    return jsonify({
-        "success": True,
-        "student_id": student_id,
-        "data": path
-    })
+            # Update bloom level stats
+            bloom_results[bloom_level]["total"] += 1
+            if is_correct:
+                bloom_results[bloom_level]["correct"] += 1
 
+            # NEW — store as plain string
+            scored_answers.append({
+                "questionId": question_id,
+                "selectedIndex": selected_index,
+                "isCorrect": is_correct,
+                "bloomLevel": bloom_level
+            })
 
-# ───────────────────────────────────────────────
-# POST Full Adaptive Report
-# ───────────────────────────────────────────────
+        # Determine pass/fail for each bloom level (threshold: 2/3 correct)
+        for bloom_level, result in bloom_results.items():
+            if result["total"] > 0:
+                percentage = result["correct"] / result["total"]
+                result["passed"] = percentage >= (2/3)
 
-@app.route("/api/full-report", methods=["POST"])
-def full_report():
-    """
-    Generate a complete adaptive learning report.
-    
-    Body: { "results": {lo: bool}, "student_id": "..." }
-    """
-    data = request.get_json() or {}
-    results = data.get("results", SAMPLE_QUIZ_RESULTS)
-    student_id = data.get("student_id", "anonymous")
+        total_questions = len(answers)
+        percentage_score = (total_correct / total_questions * 100) if total_questions > 0 else 0
 
-    if not isinstance(results, dict):
-        return jsonify({"success": False, "error": "results must be a dict {lo: bool}"}), 400
+        # Get failed levels
+        failed_levels = [level for level, result in bloom_results.items() if result["total"] > 0 and not result["passed"]]
+        passed_levels = [level for level, result in bloom_results.items() if result["total"] > 0 and result["passed"]]
 
-    report = generate_full_report(student_id, results)
+        # Save attempt to MongoDB
+        # NEW — safe conversion with fallback
+        try:
+            student_id_stored = ObjectId(student_id) if student_id != "anonymous" else student_id
+        except Exception:
+            student_id_stored = student_id
 
-    return jsonify({
-        "success": True,
-        "data": report
-    })
-
-
-# ───────────────────────────────────────────────
-# POST Time Estimate
-# ───────────────────────────────────────────────
-
-@app.route("/api/time-estimate", methods=["POST"])
-def time_estimate():
-    """
-    Estimate time needed to master weak areas.
-    
-    Body: { "results": {lo: bool}, "student_id": "..." }
-    """
-    data = request.get_json() or {}
-    results = data.get("results", SAMPLE_QUIZ_RESULTS)
-    student_id = data.get("student_id", "anonymous")
-
-    if not isinstance(results, dict):
-        return jsonify({"success": False, "error": "results must be a dict {lo: bool}"}), 400
-
-    score = calculate_score(results)
-    weak = get_weak_LOs(results)
-    support = classify_support_level(score, len(weak), len(results))
-    estimate = estimate_time_to_master(weak, support)
-
-    return jsonify({
-        "success": True,
-        "student_id": student_id,
-        "data": {
-            "overall_score": score,
-            "support_level": support["name"],
-            "weak_areas": weak,
-            "time_estimate": estimate
+        attempt = {
+            "studentId": student_id_stored,
+            "unit": unit,
+            "quizSet": quiz_set,
+            "emotion": emotion,
+            "answers": scored_answers,
+            "bloomResults": bloom_results,
+            "totalCorrect": total_correct,
+            "totalQuestions": total_questions,
+            "percentageScore": percentage_score,
         }
-    })
+
+        result = quizattempts_collection.insert_one(attempt)
+        attempt_id = str(result.inserted_id)
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "attemptId": attempt_id,
+                "bloomResults": bloom_results,
+                "totalCorrect": total_correct,
+                "totalQuestions": total_questions,
+                "percentageScore": percentage_score,
+                "failedLevels": failed_levels,
+                "passedLevels": passed_levels
+            }
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 # ───────────────────────────────────────────────
-# POST Simulate Quiz (for testing)
+# POST /api/recommendations/get
 # ───────────────────────────────────────────────
 
-@app.route("/api/quiz/simulate", methods=["POST"])
-def simulate_quiz():
-    """
-    Simulate a quiz with random results for testing.
-    
-    Body: { "student_id": "..." } (optional)
-    """
-    import random
-    data = request.get_json() or {}
-    student_id = data.get("student_id", "anonymous")
+def find_recommendation(unit, bloom_level, emotion, performance_level=None):
+    query = {
+        "unit": unit,
+        "bloomLevel": bloom_level,
+        "emotion": emotion,
+    }
 
-    simulated = {lo: random.choice([True, False]) for lo in LEARNING_OUTCOMES}
+    if performance_level:
+        recommended = recommendations_collection.find_one({
+            **query,
+            "performanceLevel": performance_level,
+            "source": "real_data",
+        })
+        if recommended:
+            return recommended
 
-    score = calculate_score(simulated)
-    weak = get_weak_LOs(simulated)
-    strong = get_strong_LOs(simulated)
-    support = classify_support_level(score, len(weak), len(simulated))
-
-    return jsonify({
-        "success": True,
-        "student_id": student_id,
-        "simulated": True,
-        "data": {
-            "results": simulated,
-            "overall_score": score,
-            "weak_areas": weak,
-            "strong_areas": strong,
-            "support_level": support["name"]
-        }
+    recommended = recommendations_collection.find_one({
+        **query,
+        "source": "real_data",
     })
+    if recommended:
+        return recommended
+
+    return recommendations_collection.find_one(query)
+
+
+@app.route("/api/recommendations/get", methods=["POST"])
+def get_recommendations():
+    """
+    Get personalized resource recommendations based on failed bloom levels and emotion.
+
+    Body: {
+        "unit": "Number Patterns",
+        "failedLevels": ["Remembering", "Understanding"],
+        "emotion": "Confused"
+    }
+    """
+    try:
+        data = request.get_json()
+        unit = data.get("unit")
+        failed_levels = data.get("failedLevels", [])
+        emotion = data.get("emotion", "Normal")
+        performance_level = data.get("performanceLevel")
+
+        if not unit:
+            return jsonify({
+                "success": False,
+                "error": "unit is required"
+            }), 400
+
+        # Query recommendations for each failed level
+        recommendations = []
+        for bloom_level in failed_levels:
+            rec = find_recommendation(unit, bloom_level, emotion, performance_level)
+            if rec:
+                recommendations.append({
+                    "bloomLevel": bloom_level,
+                    "emotion": emotion,
+                    "resources": rec.get("resources", [])
+                })
+
+        # If no emotion-specific recommendations, fall back to "Normal"
+        if not recommendations and emotion != "Normal":
+            for bloom_level in failed_levels:
+                rec = find_recommendation(unit, bloom_level, "Normal", performance_level)
+                if rec:
+                    recommendations.append({
+                        "bloomLevel": bloom_level,
+                        "emotion": "Normal",
+                        "resources": rec.get("resources", [])
+                    })
+
+        return jsonify({
+            "success": True,
+            "data": {
+                "recommendations": recommendations
+            }
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
+
+
+# ───────────────────────────────────────────────
+# GET /api/quiz/attempt/:attemptId
+# ───────────────────────────────────────────────
+
+@app.route("/api/quiz/attempt/<attempt_id>", methods=["GET"])
+def get_attempt(attempt_id):
+    """Retrieve a saved quiz attempt by ID."""
+    try:
+        attempt = quizattempts_collection.find_one({
+            "_id": ObjectId(attempt_id)
+        })
+
+        if not attempt:
+            return jsonify({
+                "success": False,
+                "error": "Attempt not found"
+            }), 404
+
+        # Convert ObjectId to string for JSON serialization
+        attempt["_id"] = str(attempt["_id"])
+        if isinstance(attempt.get("studentId"), ObjectId):
+            attempt["studentId"] = str(attempt["studentId"])
+
+        return jsonify({
+            "success": True,
+            "data": attempt
+        })
+
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 
 
 # ───────────────────────────────────────────────
@@ -287,12 +439,19 @@ def simulate_quiz():
 # ───────────────────────────────────────────────
 
 @app.errorhandler(404)
-def not_found(error):
-    return jsonify({"success": False, "error": "Endpoint not found"}), 404
+def not_found(e):
+    return jsonify({
+        "success": False,
+        "error": "Endpoint not found"
+    }), 404
+
 
 @app.errorhandler(500)
-def server_error(error):
-    return jsonify({"success": False, "error": "Internal server error"}), 500
+def internal_error(e):
+    return jsonify({
+        "success": False,
+        "error": "Internal server error"
+    }), 500
 
 
 # ───────────────────────────────────────────────
@@ -300,18 +459,5 @@ def server_error(error):
 # ───────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    debug = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
-
-    print(f"Adaptive Learning API starting on http://127.0.0.1:{port}")
-    print("Available endpoints:")
-    print("  GET  /api/learning-outcomes")
-    print("  POST /api/quiz/submit")
-    print("  POST /api/quiz/simulate")
-    print("  POST /api/recommendations")
-    print("  POST /api/adaptive-path")
-    print("  POST /api/full-report")
-    print("  POST /api/time-estimate")
-    print("  GET  /api/health")
-
-    app.run(host="0.0.0.0", port=port, debug=debug)
+    port = int(os.getenv("FLASK_PORT", 5000))
+    app.run(debug=True, host="0.0.0.0", port=port)

@@ -5,7 +5,9 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "build": "node --check index.js && node --check routes/auth.js && node --check models/User.js"
+    "build": "node --check index.js && node --check routes/auth.js && node --check models/User.js",
+    "seed": "node seeds/seedAdaptiveData.js",
+    "seed:real-recommendations": "node seeds/seedRealRecommendations.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

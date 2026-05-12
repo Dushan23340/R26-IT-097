@@ -7,6 +7,8 @@ import { fileURLToPath } from "url";
 import path from "path";
 import { connectToDatabase } from "./config/database.js";
 import authRoutes from "./routes/auth.js";
+import adaptiveRoutes from "./routes/adaptive.js";
+import { requireAuth } from "./utils/auth.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -92,6 +94,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 app.use("/api/auth", authRoutes);
+app.use("/api/adaptive", requireAuth, adaptiveRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });

@@ -1,125 +1,189 @@
-import { Lightbulb, Clock, Play, BookOpen, FileText, MousePointer, ExternalLink } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Play, BookOpen, ClipboardList, MousePointer,
+  ExternalLink, Lock, ChevronRight,
+} from "lucide-react";
 
-const typeIcons = {
-  video: <Play className="h-4 w-4" />,
-  reading: <BookOpen className="h-4 w-4" />,
-  quiz: <FileText className="h-4 w-4" />,
+const resourceIcons = {
+  video:       <Play         className="h-4 w-4" />,
+  reading:     <BookOpen     className="h-4 w-4" />,
+  quiz:        <ClipboardList className="h-4 w-4" />,
   interactive: <MousePointer className="h-4 w-4" />,
 };
 
-const difficultyColors = {
-  easy: "bg-emotion-happy/15 text-emotion-happy border-emotion-happy/30",
-  medium: "bg-emotion-confused/15 text-emotion-confused border-emotion-confused/30",
-  hard: "bg-emotion-angry/15 text-emotion-angry border-emotion-angry/30",
+const bloomColors = {
+  Remembering:   { bg: "bg-chart-1/10",           border: "border-chart-1/30",           badge: "bg-chart-1/20 text-chart-1 border-chart-1/30"                       },
+  Understanding: { bg: "bg-chart-2/10",           border: "border-chart-2/30",           badge: "bg-chart-2/20 text-chart-2 border-chart-2/30"                       },
+  Applying:      { bg: "bg-chart-3/10",           border: "border-chart-3/30",           badge: "bg-chart-3/20 text-chart-3 border-chart-3/30"                       },
+  Analyzing:     { bg: "bg-emotion-confused/10",  border: "border-emotion-confused/30",  badge: "bg-emotion-confused/20 text-emotion-confused border-emotion-confused/30" },
+  Evaluating:    { bg: "bg-accent/10",            border: "border-accent/30",            badge: "bg-accent/20 text-accent border-accent/30"                           },
+  Creating:      { bg: "bg-emotion-angry/10",     border: "border-emotion-angry/30",     badge: "bg-emotion-angry/20 text-emotion-angry border-emotion-angry/30"      },
 };
 
-export function Recommendations({ data }) {
-  if (!data) return null;
-  const { recommendations = [], overall_score, support_level, weak_areas_count } = data;
+export default function Recommendations({ recommendations, unit, emotion, onProceed }) {
+  const recArray = recommendations?.recommendations || [];
 
-  // Flatten all resources with their LO
-  const allResources = recommendations.flatMap((rec) =>
-    (rec.recommended_resources || []).map((res) => ({
-      ...res,
-      learning_outcome: rec.learning_outcome,
-      lo_description: rec.description,
-    }))
-  );
+  // Use a Set stored in state to track which resources are checked
+  const [completedResources, setCompletedResources] = useState(new Set());
+
+  const toggleResource = (bloomLevel, resourceId) => {
+    const key = `${bloomLevel}-${resourceId}`;
+    // Always use functional updater to avoid stale-closure bugs
+    setCompletedResources(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const totalResources  = recArray.reduce((sum, rec) => sum + (rec.resources?.length || 0), 0);
+  const completedCount  = completedResources.size;
+  const progressPercent = totalResources > 0 ? (completedCount / totalResources) * 100 : 0;
+  const allCompleted    = totalResources > 0 && completedCount === totalResources;
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h3 className="text-lg font-semibold flex items-center gap-2">
-            <Lightbulb className="h-5 w-5 text-primary" />
-            Recommended Resources
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {weak_areas_count} weak areas · {allResources.length} resources · {support_level}
-          </p>
+
+      {/* ── Progress header ──────────────────────────────── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-lg font-bold">Your Learning Path</h2>
+          <span className="text-sm text-muted-foreground">
+            {completedCount} of {totalResources} activities complete
+          </span>
         </div>
+        <Progress value={progressPercent} className="h-2" />
       </div>
 
-      {/* Group by Learning Outcome */}
+      {/* ── One card per Bloom level ──────────────────────── */}
       <div className="space-y-6">
-        {recommendations.map((rec) => (
-          <Card key={rec.learning_outcome} className="glass border-border/60">
-            <CardHeader className="pb-3">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-base capitalize flex items-center gap-2">
-                  <span
-                    className="h-2.5 w-2.5 rounded-full"
-                    style={{ background: "var(--primary)" }}
-                  />
-                  {rec.learning_outcome}
-                </CardTitle>
-                <Badge variant="outline" className="text-xs capitalize">
-                  {rec.recommended_resources?.length || 0} resources
-                </Badge>
+        {recArray.map((rec) => {
+          const colors    = bloomColors[rec.bloomLevel] || {};
+          const resources = rec.resources || [];
+
+          return (
+            <div
+              key={rec.bloomLevel}
+              className={`glass border-2 rounded-2xl p-6 ${colors.bg} ${colors.border}`}
+            >
+              {/* Card header */}
+              <div className="flex items-center gap-3 mb-4">
+                <Badge className={colors.badge}>{rec.bloomLevel}</Badge>
+                <Badge variant="outline" className="text-xs">{emotion}</Badge>
               </div>
-              <CardDescription>{rec.description}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {(rec.recommended_resources || []).map((res) => (
-                  <div
-                    key={res.id}
-                    className="group flex flex-col gap-3 p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-all hover:shadow-lg"
-                  >
-                    <div className="flex items-start justify-between">
-                      <div
-                        className="h-9 w-9 rounded-lg flex items-center justify-center"
-                        style={{ background: "var(--gradient-primary)" }}
-                      >
-                        <span className="text-primary-foreground">
-                          {typeIcons[res.type] || <BookOpen className="h-4 w-4" />}
-                        </span>
+
+              {/* Resource rows */}
+              <div className="space-y-3">
+                {resources.map((resource) => {
+                  const resourceKey = `${rec.bloomLevel}-${resource.id}`;
+                  const isCompleted = completedResources.has(resourceKey);
+
+                  return (
+                    <div
+                      key={resource.id}
+                      className={`glass border border-border/60 rounded-xl p-4 transition-all ${
+                        isCompleted ? "opacity-60" : ""
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+
+                        {/* ── Checkbox ──────────────────────────────────
+                            CRITICAL FIX: shadcn Checkbox uses onCheckedChange,
+                            NOT onChange. Using onChange silently does nothing. */}
+                        <div className="flex-shrink-0 pt-0.5">
+                          <Checkbox
+                            id={resourceKey}
+                            checked={isCompleted}
+                            onCheckedChange={() => toggleResource(rec.bloomLevel, resource.id)}
+                            className="h-5 w-5 cursor-pointer"
+                          />
+                        </div>
+
+                        {/* ── Content ──────────────────────────────── */}
+                        <div className="flex-1 min-w-0">
+                          <label
+                            htmlFor={resourceKey}
+                            className="flex items-start gap-2 mb-2 cursor-pointer"
+                          >
+                            <span className="text-muted-foreground flex-shrink-0 mt-0.5">
+                              {resourceIcons[resource.type] || resourceIcons.reading}
+                            </span>
+                            <span
+                              className={`font-semibold text-sm leading-snug ${
+                                isCompleted ? "line-through text-muted-foreground" : ""
+                              }`}
+                            >
+                              {resource.title}
+                            </span>
+                          </label>
+
+                          <p className="text-xs text-muted-foreground mb-3 line-clamp-2">
+                            {resource.notes}
+                          </p>
+
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="text-xs capitalize">
+                              {resource.type}
+                            </Badge>
+                            <Badge variant="outline" className="text-xs">
+                              {resource.duration_min} min
+                            </Badge>
+                            {resource.url && (
+                              <a
+                                href={resource.url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="ml-auto inline-flex items-center gap-1 text-xs text-primary hover:underline"
+                              >
+                                Open <ExternalLink className="h-3 w-3" />
+                              </a>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                      <Badge
-                        variant="outline"
-                        className={`text-[10px] capitalize ${difficultyColors[res.difficulty] || ""}`}
-                      >
-                        {res.difficulty}
-                      </Badge>
                     </div>
-
-                    <div className="flex-1">
-                      <h4 className="text-sm font-semibold mb-1">{res.title}</h4>
-                      <p className="text-xs text-muted-foreground capitalize">{res.type}</p>
-                    </div>
-
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-3 w-3" />
-                        {res.duration_min} min
-                      </span>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-7 text-xs gap-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                      >
-                        Open
-                        <ExternalLink className="h-3 w-3" />
-                      </Button>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
-            </CardContent>
-          </Card>
-        ))}
+            </div>
+          );
+        })}
       </div>
 
-      {recommendations.length === 0 && (
-        <div className="text-center py-12 text-muted-foreground">
-          <Lightbulb className="h-12 w-12 mx-auto mb-3 text-emotion-happy" />
-          <p className="font-medium">No recommendations needed</p>
-          <p className="text-sm">You have mastered all learning outcomes!</p>
-        </div>
+      {/* ── Lock hint ────────────────────────────────────── */}
+      {!allCompleted && (
+        <p className="text-xs text-muted-foreground text-center">
+          Check off all activities to unlock the evaluation quiz
+        </p>
       )}
+
+      {/* ── CTA button ───────────────────────────────────── */}
+      <div className="flex justify-end">
+        <Button
+          onClick={onProceed}
+          disabled={!allCompleted}
+          size="lg"
+          className="gap-2"
+          style={
+            allCompleted
+              ? { background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }
+              : {}
+          }
+        >
+          {!allCompleted && <Lock className="h-4 w-4" />}
+          Take Evaluation Quiz
+          {allCompleted && <ChevronRight className="h-4 w-4" />}
+        </Button>
+      </div>
+
     </div>
   );
 }
