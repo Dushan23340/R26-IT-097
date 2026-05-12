@@ -1,0 +1,44 @@
+INFO:     Will watch for changes in these directories: ['/Users/dushanchamuditha/Desktop/Y4S1/Research/AI-Adaptive-Learning-Platform/emotion-backend']
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [53190] using WatchFiles
+INFO:     Started server process [53289]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[HEAD] / - 405 (0.29ms)
+INFO:     127.0.0.1:65244 - "HEAD / HTTP/1.1" 405 Method Not Allowed
+[OPTIONS] /recommendation/generate - 200 (0.45ms)
+INFO:     127.0.0.1:65304 - "OPTIONS /recommendation/generate?emotion=BORED&subject=Mathematics HTTP/1.1" 200 OK
+[GET] /recommendation/generate - 200 (2.59ms)
+INFO:     127.0.0.1:65304 - "GET /recommendation/generate?emotion=BORED&subject=Mathematics HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/variation-window - 200 (0.16ms)
+INFO:     127.0.0.1:65304 - "OPTIONS /recommendation/variation-window HTTP/1.1" 200 OK
+[GET] /recommendation/variation-window - 200 (0.33ms)
+INFO:     127.0.0.1:65304 - "GET /recommendation/variation-window HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/pending - 200 (0.26ms)
+INFO:     127.0.0.1:65304 - "OPTIONS /recommendation/pending HTTP/1.1" 200 OK
+[GET] /recommendation/pending - 200 (0.39ms)
+INFO:     127.0.0.1:65304 - "GET /recommendation/pending HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/effectiveness - 200 (3.17ms)
+INFO:     127.0.0.1:49358 - "OPTIONS /recommendation/effectiveness HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/pending - 200 (3.38ms)
+INFO:     127.0.0.1:49359 - "OPTIONS /recommendation/pending HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/variation-window - 200 (2.03ms)
+INFO:     127.0.0.1:49360 - "OPTIONS /recommendation/variation-window HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/effectiveness - 200 (2.01ms)
+INFO:     127.0.0.1:49361 - "OPTIONS /recommendation/effectiveness HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/pending - 200 (1.73ms)
+INFO:     127.0.0.1:49362 - "OPTIONS /recommendation/pending HTTP/1.1" 200 OK
+[OPTIONS] /recommendation/variation-window - 200 (1.0ms)
+INFO:     127.0.0.1:49363 - "OPTIONS /recommendation/variation-window HTTP/1.1" 200 OK
+[GET] /recommendation/effectiveness - 200 (6.14ms)
+INFO:     127.0.0.1:49358 - "GET /recommendation/effectiveness HTTP/1.1" 200 OK
+[GET] /recommendation/pending - 200 (1.94ms)
+[GET] /recommendation/variation-window - 200 (1.92ms)
+[GET] /recommendation/effectiveness - 200 (1.86ms)
+INFO:     127.0.0.1:49359 - "GET /recommendation/pending HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49360 - "GET /recommendation/variation-window HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49361 - "GET /recommendation/effectiveness HTTP/1.1" 200 OK
+[GET] /recommendation/pending - 200 (1.26ms)
+INFO:     127.0.0.1:49362 - "GET /recommendation/pending HTTP/1.1" 200 OK
+[GET] /recommendation/variation-window - 200 (1.5ms)
+INFO:     127.0.0.1:49363 - "GET /recommendation/variation-window HTTP/1.1" 200 OK
