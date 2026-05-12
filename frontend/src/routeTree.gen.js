@@ -15,6 +15,7 @@ import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AdaptiveRouteImport } from './routes/adaptive'
+import { Route as FractionRoomRouteImport } from './routes/fraction-room'
 import { Route as IndexRouteImport } from './routes/index'
 
 const TeacherRoute = TeacherRouteImport.update({
@@ -47,6 +48,11 @@ const AdaptiveRoute = AdaptiveRouteImport.update({
   path: '/adaptive',
   getParentRoute: () => rootRouteImport,
 })
+const FractionRoomRoute = FractionRoomRouteImport.update({
+  id: '/fraction-room',
+  path: '/fraction-room',
+  getParentRoute: () => rootRouteImport,
+})
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -55,6 +61,7 @@ const IndexRoute = IndexRouteImport.update({
 
 const rootRouteChildren = {
   IndexRoute: IndexRoute,
+  FractionRoomRoute: FractionRoomRoute,
   AdaptiveRoute: AdaptiveRoute,
   AdminRoute: AdminRoute,
   LoginRoute: LoginRoute,

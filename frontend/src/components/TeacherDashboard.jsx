@@ -25,7 +25,10 @@ import {
   Send,
   Trophy,
   Timer,
-  PartyPopper
+  PartyPopper,
+  Activity,
+  TrendingUp,
+  Sparkles
 } from "lucide-react";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
@@ -50,6 +53,10 @@ function TeacherDashboard() {
   const [loading, setLoading] = useState({});
   const [error, setError] = useState(null);
 
+  // Pattern & trend data
+  const [pattern, setPattern] = useState(null);
+  const [trend, setTrend] = useState(null);
+
   // Game session state
   const [activeGame, setActiveGame] = useState(null);
   const [gameTimer, setGameTimer] = useState(0);
@@ -72,7 +79,21 @@ function TeacherDashboard() {
     fetchEffectiveness();
     fetchPending();
     fetchVariationWindow();
+    fetchPattern();
+    fetchTrend();
   }, []);
+
+  // Fetch pattern & trend when live
+  useEffect(() => {
+    if (!isLive) return;
+    fetchPattern();
+    fetchTrend();
+    const interval = setInterval(() => {
+      fetchPattern();
+      fetchTrend();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [isLive]);
 
   async function fetchAnalytics() {
     try {
@@ -108,6 +129,24 @@ function TeacherDashboard() {
       setVariationWindow(data);
     } catch (e) {
       console.error("Failed to fetch variation window", e);
+    }
+  }
+
+  async function fetchPattern() {
+    try {
+      const data = await emotionApi.getPattern();
+      setPattern(data);
+    } catch (e) {
+      console.error("Failed to fetch pattern", e);
+    }
+  }
+
+  async function fetchTrend() {
+    try {
+      const data = await emotionApi.getTrend(10);
+      setTrend(data);
+    } catch (e) {
+      console.error("Failed to fetch trend", e);
     }
   }
 
@@ -406,6 +445,23 @@ function TeacherDashboard() {
         </div>
       )}
 
+      {/* Pattern Detection Alert */}
+      {pattern && pattern.pattern_detected && (
+        <div className="glass rounded-2xl p-4 border border-amber/30 bg-amber/5">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-5 w-5 text-amber animate-pulse" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber">
+                Persistent Pattern Detected: {pattern.detected_emotion}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This emotion has persisted above threshold for 2 consecutive aggregation cycles.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2. Real-Time Emotion Summary */}
       <div className="glass rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
@@ -454,6 +510,93 @@ function TeacherDashboard() {
           )}
         </div>
       </div>
+
+      {/* 2b. Emotion Trend Chart */}
+      {trend && trend.snapshots && trend.snapshots.length > 0 && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-xl font-bold flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              Emotion Trend (Last {trend.count} Snapshots)
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {trend.snapshots.map((snap, idx) => {
+              const dist = snap.distribution || {};
+              const total = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
+              return (
+                <div key={idx} className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-16 flex-shrink-0">
+                    {new Date(snap.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <div className="flex-1 h-6 rounded-full bg-secondary overflow-hidden flex">
+                    {Object.entries(dist).map(([emotion, pct]) => {
+                      const key = emotion.toLowerCase();
+                      const e = EMOTIONS[key] || { color: "#888" };
+                      return (
+                        <div
+                          key={emotion}
+                          className="h-full transition-all"
+                          style={{
+                            width: `${(pct / total) * 100}%`,
+                            background: e.color,
+                          }}
+                          title={`${emotion}: ${pct}%`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <span className="text-xs font-medium w-20 text-right">
+                    {snap.dominant_emotion}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Engagement Score Banner */}
+      {analytics && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="relative h-16 w-16">
+                <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    className="text-secondary"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  />
+                  <path
+                    className="text-emotion-happy"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeDasharray={`${analytics.class_engagement_score}, 100`}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-sm font-bold">{Math.round(analytics.class_engagement_score)}%</span>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold">Class Engagement Score</h3>
+                <p className="text-sm text-muted-foreground">
+                  {analytics.active_students} of {analytics.total_students} students active
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Window</p>
+              <p className="text-sm font-semibold">{analytics.window_seconds}s</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 3. Effectiveness Metrics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
