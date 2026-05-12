@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { analyticsApi } from "@/services/analyticsApi";
+import { getRecommendation, getAnalyticsCurrent } from "@/services/analyticsApi";
 import {
   Loader2,
   Clock3,
   Puzzle,
   Sparkles,
   Key,
-  ShieldSearch,
+  Search,
   Smile,
   Frown,
   ArrowRight,
@@ -113,8 +113,8 @@ function FractionRoomPage() {
       try {
         setLoadingRec(true);
         const [rec, current] = await Promise.all([
-          analyticsApi.getRecommendation(),
-          analyticsApi.getAnalyticsCurrent(),
+          getRecommendation(),
+          getAnalyticsCurrent(),
         ]);
         if (cancelled) return;
         setRecommendation(rec);
@@ -181,7 +181,7 @@ function FractionRoomPage() {
 
   const doorStatus = completed ? "Door unlocked" : gameOver ? "Door locked" : "Door sealed";
 
-  const monsterIcon = monsterMood === "happy" ? <Smile className="h-8 w-8 text-emerald-600" /> : monsterMood === "angry" ? <Frown className="h-8 w-8 text-destructive" /> : <ShieldSearch className="h-8 w-8 text-yellow-500" />;
+  const monsterIcon = monsterMood === "happy" ? <Smile className="h-8 w-8 text-emerald-600" /> : monsterMood === "angry" ? <Frown className="h-8 w-8 text-destructive" /> : <Search className="h-8 w-8 text-yellow-500" />;
 
   const startGame = () => {
     setStarted(true);
@@ -258,7 +258,12 @@ function FractionRoomPage() {
           <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-slate-100 shadow-[inset_0_0_120px_rgba(15,23,42,0.35)]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(96,165,250,0.15),_transparent_35%)]" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,_rgba(250,204,21,0.12),_transparent_30%)]" />
-            <div className="relative h-[420px] rounded-[32px] border border-white/10 bg-[url('data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160"%3E%3Cpath fill="none" stroke="rgba(255,255,255,0.04)" stroke-width="1" d="M0 80h160M80 0v160"/%3E%3C/svg%3E')] bg-cover p-4">
+            <div
+              className="relative h-[420px] rounded-[32px] border border-white/10 bg-cover p-4"
+              style={{
+                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cpath fill='none' stroke='rgba(255,255,255,0.04)' stroke-width='1' d='M0 80h160M80 0v160'/%3E%3C/svg%3E")`,
+              }}
+            >
               <div
                 className="absolute left-6 top-10 rounded-full border border-white/10 bg-slate-950/90 p-3 text-center shadow-lg shadow-black/20"
                 style={{ width: 120 }}

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "@tanstack/react-router";
 import {
   Monitor,
   Users,
@@ -37,6 +38,7 @@ import { emotionApi } from "@/lib/emotionApi";
 const SUBJECTS = ["General", "Mathematics", "Science", "English", "History", "Programming"];
 
 function TeacherDashboard() {
+  const router = useRouter();
   const { user } = useAuth();
   const [isLive, setIsLive] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
@@ -185,8 +187,19 @@ function TeacherDashboard() {
     }
   }
 
+  const GAME_ROUTE_MAP = {
+    gm_math_bored_03: "/fraction-room",
+  };
+
   function handleLaunchGame() {
     if (!recommendation) return;
+
+    const gameRoute = GAME_ROUTE_MAP[recommendation.recommendation?.game_id];
+    if (gameRoute) {
+      router.navigate({ to: gameRoute });
+      return;
+    }
+
     const duration = recommendation.recommendation?.estimated_duration_minutes || 5;
     setActiveGame(recommendation);
     setGameTimer(duration * 60); // seconds
@@ -762,6 +775,16 @@ function TeacherDashboard() {
                     <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendation.recommendation.estimated_duration_minutes} min</span>
                     <span className="px-2 py-0.5 rounded text-xs bg-secondary">Score: {recommendation.recommendation.engagement_score}</span>
                   </div>
+                  <div className="mt-4">
+                    <button
+                      onClick={handleLaunchGame}
+                      disabled={gameStatus === "running"}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emotion-happy px-4 py-2 text-sm font-semibold text-white hover:bg-emotion-happy/90 transition-colors disabled:opacity-50"
+                    >
+                      <Play className="h-4 w-4" />
+                      {recommendation.recommendation?.game_id === "gm_math_bored_03" ? `Start ${recommendation.recommendation.title}` : "Start Game"}
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -813,7 +836,7 @@ function TeacherDashboard() {
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   <Play className="h-4 w-4" />
-                  Start Game
+                  {recommendation.recommendation?.game_id === "gm_math_bored_03" ? "Open Fraction Room" : "Start Game"}
                 </button>
                 <button
                   onClick={() => handleSubmitFeedback(recommendation.intervention_id)}

@@ -224,6 +224,17 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
         ],
         "BORED": [
             GameRecommendation(
+                game_id="gm_math_bored_03",
+                title="Fraction Room Rescue",
+                description="A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles.",
+                subject="Mathematics",
+                game_type="escape room game",
+                difficulty="Medium",
+                target_emotion="BORED",
+                estimated_duration_minutes=5,
+                engagement_score=9.6
+            ),
+            GameRecommendation(
                 game_id="gm_math_bored_01",
                 title="Speed Arithmetic Blitz",
                 description="60-second rounds of rapid mental math against the clock.",
