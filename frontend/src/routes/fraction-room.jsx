@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { getRecommendation, getAnalyticsCurrent } from "@/services/analyticsApi";
 import {
@@ -23,10 +23,36 @@ const QUESTIONS = [
   },
   {
     id: "paper-2",
-    question: "1 - 1/3",
-    answer: 0.6666666667,
-    hint: "Subtract thirds from the whole number.",
+    question: "2/3 + 1/3",
+    answer: 1,
+    hint: "Add the two fractions with the same denominator.",
   },
+  {
+    id: "paper-3",
+    question: "3/4 - 1/2",
+    answer: 0.25,
+    hint: "Subtract half from three quarters.",
+  },
+  {
+    id: "paper-4",
+    question: "1 - 2/5",
+    answer: 0.6,
+    hint: "Take two fifths away from the whole.",
+  },
+  {
+    id: "paper-5",
+    question: "2/5 + 3/5",
+    answer: 1,
+    hint: "Add two fifths and three fifths together.",
+  },
+];
+
+const HIDDEN_PAPER_POSITIONS = [
+  { left: "16%", top: "62%" },
+  { left: "28%", top: "74%" },
+  { left: "42%", top: "52%" },
+  { left: "58%", top: "66%" },
+  { left: "22%", top: "69%" },
 ];
 
 const START_SECONDS = 5 * 60;
@@ -89,30 +115,119 @@ function FractionRoomPage() {
   const [loadingRec, setLoadingRec] = useState(true);
   const [recError, setRecError] = useState("");
 
-  useEffect(() => {
-    let cancelled = false;
-    async function loadRecommendation() {
-      try {
-        setLoadingRec(true);
-        const [rec, current] = await Promise.all([
-          getRecommendation(),
-          getAnalyticsCurrent(),
-        ]);
-        if (cancelled) return;
-        setRecommendation(rec);
-        setAnalytics(current);
-      } catch (error) {
-        if (cancelled) return;
-        setRecError("Could not load emotion recommendation. The game still works offline.");
-      } finally {
-        if (!cancelled) setLoadingRec(false);
-      }
+  const roomRef = useRef(null);
+  const ROOM_WIDTH = 840;
+  const ROOM_HEIGHT = 420;
+  const BOY_WIDTH = 64;
+  const BOY_HEIGHT = 80;
+  const PLAYER_SIZE = { width: 8, height: 12 };
+  const PAPER_SIZE = { width: 8, height: 6 };
+  const DOOR_AREA = { left: 82, top: 48, width: 14, height: 34 };
+  const KEY_AREA = { left: 76, top: 54, width: 8, height: 6 };
+
+  const [playerX, setPlayerX] = useState(() => Math.max(0, Math.floor((ROOM_WIDTH - BOY_WIDTH) / 2)));
+  const [playerY, setPlayerY] = useState(() => Math.max(0, Math.floor(ROOM_HEIGHT - BOY_HEIGHT - 20)));
+  const [playerDirection, setPlayerDirection] = useState("right");
+
+  const clampToRoom = (x, y) => ({
+    x: Math.max(0, Math.min(ROOM_WIDTH - BOY_WIDTH, x)),
+    y: Math.max(0, Math.min(ROOM_HEIGHT - BOY_HEIGHT, y)),
+  });
+
+  const overlapRect = (a, b) => {
+    return !(
+      a.left + a.width < b.left ||
+      a.left > b.left + b.width ||
+      a.top + a.height < b.top ||
+      a.top > b.top + b.height
+    );
+  };
+
+  const getPlayerRect = () => ({
+    left: playerX,
+    top: playerY,
+    width: BOY_WIDTH,
+    height: BOY_HEIGHT,
+  });
+
+  const currentQuestion = QUESTIONS[currentIndex];
+  const remainingQuestions = Math.max(QUESTIONS.length - currentIndex, 0);
+  const currentPaper = useMemo(
+    () => QUESTIONS.map((question, index) => ({
+      ...question,
+      position: HIDDEN_PAPER_POSITIONS[index % HIDDEN_PAPER_POSITIONS.length],
+      solved: solvedIds.includes(question.id),
+      active: index === currentIndex && started && !completed && !gameOver,
+    })),
+    [currentIndex, solvedIds, started, completed, gameOver]
+  );
+
+  const doorStatus = completed ? "Door unlocked" : gameOver ? "Door locked" : "Door sealed";
+
+  const monsterIcon = monsterMood === "happy" ? <Smile className="h-8 w-8 text-emerald-600" /> : monsterMood === "angry" ? <Frown className="h-8 w-8 text-destructive" /> : <Search className="h-8 w-8 text-yellow-500" />;
+
+  const refreshRecommendation = async () => {
+    try {
+      setLoadingRec(true);
+      setRecError("");
+      const [rec, current] = await Promise.all([
+        getRecommendation(),
+        getAnalyticsCurrent(),
+      ]);
+      setRecommendation(rec);
+      setAnalytics(current);
+    } catch (error) {
+      setRecError("Could not load emotion recommendation. The game still works offline.");
+    } finally {
+      setLoadingRec(false);
     }
-    loadRecommendation();
-    return () => {
-      cancelled = true;
-    };
+  };
+
+  useEffect(() => {
+    refreshRecommendation();
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (!started || gameOver || completed) return;
+      let dx = 0;
+      let dy = 0;
+      switch (event.key) {
+        case "ArrowLeft":
+        case "a":
+        case "A":
+          dx = -8;
+          break;
+        case "ArrowRight":
+        case "d":
+        case "D":
+          dx = 8;
+          break;
+        case "ArrowUp":
+        case "w":
+        case "W":
+          dy = -8;
+          break;
+        case "ArrowDown":
+        case "s":
+        case "S":
+          dy = 8;
+          break;
+        default:
+          return;
+      }
+      event.preventDefault();
+      const newPos = clampToRoom(playerX + dx, playerY + dy);
+      setPlayerX(newPos.x);
+      setPlayerY(newPos.y);
+      setPlayerDirection((currentDirection) =>
+        dx < 0 ? "left" : dx > 0 ? "right" : currentDirection
+      );
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [started, gameOver, completed, playerX, playerY]);
 
   useEffect(() => {
     if (!started || completed || gameOver) return undefined;
@@ -127,6 +242,39 @@ function FractionRoomPage() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [started, timeLeft, completed, gameOver]);
+
+  useEffect(() => {
+    if (!started || completed || gameOver) return;
+    const activePaper = currentPaper.find((paper) => paper.active && !paper.solved);
+    if (!activePaper) return;
+
+    const playerRect = getPlayerRect();
+    const paperRect = {
+      left: parseFloat(activePaper.position.left),
+      top: parseFloat(activePaper.position.top),
+      width: PAPER_SIZE.width,
+      height: PAPER_SIZE.height,
+    };
+
+    if (overlapRect(playerRect, paperRect)) {
+      setSolvedIds((prev) => (prev.includes(activePaper.id) ? prev : [...prev, activePaper.id]));
+      setCurrentIndex((value) => value + 1);
+      setFeedback("You found the paper by moving the hero over it. Now solve the next fraction.");
+    }
+  }, [playerX, playerY, currentPaper, started, completed, gameOver]);
+
+  useEffect(() => {
+    if (!started || gameOver) return;
+
+    const playerRect = getPlayerRect();
+    if (overlapRect(playerRect, DOOR_AREA)) {
+      if (completed) {
+        setFeedback("The door is unlocked and ready to open.");
+      } else {
+        setFeedback("The door is sealed until all papers are solved.");
+      }
+    }
+  }, [playerX, playerY, completed, gameOver, started]);
 
   useEffect(() => {
     if (wrongCount >= MAX_WRONG) {
@@ -146,25 +294,6 @@ function FractionRoomPage() {
     }
   }, [currentIndex, started]);
 
-  const currentQuestion = QUESTIONS[currentIndex];
-  const remainingQuestions = Math.max(QUESTIONS.length - currentIndex, 0);
-  const currentPaper = useMemo(
-    () => QUESTIONS.map((question, index) => ({
-      ...question,
-      position: [
-        0 + index * 12,
-        12 + (index % 2) * 9,
-      ],
-      solved: solvedIds.includes(question.id),
-      active: index === currentIndex && started && !completed && !gameOver,
-    })),
-    [currentIndex, solvedIds, started, completed, gameOver]
-  );
-
-  const doorStatus = completed ? "Door unlocked" : gameOver ? "Door locked" : "Door sealed";
-
-  const monsterIcon = monsterMood === "happy" ? <Smile className="h-8 w-8 text-emerald-600" /> : monsterMood === "angry" ? <Frown className="h-8 w-8 text-destructive" /> : <Search className="h-8 w-8 text-yellow-500" />;
-
   const startGame = () => {
     setStarted(true);
     setTimeLeft(START_SECONDS);
@@ -175,7 +304,7 @@ function FractionRoomPage() {
     setCompleted(false);
     setGameOver(false);
     setMonsterMood("watching");
-    setFeedback("The game begins! Find the first hidden paper and solve the fraction with BODMAS.");
+    setFeedback("The game begins! The boy is searching the messy room for the first hidden paper. Move to find it and solve the fraction with BODMAS.");
   };
 
   const restartGame = () => {
@@ -191,166 +320,82 @@ function FractionRoomPage() {
     if (isCorrect) {
       setSolvedIds((prev) => [...prev, currentQuestion.id]);
       setCurrentIndex((value) => value + 1);
-      setFeedback("Nice! The monster retreats and gives a new clue.");
+      setFeedback("Nice! The boy moves to the next hidden paper beneath the clutter.");
     } else {
       setWrongCount((value) => value + 1);
       setFeedback("Wrong answer. Recheck the brackets and BODMAS order.");
     }
   };
 
-  const activeTarget = currentPaper[currentIndex];
-  const boyLeft = activeTarget ? `${10 + activeTarget.position[0]}%` : "10%";
-  const boyTop = activeTarget ? `${18 + activeTarget.position[1]}%` : "18%";
-
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold text-primary">
+          <div className="inline-flex items-center gap-2 rounded-full bg-accent/10 px-4 py-1.5 text-xs font-bold text-accent badge-primary">
             <Puzzle className="h-4 w-4" />
-            Fraction Room
+            FRACTION ROOM
           </div>
-          <h1 className="mt-4 text-3xl font-bold tracking-tight text-foreground">Escape the evil messy room with grade 9 fractions</h1>
-          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Guide the child hero through a cluttered villain lair, find 5 hidden papers, solve each expression with BODMAS, and earn the key before the monster locks the door.
+          <h1 className="mt-4 text-display-md tracking-tight text-foreground">Escape the Messy Room Challenge</h1>
+          <p className="mt-2 max-w-2xl text-body-md text-text-secondary">
+            Guide the hero through a cluttered bedroom, solve fraction equations with BODMAS, collect hidden papers, and unlock the door before the monster catches you!
           </p>
         </div>
 
-        <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
-          <div className="rounded-2xl border border-border/70 bg-background/80 p-4 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Time left</div>
-            <div className="mt-2 text-3xl font-semibold text-foreground">{formatDuration(timeLeft)}</div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+          <div className="card rounded-2xl">
+            <div className="text-label-md text-text-muted">TIME LEFT</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{formatDuration(timeLeft)}</div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-background/80 p-4 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Remaining</div>
-            <div className="mt-2 text-3xl font-semibold text-foreground">{remainingQuestions}</div>
+          <div className="card rounded-2xl">
+            <div className="text-label-md text-text-muted">REMAINING</div>
+            <div className="mt-2 text-display-sm font-bold text-foreground">{remainingQuestions}</div>
           </div>
-          <div className="rounded-2xl border border-border/70 bg-background/80 p-4 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Door</div>
-            <div className="mt-2 flex items-center gap-2 text-3xl font-semibold text-foreground">
-              <Key className="h-5 w-5 text-primary" />
-              {doorStatus}
+          <div className="card rounded-2xl">
+            <div className="text-label-md text-text-muted">DOOR STATUS</div>
+            <div className="mt-2 flex items-center gap-2 text-xl font-bold text-foreground">
+              <Key className="h-5 w-5 text-accent" />
+              <span className="text-sm">{doorStatus}</span>
             </div>
           </div>
         </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
-        <section className="rounded-3xl border border-border/70 bg-slate-950/5 p-6 shadow-xl">
-          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-slate-950 via-slate-900 to-slate-800 p-6 text-slate-100 shadow-[inset_0_0_120px_rgba(15,23,42,0.35)]">
+        <section className="container-game rounded-3xl">
+          <div className="relative overflow-hidden rounded-3xl bg-gradient-to-br from-[#0a1929] via-[#162444] to-[#0f1f3a] p-6 text-slate-100 shadow-[inset_0_0_120px_rgba(15,23,42,0.35)]">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(96,165,250,0.15),_transparent_35%)]" />
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_bottom_right,_rgba(250,204,21,0.12),_transparent_30%)]" />
             <div
-              className="relative h-[420px] rounded-[32px] border border-white/10 bg-cover p-4"
+              ref={roomRef}
+              className="relative h-[420px] w-[840px] rounded-[32px] border border-white/10 bg-cover bg-center overflow-hidden"
               style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cpath fill='none' stroke='rgba(255,255,255,0.04)' stroke-width='1' d='M0 80h160M80 0v160'/%3E%3C/svg%3E")`,
+                backgroundImage: `url('/images/messy-room.png')`,
+                backgroundSize: 'cover',
+                backgroundPosition: 'center',
               }}
             >
-              {/* MESSY FURNITURE */}
-              {/* Broken chair - left side */}
-              <div className="absolute left-8 top-32 h-20 w-16 rounded-lg bg-amber-900/40 border-2 border-amber-700/60 shadow-lg" />
-              <div className="absolute left-6 top-28 h-1.5 w-20 bg-amber-800/50 rotate-[-15deg]" />
-              
-              {/* Overturned table - center */}
-              <div className="absolute left-1/3 top-40 h-24 w-32 rounded-lg bg-amber-800/30 border-2 border-amber-700/50 rotate-[-12deg] shadow-lg" />
-              
-              {/* Scattered boxes/debris */}
-              <div className="absolute right-20 top-48 h-16 w-12 rounded-md bg-slate-700/40 border border-slate-600/60 rotate-12" />
-              <div className="absolute right-8 top-56 h-14 w-20 rounded-md bg-slate-600/35 border border-slate-500/50 rotate-[-8deg]" />
-              
-              {/* Floor clutter marks */}
-              <div className="absolute left-20 bottom-20 h-8 w-12 rounded-full bg-orange-600/25 blur-sm" />
-              <div className="absolute left-48 bottom-16 h-10 w-16 rounded-full bg-red-700/20 blur-md" />
-              <div className="absolute right-32 bottom-24 h-6 w-8 rounded-full bg-slate-500/30" />
-
-              {/* DOOR WITH LARGE LOCK - right side bottom */}
-              <div className="absolute right-4 bottom-4 h-48 w-24 rounded-lg bg-gradient-to-b from-slate-900 to-slate-950 border-4 border-slate-700 shadow-2xl">
-                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-black/30 to-transparent" />
-                {/* Large lock on door */}
-                <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
-                  <div className="relative">
-                    <div className="w-12 h-16 rounded-xl border-4 border-yellow-600 bg-yellow-700/20 shadow-lg" />
-                    <div className="absolute top-1 left-1/2 transform -translate-x-1/2 w-2 h-4 bg-yellow-600 rounded-full" />
-                    <div className="absolute top-3 left-2 right-2 h-8 border-b-2 border-yellow-600/50" />
-                  </div>
-                </div>
-                <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 text-[10px] text-slate-400 font-bold">LOCKED</div>
-              </div>
-
-              {/* EVIL VILLAIN - near door with knife */}
-              <div className="absolute right-6 bottom-48 flex flex-col items-center justify-start w-20">
-                {/* Head */}
-                <div className="relative w-12 h-12 rounded-full bg-red-900/70 border-2 border-red-800 shadow-lg mb-1">
-                  <div className="absolute inset-1 rounded-full bg-gradient-to-b from-red-800 to-red-950" />
-                  {/* Angry eyes */}
-                  <div className="absolute top-3 left-2 w-2 h-3 bg-yellow-300 rounded-full" />
-                  <div className="absolute top-3 right-2 w-2 h-3 bg-yellow-300 rounded-full" />
-                  {/* Evil grin */}
-                  <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-1 bg-black rounded-full" />
-                </div>
-                
-                {/* Body and arms */}
-                <div className="relative w-10 h-14 rounded-lg bg-purple-950/80 border border-purple-900 shadow-lg">
-                  {/* Left arm with knife */}
-                  <div className="absolute top-2 -left-4 w-6 h-3 rounded-full bg-purple-900/70 transform -rotate-45" />
-                  <div className="absolute top-2 -left-6 w-1 h-10 bg-yellow-600 transform -rotate-12 shadow-lg" />
-                  <div className="absolute top-0 -left-6 w-2 h-3 bg-yellow-600 rounded-t-full" />
-                  
-                  {/* Right arm */}
-                  <div className="absolute top-2 -right-3 w-5 h-3 rounded-full bg-purple-900/70 transform rotate-45" />
-                </div>
-              </div>
-
-              {/* KEY IN VILLAIN'S HAND indicator */}
-              <div className="absolute right-10 bottom-56 w-4 h-3 bg-yellow-500 rounded-md shadow-lg transform -rotate-45" />
-              <div className="absolute right-8 bottom-55 text-[10px] text-yellow-400 font-bold">KEY</div>
-
-              {/* CHILD HERO - with clothes and messy hair */}
               <div
-                className="absolute flex flex-col items-center justify-start transition-all"
-                style={{ left: boyLeft, top: boyTop, transform: "translate(-50%, -50%)" }}
-              >
-                {/* Messy hair */}
-                <div className="relative w-10 h-8 mb-1">
-                  <div className="absolute inset-0 rounded-t-full bg-amber-900/70 shadow-lg" />
-                  <div className="absolute top-0 left-1 w-3 h-2 bg-amber-800/80 rounded-full transform -rotate-12" />
-                  <div className="absolute top-0 right-2 w-2 h-3 bg-amber-800/80 rounded-full transform rotate-20" />
-                  <div className="absolute top-1 left-3 w-1.5 h-2 bg-amber-700/90" />
-                </div>
-
-                {/* Face */}
-                <div className="w-8 h-8 rounded-full bg-yellow-100 border border-yellow-200 shadow-md flex items-center justify-center">
-                  <div className="text-base">😊</div>
-                </div>
-
-                {/* T-shirt (blue) */}
-                <div className="w-10 h-6 bg-blue-500 border border-blue-600 rounded-sm shadow-md mt-1 flex items-center justify-center">
-                  <div className="w-1.5 h-2 bg-blue-700 mx-1" />
-                </div>
-
-                {/* Shorts (red) */}
-                <div className="w-8 h-4 bg-red-600 border border-red-700 rounded-sm shadow-md" />
-
-                {/* Legs and shoes */}
-                <div className="flex gap-1 mt-0.5">
-                  <div className="w-2 h-3 bg-yellow-100 border border-yellow-200 rounded-b" />
-                  <div className="w-2 h-3 bg-yellow-100 border border-yellow-200 rounded-b" />
-                </div>
-                <div className="text-[8px] uppercase tracking-widest text-yellow-200 font-bold mt-0.5">Hero</div>
-              </div>
+                role="img"
+                aria-label="Boy"
+                className="absolute transition-transform"
+                style={{
+                  left: `${playerX}px`,
+                  top: `${playerY}px`,
+                  width: `${BOY_WIDTH}px`,
+                  height: `${BOY_HEIGHT}px`,
+                  backgroundImage: `url('/images/boy-sprite.png')`,
+                  backgroundSize: 'contain',
+                  backgroundRepeat: 'no-repeat',
+                  transform: playerDirection === 'left' ? 'scaleX(-1)' : 'none',
+                  willChange: 'transform, left, top',
+                }}
+              />
 
               {/* HIDDEN PAPERS - behind/under furniture */}
               {currentPaper.map((paper, index) => {
                 if (!paper.active) return null;
-                const positions = [
-                  { left: "14%", top: "55%" },  // Under table
-                  { left: "28%", top: "72%" },  // Beside left furniture
-                  { left: "42%", top: "50%" },  // Under chair
-                  { left: "58%", top: "65%" },  // Middle floor
-                  { left: "22%", top: "68%" },  // Corner
-                ];
-                const pos = positions[index % positions.length];
-                
+                const pos = paper.position;
+
                 return (
                   <button
                     key={paper.id}
@@ -360,11 +405,11 @@ function FractionRoomPage() {
                       if (index !== currentIndex) return;
                       setFeedback("Solve the current paper by applying BODMAS to the expression.");
                     }}
-                    className="absolute rounded-lg border-2 border-white/40 bg-yellow-100/95 px-3 py-2 text-left text-xs font-semibold text-slate-900 shadow-xl shadow-black/40 transition-all hover:scale-110 hover:shadow-2xl z-10"
+                    className="absolute rounded-xl border-3 border-accent/60 bg-yellow-100/95 px-3 py-2 text-left text-xs font-bold text-slate-900 shadow-glow transition-all hover:scale-110 hover:shadow-glow-intense z-10 animate-pulse-glow"
                     style={{ left: pos.left, top: pos.top, width: 90, minHeight: 56 }}
                   >
-                    <div className="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-bold">Hidden</div>
-                    <div className="mt-1 text-xs text-slate-800 leading-tight">Find & tap me</div>
+                    <div className="text-[9px] uppercase tracking-widest text-slate-700 font-extrabold">Paper</div>
+                    <div className="mt-1 text-xs text-slate-800 leading-tight font-semibold">Tap to solve</div>
                   </button>
                 );
               })}
@@ -372,54 +417,63 @@ function FractionRoomPage() {
           </div>
 
           <div className="space-y-4">
-            <div className="rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm">
+            <div className="card rounded-2xl">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Game recommendation</p>
-                  <h2 className="mt-1 text-xl font-semibold text-foreground">Emotion-driven choice</h2>
+                  <p className="text-label-md text-text-muted">EMOTION RECOMMENDATION</p>
+                  <h2 className="mt-2 text-heading-lg text-foreground">AI-Driven Guidance</h2>
                 </div>
-                {loadingRec ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Sparkles className="h-6 w-6 text-primary" />}
+                {loadingRec ? <Loader2 className="h-5 w-5 animate-spin text-accent" /> : <Sparkles className="h-6 w-6 text-accent" />}
               </div>
-              <div className="mt-4 text-sm text-slate-500">
-                {recError ? recError : recommendation ? (
+              <div className="mt-4 text-body-md text-text-secondary">
+                {recError ? <span className="text-error">{recError}</span> : recommendation ? (
                   <>
-                    <div className="font-semibold text-foreground">{recommendation.recommendation.title}</div>
-                    <div className="mt-1 text-xs uppercase tracking-[0.24em] text-muted-foreground">Reason</div>
-                    <p className="mt-1 text-sm text-slate-600">{recommendation.trigger_reason}</p>
+                    <div className="font-semibold text-accent">{recommendation.recommendation.title}</div>
+                    <div className="mt-2 text-label-md text-text-muted">Reason</div>
+                    <p className="mt-1 text-body-sm text-text-secondary">{recommendation.trigger_reason}</p>
                   </>
                 ) : (
-                  "Loading recommendation from the emotion engine..."
+                  <span className="text-text-muted">Loading recommendation from emotion engine...</span>
                 )}
               </div>
+              <button
+                type="button"
+                onClick={refreshRecommendation}
+                className="mt-4 btn btn-secondary btn-md"
+              >
+                <Sparkles className="h-4 w-4" />
+                Refresh
+              </button>
               {analytics?.distribution?.BORED != null && (
-                <div className="mt-4 rounded-2xl bg-primary/5 p-3 text-sm text-slate-700">
-                  Current boredom level: <span className="font-semibold text-foreground">{analytics.distribution.BORED.toFixed(1)}%</span>. When boredom exceeds 30%, this escape-room challenge helps re-engage learners.
+                <div className="mt-4 rounded-2xl bg-accent/10 p-3 text-body-sm text-accent border border-accent/20">
+                  Boredom: <span className="font-bold">{analytics.distribution.BORED.toFixed(1)}%</span>. This challenge helps re-engage when above 30%.
                 </div>
               )}
             </div>
 
-            <div className="rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm">
-              <p className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Adventure guide</p>
-              <h2 className="mt-1 text-xl font-semibold text-foreground">How to win</h2>
-              <ul className="mt-3 space-y-2 text-sm leading-6 text-slate-600">
-                <li>1. Click Start to enter the room.</li>
-                <li>2. Find the active fractional paper and solve it using brackets + BODMAS.</li>
-                <li>3. Correct answers make the monster step back and unlock the door.</li>
-                <li>4. If time runs out or too many mistakes happen, the monster swallows the boy.</li>
+            <div className="card rounded-2xl">
+              <p className="text-label-md text-text-muted">HOW TO WIN</p>
+              <h2 className="mt-1 text-heading-lg text-foreground">Game Rules</h2>
+              <ul className="mt-4 space-y-2 text-body-sm leading-6 text-text-secondary">
+                <li className="flex gap-3"><span className="text-accent font-bold">1.</span> Click Start to enter</li>
+                <li className="flex gap-3"><span className="text-accent font-bold">2.</span> Move hero to papers and solve with BODMAS</li>
+                <li className="flex gap-3"><span className="text-accent font-bold">3.</span> Correct answers unlock the door</li>
+                <li className="flex gap-3"><span className="text-error font-bold">4.</span> Avoid timeout and too many errors</li>
               </ul>
             </div>
 
-            <div className="rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm">
-              <div className="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                <span>Key status</span>
+            <div className="card rounded-2xl">
+              <div className="flex items-center gap-2 text-label-md text-text-muted">
+                <Key className="h-4 w-4" />
+                <span>KEY STATUS</span>
               </div>
-              <div className="mt-4 text-sm text-slate-600">
+              <div className="mt-4 text-body-md font-semibold">
                 {completed ? (
-                  <span className="font-semibold text-emerald-600">Key received! The door is open.</span>
+                  <span className="text-success">✓ Key received! Door open.</span>
                 ) : gameOver ? (
-                  <span className="font-semibold text-destructive">Game over — the monster blocked the escape.</span>
+                  <span className="text-error">✗ Game over — monster blocked escape.</span>
                 ) : (
-                  <span>The monster will give the key once all papers are solved.</span>
+                  <span className="text-text-secondary">Monster will give key after solving all papers.</span>
                 )}
               </div>
             </div>
@@ -427,47 +481,48 @@ function FractionRoomPage() {
         </section>
 
         <aside className="space-y-4">
-          <div className="rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm">
+          <div className="card rounded-2xl">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Current task</div>
-                <h2 className="mt-1 text-xl font-semibold text-foreground">Paper {currentIndex + 1}</h2>
+                <div className="text-label-md text-text-muted">CURRENT CHALLENGE</div>
+                <h2 className="mt-1 text-heading-lg text-foreground">Paper #{currentIndex + 1}</h2>
               </div>
-              <div className="inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
-                BODMAS + Brackets
+              <div className="badge badge-primary">
+                BODMAS
               </div>
             </div>
-            <div className="mt-4 text-sm leading-7 text-slate-600">
+            <div className="mt-4 text-body-md leading-7 text-text-secondary">
               {started ? (
                 completed ? (
-                  "All papers solved. Claim your reward from the monster."
+                  <p className="text-success font-semibold">✓ All papers solved! Claim your reward.</p>
                 ) : gameOver ? (
-                  "The door remains closed. Restart to try again.") : (
+                  <p className="text-error font-semibold">✗ Door locked. Restart to try again.</p>
+                ) : (
                   <>
-                    <div className="rounded-2xl bg-slate-950/80 p-4 text-sm text-slate-100 shadow-inner">
-                      <div className="font-semibold">{currentQuestion.question}</div>
-                      <div className="mt-2 text-xs uppercase tracking-[0.24em] text-slate-400">Hint</div>
-                      <p className="mt-1 text-sm text-slate-300">{currentQuestion.hint}</p>
+                    <div className="rounded-2xl bg-accent/10 p-4 text-body-md text-foreground shadow-inner border border-accent/20">
+                      <div className="font-bold text-accent text-2xl">{currentQuestion.question}</div>
+                      <div className="mt-3 text-label-md text-text-muted">HINT</div>
+                      <p className="mt-1 text-body-sm text-text-secondary">{currentQuestion.hint}</p>
                     </div>
-                    <div className="mt-4 rounded-3xl border border-slate-300/60 bg-white p-4 shadow-lg">
-                      <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Whiteboard</div>
-                      <div className="mt-3 min-h-[96px] rounded-2xl bg-slate-50 p-4 text-lg font-semibold text-slate-900 shadow-inner">
+                    <div className="mt-4 rounded-2xl border border-accent/30 bg-slate-900/50 p-4 shadow-lg">
+                      <div className="text-label-md text-text-muted">WHITEBOARD</div>
+                      <div className="mt-3 min-h-[96px] rounded-lg bg-slate-800/50 p-4 text-2xl font-bold text-accent shadow-inner">
                         {currentQuestion.question}
                       </div>
                     </div>
                     <form onSubmit={submitAnswer} className="mt-4 space-y-3">
-                      <label className="block text-sm font-medium text-slate-900">Write your answer</label>
+                      <label className="block text-label-md font-bold text-foreground">Your Answer</label>
                       <input
                         value={answer}
                         onChange={(event) => setAnswer(event.target.value)}
                         disabled={gameOver || completed}
-                        placeholder="Write the solution on the whiteboard"
-                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-primary/80 focus:ring-2 focus:ring-primary/10"
+                        placeholder="Type your answer here..."
+                        className="input-field w-full"
                       />
                       <button
                         type="submit"
                         disabled={gameOver || completed}
-                        className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="btn btn-primary btn-lg w-full"
                       >
                         <ArrowRight className="h-4 w-4" />
                         Submit answer
@@ -476,51 +531,51 @@ function FractionRoomPage() {
                   </>
                 )
               ) : (
-                <p className="text-sm text-slate-500">Press Start to wake up the boy, open the first paper, and begin the fraction rescue challenge.</p>
+                <p className="text-body-md text-text-secondary">Press Start to begin the adventure and help the hero escape!</p>
               )}
             </div>
           </div>
 
-          <div className="rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm">
+          <div className="card rounded-2xl">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Atmosphere</div>
-                <h2 className="mt-1 text-xl font-semibold text-foreground">Story status</h2>
+                <div className="text-label-md text-text-muted">ATMOSPHERE</div>
+                <h2 className="mt-1 text-heading-lg text-foreground">Story Status</h2>
               </div>
-              {completed ? <CheckCircle2 className="h-6 w-6 text-emerald-500" /> : gameOver ? <Frown className="h-6 w-6 text-destructive" /> : <Smile className="h-6 w-6 text-primary" />}
+              {completed ? <CheckCircle2 className="h-6 w-6 text-success" /> : gameOver ? <Frown className="h-6 w-6 text-error" /> : <Smile className="h-6 w-6 text-accent" />}
             </div>
-            <div className="mt-4 text-sm leading-7 text-slate-600">
-              <p>{feedback}</p>
-              <p className="mt-3 text-xs uppercase tracking-[0.24em] text-muted-foreground">Wrong answers</p>
-              <p className="text-sm text-slate-500">{wrongCount} of {MAX_WRONG} allowed</p>
+            <div className="mt-4 text-body-md leading-7">
+              <p className="text-foreground font-semibold">{feedback}</p>
+              <p className="mt-3 text-label-md text-text-muted">MISTAKES</p>
+              <p className="text-body-md font-bold">{wrongCount} <span className="text-text-muted font-normal">of {MAX_WRONG}</span></p>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-border/70 bg-background/80 p-5 shadow-sm">
-            <div className="text-xs uppercase tracking-[0.24em] text-muted-foreground">Play controls</div>
-            <div className="mt-4 flex flex-col gap-3">
+          <div className="card rounded-2xl">
+            <div className="text-label-md text-text-muted mb-4">GAME CONTROLS</div>
+            <div className="flex flex-col gap-3">
               <button
                 type="button"
                 onClick={startGame}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-primary px-4 py-3 text-sm font-semibold text-primary-foreground transition hover:bg-primary/90"
+                className="btn btn-primary btn-lg"
               >
                 <ArrowRight className="h-4 w-4" />
-                Start Fraction Room
+                Start Game
               </button>
               <button
                 type="button"
                 onClick={restartGame}
-                className="inline-flex items-center justify-center gap-2 rounded-2xl border border-border/70 bg-background px-4 py-3 text-sm font-semibold text-foreground transition hover:border-primary/80"
+                className="btn btn-secondary btn-lg"
               >
                 <Sparkles className="h-4 w-4" />
-                Restart challenge
+                Restart
               </button>
               <Link
                 to="/adaptive"
-                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-semibold text-slate-100 transition hover:bg-slate-800"
+                className="btn btn-md rounded-lg bg-bg-secondary border border-accent/20 text-foreground hover:bg-accent/10 inline-flex items-center justify-center gap-2"
               >
                 <Puzzle className="h-4 w-4" />
-                Back to adaptive menu
+                Back to Menu
               </Link>
             </div>
           </div>

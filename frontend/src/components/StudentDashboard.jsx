@@ -304,23 +304,23 @@ function StudentDashboard() {
       {
     /* 1. Top Header - Simple Summary */
   }
-      <div className="glass rounded-2xl p-6">
+      <div className="card rounded-3xl p-8">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex-1">
-            <h1 className="font-display text-3xl font-bold mb-2">
-              Welcome back, {user?.name || "Student"}! 👋
+            <h1 className="text-display-md text-foreground mb-2">
+              Welcome back, <span className="text-accent">{user?.name || "Student"}</span>! 👋
             </h1>
-            <p className="text-muted-foreground mb-4">Here's your learning overview for today</p>
+            <p className="text-body-md text-text-secondary mb-4">Here's your learning overview for today</p>
             
             {
     /* Progress Bar */
   }
             <div className="max-w-md">
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-muted-foreground">Overall Progress</span>
-                <span className="font-semibold">{overallProgress}%</span>
+              <div className="flex items-center justify-between text-body-sm mb-2">
+                <span className="text-text-muted">Overall Progress</span>
+                <span className="font-bold text-accent">{overallProgress}%</span>
               </div>
-              <div className="h-3 rounded-full bg-secondary overflow-hidden">
+              <div className="h-3 rounded-full bg-bg-secondary overflow-hidden">
                 <div
     className="h-full rounded-full transition-all duration-500"
     style={{
@@ -329,8 +329,8 @@ function StudentDashboard() {
     }}
   />
               </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {overallProgress >= 70 ? "\u{1F389} Doing Well!" : "\u{1F4AA} Keep Practicing!"}
+              <p className="text-label-md text-text-muted mt-2">
+                {overallProgress >= 70 ? "✨ Doing Well!" : "💪 Keep Practicing!"}
               </p>
             </div>
           </div>
@@ -340,12 +340,12 @@ function StudentDashboard() {
   }
           <div className="flex items-center gap-4">
             <div
-    className="text-center px-6 py-4 rounded-xl"
-    style={{ background: `${currentEmotion.color}10` }}
+    className="text-center px-8 py-6 rounded-2xl"
+    style={{ background: `${currentEmotion.color}10`, border: `2px solid ${currentEmotion.color}30` }}
   >
-              <div className="text-5xl mb-2">{currentEmotion.emoji}</div>
-              <p className="text-sm font-medium" style={{ color: currentEmotion.color }}>
-                {currentEmotion.label}
+              <div className="text-6xl mb-2">{currentEmotion.emoji}</div>
+              <p className="text-label-md font-bold" style={{ color: currentEmotion.color }}>
+                {currentEmotion.label.toUpperCase()}
               </p>
             </div>
           </div>
@@ -359,10 +359,10 @@ function StudentDashboard() {
         {
     /* Live Classes Section */
   }
-        <div className="glass rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="font-display text-xl font-bold flex items-center gap-2">
-              <Video className="h-5 w-5 text-primary" />
+        <div className="card rounded-3xl">
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-heading-lg text-foreground flex items-center gap-3">
+              <Video className="h-5 w-5 text-accent" />
               Live Classes
             </h2>
           </div>

@@ -154,17 +154,66 @@ function TeacherDashboard() {
 
   async function handleGenerateRecommendation() {
     setLoading((l) => ({ ...l, rec: true }));
+    setError(null);
+
+    const fallbackRecommendation = {
+      timestamp: new Date().toISOString(),
+      dominant_emotion: analytics?.dominant_emotion || "BORED",
+      trigger_reason: "Using the local Fraction Room recommendation.",
+      recommendation: {
+        game_id: "gm_math_bored_03",
+        title: "Fraction Room Rescue",
+        description: "A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles.",
+        subject: "Mathematics",
+        game_type: "escape room game",
+        difficulty: "Medium",
+        target_emotion: analytics?.dominant_emotion || "BORED",
+        estimated_duration_minutes: 5,
+        engagement_score: 9.6,
+      },
+      alternatives: [],
+      intervention_id: "local-fallback",
+    };
+
     try {
+      if (!analytics) {
+        await fetchAnalytics();
+      }
       const dominant = analytics?.dominant_emotion || "BORED";
       console.log("Generating recommendation for emotion:", dominant, "subject:", selectedSubject);
       const data = await emotionApi.generateRecommendation(dominant, selectedSubject);
       console.log("Recommendation data:", data);
-      setRecommendation(data);
+
+      const normalizedRecommendation = data?.recommendation
+        ? data
+        : {
+            ...fallbackRecommendation,
+            trigger_reason: data?.trigger_reason || fallbackRecommendation.trigger_reason,
+            recommendation: {
+              ...fallbackRecommendation.recommendation,
+              game_id: data?.game_id || data?.recommendation?.game_id || fallbackRecommendation.recommendation.game_id,
+              title: data?.game_title || data?.recommendation?.title || fallbackRecommendation.recommendation.title,
+              description:
+                data?.description || data?.recommendation?.description || fallbackRecommendation.recommendation.description,
+              subject: data?.subject || data?.recommendation?.subject || fallbackRecommendation.recommendation.subject,
+              game_type: data?.game_type || data?.recommendation?.game_type || fallbackRecommendation.recommendation.game_type,
+              difficulty: data?.difficulty || data?.recommendation?.difficulty || fallbackRecommendation.recommendation.difficulty,
+              target_emotion:
+                data?.target_emotion || data?.recommendation?.target_emotion || fallbackRecommendation.recommendation.target_emotion,
+              estimated_duration_minutes:
+                data?.estimated_duration_minutes || data?.recommendation?.estimated_duration_minutes || fallbackRecommendation.recommendation.estimated_duration_minutes,
+              engagement_score:
+                data?.engagement_score || data?.recommendation?.engagement_score || fallbackRecommendation.recommendation.engagement_score,
+            },
+          };
+
+      setRecommendation(normalizedRecommendation);
       await fetchVariationWindow();
       await fetchPending();
     } catch (e) {
       console.error("Recommendation error:", e);
-      setError(e.message);
+      setError("Unable to connect to recommendation backend. Showing local Fraction Room recommendation.");
+      setRecommendation(fallbackRecommendation);
     } finally {
       setLoading((l) => ({ ...l, rec: false }));
     }
@@ -190,6 +239,8 @@ function TeacherDashboard() {
     }
   }
 
+  const recommendedGame = recommendation?.recommendation || recommendation;
+
   const GAME_ROUTE_MAP = {
     gm_math_bored_03: "/fraction-room",
   };
@@ -197,22 +248,8 @@ function TeacherDashboard() {
   function handleLaunchGame() {
     if (!recommendation) return;
 
-    const gameRoute = GAME_ROUTE_MAP[recommendation.recommendation?.game_id];
-    if (gameRoute) {
-      router.navigate({ to: gameRoute });
-      return;
-    }
-
-    const duration = recommendation.recommendation?.estimated_duration_minutes || 5;
-    setActiveGame(recommendation);
-    setGameTimer(duration * 60); // seconds
-    setGameStatus("running");
-    setStudentMessage({
-      type: "start",
-      title: `Game Started: ${recommendation.recommendation.title}`,
-      body: "Good luck! Do your best!",
-    });
-    setTimeout(() => setStudentMessage(null), 5000);
+    const gameRoute = GAME_ROUTE_MAP[recommendedGame?.game_id] || "/fraction-room";
+    router.navigate({ to: gameRoute });
   }
 
   function handleCompleteGame() {
@@ -757,9 +794,9 @@ function TeacherDashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">{recommendation.trigger_reason}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Subject: <span className="font-medium text-foreground">{recommendation.subject}</span>
-                  {" | "}Game Type: <span className="font-medium text-foreground">{recommendation.game_type}</span>
-                  {" | "}ID: <span className="font-mono text-xs">{recommendation.intervention_id}</span>
+                  Subject: <span className="font-medium text-foreground">{recommendedGame?.subject || recommendation.subject}</span>
+                  {" | "}Game Type: <span className="font-medium text-foreground">{recommendedGame?.game_type || recommendation.game_type}</span>
+                  {" | "}ID: <span className="font-mono text-xs">{recommendation.intervention_id || recommendedGame?.game_id}</span>
                 </p>
               </div>
             </div>
@@ -771,12 +808,12 @@ function TeacherDashboard() {
                   <Gamepad2 className="h-5 w-5 text-primary" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold">{recommendation.recommendation.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{recommendation.recommendation.description}</p>
+                  <h3 className="font-semibold">{recommendedGame?.title || "Recommended Game"}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{recommendedGame?.description || "No description available."}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendation.recommendation.difficulty}</span>
-                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendation.recommendation.estimated_duration_minutes} min</span>
-                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">Score: {recommendation.recommendation.engagement_score}</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendedGame?.difficulty || "Medium"}</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendedGame?.estimated_duration_minutes || 5} min</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">Score: {recommendedGame?.engagement_score || 0}</span>
                   </div>
                   <div className="mt-4">
                     <button
@@ -785,7 +822,7 @@ function TeacherDashboard() {
                       className="inline-flex items-center gap-2 rounded-lg bg-emotion-happy px-4 py-2 text-sm font-semibold text-white hover:bg-emotion-happy/90 transition-colors disabled:opacity-50"
                     >
                       <Play className="h-4 w-4" />
-                      {recommendation.recommendation?.game_id === "gm_math_bored_03" ? `Start ${recommendation.recommendation.title}` : "Start Game"}
+                      {recommendedGame?.game_id === "gm_math_bored_03" ? `Start ${recommendedGame.title}` : "Start Game"}
                     </button>
                   </div>
                 </div>
@@ -839,7 +876,7 @@ function TeacherDashboard() {
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   <Play className="h-4 w-4" />
-                  {recommendation.recommendation?.game_id === "gm_math_bored_03" ? "Open Fraction Room" : "Start Game"}
+                  {recommendedGame?.game_id === "gm_math_bored_03" ? "Open Fraction Room" : "Start Game"}
                 </button>
                 <button
                   onClick={() => handleSubmitFeedback(recommendation.intervention_id)}
