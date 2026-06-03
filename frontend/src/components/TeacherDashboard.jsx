@@ -156,11 +156,14 @@ function TeacherDashboard() {
     setLoading((l) => ({ ...l, rec: true }));
     try {
       const dominant = analytics?.dominant_emotion || "BORED";
+      console.log("Generating recommendation for emotion:", dominant, "subject:", selectedSubject);
       const data = await emotionApi.generateRecommendation(dominant, selectedSubject);
+      console.log("Recommendation data:", data);
       setRecommendation(data);
       await fetchVariationWindow();
       await fetchPending();
     } catch (e) {
+      console.error("Recommendation error:", e);
       setError(e.message);
     } finally {
       setLoading((l) => ({ ...l, rec: false }));

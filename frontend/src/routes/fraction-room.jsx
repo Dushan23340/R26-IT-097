@@ -17,33 +17,15 @@ import {
 const QUESTIONS = [
   {
     id: "paper-1",
-    question: "(2/3 + 1/6) * 6",
-    answer: 5,
-    hint: "Solve inside brackets first, then multiply.",
+    question: "1/2 + 1/4",
+    answer: 0.75,
+    hint: "Convert to quarters, then add the fractions.",
   },
   {
     id: "paper-2",
-    question: "3/4 ÷ (1/2 - 1/4)",
-    answer: 3,
-    hint: "Simplify the bracket part before dividing.",
-  },
-  {
-    id: "paper-3",
-    question: "(5/6 - 1/3) * 18",
-    answer: 9,
-    hint: "Use common denominators, then multiply.",
-  },
-  {
-    id: "paper-4",
-    question: "1/2 * (7/4 + 1/4)",
-    answer: 1,
-    hint: "Add fractions inside brackets first.",
-  },
-  {
-    id: "paper-5",
-    question: "(3/5 + 2/5) ÷ 1/2",
-    answer: 2,
-    hint: "Add the fractions, then divide by one half.",
+    question: "1 - 1/3",
+    answer: 0.6666666667,
+    hint: "Subtract thirds from the whole number.",
   },
 ];
 
@@ -205,10 +187,10 @@ function FractionRoomPage() {
     if (!started || gameOver || completed) return;
     if (!currentQuestion) return;
     const isCorrect = isAnswerCorrect(answer, currentQuestion.answer);
+    setAnswer("");
     if (isCorrect) {
       setSolvedIds((prev) => [...prev, currentQuestion.id]);
       setCurrentIndex((value) => value + 1);
-      setAnswer("");
       setFeedback("Nice! The monster retreats and gives a new clue.");
     } else {
       setWrongCount((value) => value + 1);
@@ -228,9 +210,9 @@ function FractionRoomPage() {
             <Puzzle className="h-4 w-4" />
             Fraction Room
           </div>
-          <h1 className="mt-4 text-3xl font-bold tracking-tight text-foreground">Escape the messy room with grade 9 fractions</h1>
+          <h1 className="mt-4 text-3xl font-bold tracking-tight text-foreground">Escape the evil messy room with grade 9 fractions</h1>
           <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
-            Find 5 hidden papers in the room, solve each fractional expression using BODMAS, and earn the key from the monster before time runs out.
+            Guide the child hero through a cluttered villain lair, find 5 hidden papers, solve each expression with BODMAS, and earn the key before the monster locks the door.
           </p>
         </div>
 
@@ -264,57 +246,128 @@ function FractionRoomPage() {
                 backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cpath fill='none' stroke='rgba(255,255,255,0.04)' stroke-width='1' d='M0 80h160M80 0v160'/%3E%3C/svg%3E")`,
               }}
             >
-              <div
-                className="absolute left-6 top-10 rounded-full border border-white/10 bg-slate-950/90 p-3 text-center shadow-lg shadow-black/20"
-                style={{ width: 120 }}
-              >
-                <div className="text-xs uppercase tracking-[0.24em] text-slate-400">Messy Room</div>
-                <div className="mt-3 text-xs text-slate-500">Find the floating fraction papers around the room</div>
-              </div>
+              {/* MESSY FURNITURE */}
+              {/* Broken chair - left side */}
+              <div className="absolute left-8 top-32 h-20 w-16 rounded-lg bg-amber-900/40 border-2 border-amber-700/60 shadow-lg" />
+              <div className="absolute left-6 top-28 h-1.5 w-20 bg-amber-800/50 rotate-[-15deg]" />
+              
+              {/* Overturned table - center */}
+              <div className="absolute left-1/3 top-40 h-24 w-32 rounded-lg bg-amber-800/30 border-2 border-amber-700/50 rotate-[-12deg] shadow-lg" />
+              
+              {/* Scattered boxes/debris */}
+              <div className="absolute right-20 top-48 h-16 w-12 rounded-md bg-slate-700/40 border border-slate-600/60 rotate-12" />
+              <div className="absolute right-8 top-56 h-14 w-20 rounded-md bg-slate-600/35 border border-slate-500/50 rotate-[-8deg]" />
+              
+              {/* Floor clutter marks */}
+              <div className="absolute left-20 bottom-20 h-8 w-12 rounded-full bg-orange-600/25 blur-sm" />
+              <div className="absolute left-48 bottom-16 h-10 w-16 rounded-full bg-red-700/20 blur-md" />
+              <div className="absolute right-32 bottom-24 h-6 w-8 rounded-full bg-slate-500/30" />
 
-              <div className="absolute right-6 top-6 flex flex-col items-end gap-1 text-right text-xs text-slate-300">
-                <div>Monster mood</div>
-                <div className="inline-flex items-center gap-2 rounded-full bg-slate-900/90 px-3 py-2">
-                  {monsterIcon}
-                  <span>{monsterMood === "happy" ? "Friendly" : monsterMood === "angry" ? "Dangerous" : "Watching"}</span>
-                </div>
-              </div>
-
-              <div className="absolute right-8 bottom-8 flex items-center gap-3 rounded-3xl border border-white/10 bg-black/40 p-4 shadow-2xl shadow-black/40">
-                <div className="h-24 w-24 rounded-full bg-gradient-to-br from-red-500 to-fuchsia-500 p-1 shadow-inner shadow-black/40">
-                  <div className="flex h-full w-full items-center justify-center rounded-full bg-slate-950 text-3xl">👾</div>
-                </div>
-                <div className="max-w-xs text-sm text-slate-100">
-                  The room monster watches over the door. Solve every hidden paper and it will hand you the key.
-                </div>
-              </div>
-
-              {currentPaper.map((paper, index) => (
-                <button
-                  key={paper.id}
-                  type="button"
-                  onClick={() => {
-                    if (!started || gameOver || completed) return;
-                    if (index !== currentIndex) return;
-                    setFeedback("Solve the current paper by applying BODMAS to the expression.");
-                  }}
-                  className={`absolute rounded-2xl border border-white/10 bg-white/90 px-3 py-2 text-left text-xs font-semibold text-slate-900 shadow-lg transition-all ${paper.solved ? "opacity-30" : paper.active ? "scale-105 border-primary/80 ring-2 ring-primary/20" : "hover:-translate-y-0.5 hover:shadow-2xl"}`}
-                  style={{ left: `${10 + index * 13}%`, top: `${22 + (index % 2) * 10}%`, width: 108, minHeight: 56 }}
-                >
-                  <div className="mb-1 text-[10px] uppercase tracking-[0.24em] text-slate-500">Hidden paper</div>
-                  <div className="text-sm">
-                    {paper.solved ? "Solved" : paper.active ? "Tap to answer" : "Hidden"}
+              {/* DOOR WITH LARGE LOCK - right side bottom */}
+              <div className="absolute right-4 bottom-4 h-48 w-24 rounded-lg bg-gradient-to-b from-slate-900 to-slate-950 border-4 border-slate-700 shadow-2xl">
+                <div className="absolute inset-0 rounded-lg bg-gradient-to-r from-black/30 to-transparent" />
+                {/* Large lock on door */}
+                <div className="absolute top-1/3 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
+                  <div className="relative">
+                    <div className="w-12 h-16 rounded-xl border-4 border-yellow-600 bg-yellow-700/20 shadow-lg" />
+                    <div className="absolute top-1 left-1/2 transform -translate-x-1/2 w-2 h-4 bg-yellow-600 rounded-full" />
+                    <div className="absolute top-3 left-2 right-2 h-8 border-b-2 border-yellow-600/50" />
                   </div>
-                </button>
-              ))}
-
-              <div
-                className="absolute rounded-full border-2 border-primary/20 bg-primary/20 p-4 text-center text-slate-100 shadow-xl shadow-cyan-500/20 transition-all"
-                style={{ left: boyLeft, top: boyTop, width: 76, height: 76, transform: "translate(-50%, -50%)" }}
-              >
-                <div className="text-2xl">🧒</div>
-                <div className="mt-1 text-[10px] uppercase tracking-[0.24em] text-slate-200">Boy</div>
+                </div>
+                <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 text-[10px] text-slate-400 font-bold">LOCKED</div>
               </div>
+
+              {/* EVIL VILLAIN - near door with knife */}
+              <div className="absolute right-6 bottom-48 flex flex-col items-center justify-start w-20">
+                {/* Head */}
+                <div className="relative w-12 h-12 rounded-full bg-red-900/70 border-2 border-red-800 shadow-lg mb-1">
+                  <div className="absolute inset-1 rounded-full bg-gradient-to-b from-red-800 to-red-950" />
+                  {/* Angry eyes */}
+                  <div className="absolute top-3 left-2 w-2 h-3 bg-yellow-300 rounded-full" />
+                  <div className="absolute top-3 right-2 w-2 h-3 bg-yellow-300 rounded-full" />
+                  {/* Evil grin */}
+                  <div className="absolute bottom-2 left-1/2 transform -translate-x-1/2 w-4 h-1 bg-black rounded-full" />
+                </div>
+                
+                {/* Body and arms */}
+                <div className="relative w-10 h-14 rounded-lg bg-purple-950/80 border border-purple-900 shadow-lg">
+                  {/* Left arm with knife */}
+                  <div className="absolute top-2 -left-4 w-6 h-3 rounded-full bg-purple-900/70 transform -rotate-45" />
+                  <div className="absolute top-2 -left-6 w-1 h-10 bg-yellow-600 transform -rotate-12 shadow-lg" />
+                  <div className="absolute top-0 -left-6 w-2 h-3 bg-yellow-600 rounded-t-full" />
+                  
+                  {/* Right arm */}
+                  <div className="absolute top-2 -right-3 w-5 h-3 rounded-full bg-purple-900/70 transform rotate-45" />
+                </div>
+              </div>
+
+              {/* KEY IN VILLAIN'S HAND indicator */}
+              <div className="absolute right-10 bottom-56 w-4 h-3 bg-yellow-500 rounded-md shadow-lg transform -rotate-45" />
+              <div className="absolute right-8 bottom-55 text-[10px] text-yellow-400 font-bold">KEY</div>
+
+              {/* CHILD HERO - with clothes and messy hair */}
+              <div
+                className="absolute flex flex-col items-center justify-start transition-all"
+                style={{ left: boyLeft, top: boyTop, transform: "translate(-50%, -50%)" }}
+              >
+                {/* Messy hair */}
+                <div className="relative w-10 h-8 mb-1">
+                  <div className="absolute inset-0 rounded-t-full bg-amber-900/70 shadow-lg" />
+                  <div className="absolute top-0 left-1 w-3 h-2 bg-amber-800/80 rounded-full transform -rotate-12" />
+                  <div className="absolute top-0 right-2 w-2 h-3 bg-amber-800/80 rounded-full transform rotate-20" />
+                  <div className="absolute top-1 left-3 w-1.5 h-2 bg-amber-700/90" />
+                </div>
+
+                {/* Face */}
+                <div className="w-8 h-8 rounded-full bg-yellow-100 border border-yellow-200 shadow-md flex items-center justify-center">
+                  <div className="text-base">😊</div>
+                </div>
+
+                {/* T-shirt (blue) */}
+                <div className="w-10 h-6 bg-blue-500 border border-blue-600 rounded-sm shadow-md mt-1 flex items-center justify-center">
+                  <div className="w-1.5 h-2 bg-blue-700 mx-1" />
+                </div>
+
+                {/* Shorts (red) */}
+                <div className="w-8 h-4 bg-red-600 border border-red-700 rounded-sm shadow-md" />
+
+                {/* Legs and shoes */}
+                <div className="flex gap-1 mt-0.5">
+                  <div className="w-2 h-3 bg-yellow-100 border border-yellow-200 rounded-b" />
+                  <div className="w-2 h-3 bg-yellow-100 border border-yellow-200 rounded-b" />
+                </div>
+                <div className="text-[8px] uppercase tracking-widest text-yellow-200 font-bold mt-0.5">Hero</div>
+              </div>
+
+              {/* HIDDEN PAPERS - behind/under furniture */}
+              {currentPaper.map((paper, index) => {
+                if (!paper.active) return null;
+                const positions = [
+                  { left: "14%", top: "55%" },  // Under table
+                  { left: "28%", top: "72%" },  // Beside left furniture
+                  { left: "42%", top: "50%" },  // Under chair
+                  { left: "58%", top: "65%" },  // Middle floor
+                  { left: "22%", top: "68%" },  // Corner
+                ];
+                const pos = positions[index % positions.length];
+                
+                return (
+                  <button
+                    key={paper.id}
+                    type="button"
+                    onClick={() => {
+                      if (!started || gameOver || completed) return;
+                      if (index !== currentIndex) return;
+                      setFeedback("Solve the current paper by applying BODMAS to the expression.");
+                    }}
+                    className="absolute rounded-lg border-2 border-white/40 bg-yellow-100/95 px-3 py-2 text-left text-xs font-semibold text-slate-900 shadow-xl shadow-black/40 transition-all hover:scale-110 hover:shadow-2xl z-10"
+                    style={{ left: pos.left, top: pos.top, width: 90, minHeight: 56 }}
+                  >
+                    <div className="text-[9px] uppercase tracking-[0.2em] text-slate-600 font-bold">Hidden</div>
+                    <div className="mt-1 text-xs text-slate-800 leading-tight">Find & tap me</div>
+                  </button>
+                );
+              })}
             </div>
           </div>
 
@@ -396,14 +449,20 @@ function FractionRoomPage() {
                       <div className="mt-2 text-xs uppercase tracking-[0.24em] text-slate-400">Hint</div>
                       <p className="mt-1 text-sm text-slate-300">{currentQuestion.hint}</p>
                     </div>
+                    <div className="mt-4 rounded-3xl border border-slate-300/60 bg-white p-4 shadow-lg">
+                      <div className="text-xs uppercase tracking-[0.24em] text-slate-500">Whiteboard</div>
+                      <div className="mt-3 min-h-[96px] rounded-2xl bg-slate-50 p-4 text-lg font-semibold text-slate-900 shadow-inner">
+                        {currentQuestion.question}
+                      </div>
+                    </div>
                     <form onSubmit={submitAnswer} className="mt-4 space-y-3">
-                      <label className="block text-sm font-medium text-slate-700">Answer</label>
+                      <label className="block text-sm font-medium text-slate-900">Write your answer</label>
                       <input
                         value={answer}
                         onChange={(event) => setAnswer(event.target.value)}
                         disabled={gameOver || completed}
-                        placeholder="Enter a number or fraction, e.g. 5 or 3/4"
-                        className="w-full rounded-2xl border border-border/80 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-primary/80 focus:ring-2 focus:ring-primary/10"
+                        placeholder="Write the solution on the whiteboard"
+                        className="w-full rounded-2xl border border-slate-300 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-primary/80 focus:ring-2 focus:ring-primary/10"
                       />
                       <button
                         type="submit"

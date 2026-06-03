@@ -12,6 +12,11 @@ function AuthProvider({ children }) {
       } catch {
         localStorage.removeItem("user");
       }
+    } else {
+      // For testing: auto-login as teacher
+      const mockUser = { id: 1, email: "teacher@test.com", name: "Test Teacher", role: "teacher" };
+      setUser(mockUser);
+      localStorage.setItem("user", JSON.stringify(mockUser));
     }
     setIsLoading(false);
   }, []);
