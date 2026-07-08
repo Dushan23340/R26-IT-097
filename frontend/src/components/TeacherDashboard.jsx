@@ -171,7 +171,18 @@ function TeacherDashboard() {
         estimated_duration_minutes: 5,
         engagement_score: 9.6,
       },
-      alternatives: [],
+      alternatives: [
+        {
+          game_id: "gm_math_circle_track_04",
+          title: "Track & Field Analytics",
+          description: "Practice circle circumference and lane staggers in a track field challenge.",
+          subject: "Mathematics",
+          game_type: "analytics game",
+          difficulty: "Easy",
+          estimated_duration_minutes: 4,
+          engagement_score: 9.4,
+        },
+      ],
       intervention_id: "local-fallback",
     };
 
@@ -243,13 +254,19 @@ function TeacherDashboard() {
 
   const GAME_ROUTE_MAP = {
     gm_math_bored_03: "/fraction-room",
+    gm_math_circle_track_04: "/track-field-analytics",
   };
+
+  function handleOpenGame(gameId) {
+    if (!gameId) return;
+    const gameRoute = GAME_ROUTE_MAP[gameId] || "/fraction-room";
+    router.navigate({ to: gameRoute });
+  }
 
   function handleLaunchGame() {
     if (!recommendation) return;
 
-    const gameRoute = GAME_ROUTE_MAP[recommendedGame?.game_id] || "/fraction-room";
-    router.navigate({ to: gameRoute });
+    handleOpenGame(recommendedGame?.game_id);
   }
 
   function handleCompleteGame() {
@@ -808,7 +825,15 @@ function TeacherDashboard() {
                   <Gamepad2 className="h-5 w-5 text-primary" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold">{recommendedGame?.title || "Recommended Game"}</h3>
+                  <h3 className="font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenGame(recommendedGame?.game_id)}
+                      className="text-left text-inherit hover:text-primary underline-offset-4 hover:underline"
+                    >
+                      {recommendedGame?.title || "Recommended Game"}
+                    </button>
+                  </h3>
                   <p className="text-sm text-muted-foreground mt-1">{recommendedGame?.description || "No description available."}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
                     <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendedGame?.difficulty || "Medium"}</span>
@@ -835,10 +860,16 @@ function TeacherDashboard() {
                 <p className="text-xs font-semibold text-muted-foreground mb-2">ALTERNATIVES</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {recommendation.alternatives.map((alt) => (
-                    <div key={alt.game_id} className="p-3 rounded-lg border border-border/60">
-                      <p className="text-sm font-medium">{alt.title}</p>
+                    <button
+                      key={alt.game_id}
+                      type="button"
+                      onClick={() => handleOpenGame(alt.game_id)}
+                      className="text-left p-3 rounded-lg border border-border/60 hover:border-primary/80 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-primary hover:underline">{alt.title}</p>
                       <p className="text-xs text-muted-foreground">{alt.game_type} | {alt.subject}</p>
-                    </div>
+                      <p className="mt-2 text-xs text-secondary">Click to open</p>
+                    </button>
                   ))}
                 </div>
               </div>

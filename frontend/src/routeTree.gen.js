@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TrackFieldAnalyticsRouteImport } from './routes/track-field-analytics'
 import { Route as TeacherRouteImport } from './routes/teacher'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ProfileRouteImport } from './routes/profile'
@@ -18,6 +19,11 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AdaptiveRouteImport } from './routes/adaptive'
 import { Route as IndexRouteImport } from './routes/index'
 
+const TrackFieldAnalyticsRoute = TrackFieldAnalyticsRouteImport.update({
+  id: '/track-field-analytics',
+  path: '/track-field-analytics',
+  getParentRoute: () => rootRouteImport,
+})
 const TeacherRoute = TeacherRouteImport.update({
   id: '/teacher',
   path: '/teacher',
@@ -68,5 +74,6 @@ const rootRouteChildren = {
   ProfileRoute: ProfileRoute,
   SignupRoute: SignupRoute,
   TeacherRoute: TeacherRoute,
+  TrackFieldAnalyticsRoute: TrackFieldAnalyticsRoute,
 }
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)

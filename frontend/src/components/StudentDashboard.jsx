@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   Play,
   Calendar,
@@ -116,6 +117,15 @@ function StudentDashboard() {
       description: "Improve your problem-solving skills",
       action: "Read Article",
       duration: "8 min"
+    },
+    {
+      id: "4",
+      type: "quiz",
+      title: "Play: Track & Field Analytics",
+      description: "Solve four circle-related lane stagger questions in an Olympic-style game.",
+      action: "Launch Game",
+      duration: "4 min",
+      to: "/track-field-analytics"
     }
   ];
   const progressData = [
@@ -542,9 +552,18 @@ function StudentDashboard() {
               <h3 className="font-semibold mb-1">{rec.title}</h3>
               <p className="text-sm text-muted-foreground mb-4">{rec.description}</p>
               
-              <button className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors">
-                {rec.action}
-              </button>
+              {rec.to ? (
+                <Link
+                  to={rec.to}
+                  className="w-full inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors"
+                >
+                  {rec.action}
+                </Link>
+              ) : (
+                <button className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors">
+                  {rec.action}
+                </button>
+              )}
             </div>)}
         </div>
       </div>
