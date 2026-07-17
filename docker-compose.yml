@@ -1,7 +1,8 @@
-# Local MongoDB for development — same connection string for everyone.
+# Local MongoDB & PostgreSQL for development.
 # Start:  docker compose up -d
 # Stop:   docker compose down
 # Logs:   docker compose logs -f mongo
+#         docker compose logs -f postgres
 
 services:
   mongo:
@@ -14,5 +15,23 @@ services:
     environment:
       MONGO_INITDB_DATABASE: test
 
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_DB: adaptive_learning_analytics
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d adaptive_learning_analytics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
 volumes:
   mongo_dev_data:
+  postgres_dev_data:

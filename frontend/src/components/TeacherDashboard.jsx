@@ -17,37 +17,204 @@ import {
   Target,
   Award,
   Clock,
-  Zap
+  Zap,
+  Gamepad2,
+  Brain,
+  BarChart3,
+  RefreshCw,
+  Send,
+  Trophy,
+  Timer,
+  PartyPopper
 } from "lucide-react";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
+import { emotionApi } from "@/lib/emotionApi";
+
+const SUBJECTS = ["General", "Mathematics", "Science", "English", "History", "Programming"];
+
 function TeacherDashboard() {
   const { user } = useAuth();
   const [isLive, setIsLive] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
   const [studentsJoined, setStudentsJoined] = useState(0);
   const [showAlerts, setShowAlerts] = useState(false);
-  const [emotionDistribution, setEmotionDistribution] = useState({
-    happy: 35,
-    neutral: 25,
-    confused: 20,
-    bored: 12,
-    frustrated: 8
-  });
+  const [selectedSubject, setSelectedSubject] = useState("Mathematics");
+
+  // Real data from FastAPI backend
+  const [analytics, setAnalytics] = useState(null);
+  const [recommendation, setRecommendation] = useState(null);
+  const [effectiveness, setEffectiveness] = useState(null);
+  const [pendingInterventions, setPendingInterventions] = useState([]);
+  const [variationWindow, setVariationWindow] = useState(null);
+  const [loading, setLoading] = useState({});
+  const [error, setError] = useState(null);
+
+  // Game session state
+  const [activeGame, setActiveGame] = useState(null);
+  const [gameTimer, setGameTimer] = useState(0);
+  const [gameStatus, setGameStatus] = useState("idle"); // idle, running, completed
+  const [studentMessage, setStudentMessage] = useState(null);
+
+  // Fetch analytics periodically when live
   useEffect(() => {
     if (!isLive) return;
+    fetchAnalytics();
     const interval = setInterval(() => {
-      setEmotionDistribution({
-        happy: Math.floor(30 + Math.random() * 15),
-        neutral: Math.floor(20 + Math.random() * 10),
-        confused: Math.floor(15 + Math.random() * 10),
-        bored: Math.floor(10 + Math.random() * 8),
-        frustrated: Math.floor(5 + Math.random() * 5)
-      });
-      setStudentsJoined(18 + Math.floor(Math.random() * 6));
-    }, 5e3);
+      fetchAnalytics();
+      fetchPending();
+    }, 5000);
     return () => clearInterval(interval);
   }, [isLive]);
+
+  // Initial fetch
+  useEffect(() => {
+    fetchEffectiveness();
+    fetchPending();
+    fetchVariationWindow();
+  }, []);
+
+  async function fetchAnalytics() {
+    try {
+      const data = await emotionApi.getCurrentAnalytics();
+      setAnalytics(data);
+      setError(null);
+    } catch (e) {
+      setError("Backend unreachable. Is the emotion service running on port 8000?");
+    }
+  }
+
+  async function fetchEffectiveness() {
+    try {
+      const data = await emotionApi.getEffectiveness();
+      setEffectiveness(data);
+    } catch (e) {
+      console.error("Failed to fetch effectiveness", e);
+    }
+  }
+
+  async function fetchPending() {
+    try {
+      const data = await emotionApi.getPendingInterventions();
+      setPendingInterventions(data.pending || []);
+    } catch (e) {
+      console.error("Failed to fetch pending", e);
+    }
+  }
+
+  async function fetchVariationWindow() {
+    try {
+      const data = await emotionApi.getVariationWindow();
+      setVariationWindow(data);
+    } catch (e) {
+      console.error("Failed to fetch variation window", e);
+    }
+  }
+
+  async function handleGenerateRecommendation() {
+    setLoading((l) => ({ ...l, rec: true }));
+    try {
+      const dominant = analytics?.dominant_emotion || "BORED";
+      const data = await emotionApi.generateRecommendation(dominant, selectedSubject);
+      setRecommendation(data);
+      await fetchVariationWindow();
+      await fetchPending();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading((l) => ({ ...l, rec: false }));
+    }
+  }
+
+  async function handleSubmitFeedback(interventionId) {
+    setLoading((l) => ({ ...l, [interventionId]: true }));
+    try {
+      await fetchAnalytics();
+      const post = {};
+      if (analytics && analytics.distribution) {
+        analytics.distribution.forEach((d) => {
+          post[d.emotion] = d.percentage;
+        });
+      }
+      await emotionApi.submitFeedback(interventionId, post);
+      await fetchPending();
+      await fetchEffectiveness();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading((l) => ({ ...l, [interventionId]: false }));
+    }
+  }
+
+  function handleLaunchGame() {
+    if (!recommendation) return;
+    const duration = recommendation.recommendation?.estimated_duration_minutes || 5;
+    setActiveGame(recommendation);
+    setGameTimer(duration * 60); // seconds
+    setGameStatus("running");
+    setStudentMessage({
+      type: "start",
+      title: `Game Started: ${recommendation.recommendation.title}`,
+      body: "Good luck! Do your best!",
+    });
+    setTimeout(() => setStudentMessage(null), 5000);
+  }
+
+  function handleCompleteGame() {
+    if (!activeGame) return;
+    setGameStatus("completed");
+    setStudentMessage({
+      type: "win",
+      title: "Congratulations!",
+      body: `You completed "${activeGame.recommendation.title}"! Great job!`,
+    });
+    // Auto-submit feedback
+    if (activeGame.intervention_id) {
+      handleSubmitFeedback(activeGame.intervention_id);
+    }
+    setActiveGame(null);
+    setGameTimer(0);
+    setTimeout(() => setStudentMessage(null), 8000);
+  }
+
+  // Game countdown timer
+  useEffect(() => {
+    if (gameStatus !== "running" || gameTimer <= 0) return;
+    const interval = setInterval(() => {
+      setGameTimer((t) => {
+        if (t <= 1) {
+          clearInterval(interval);
+          handleCompleteGame();
+          return 0;
+        }
+        return t - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [gameStatus, gameTimer]);
+
+  // Build emotion distribution map from analytics
+  const emotionMap = {};
+  if (analytics && analytics.distribution) {
+    analytics.distribution.forEach((d) => {
+      const key = d.emotion.toLowerCase();
+      emotionMap[key] = d.percentage;
+    });
+  }
+
+  const handleStartClass = () => {
+    setIsLive(true);
+    setStudentsJoined(18);
+    fetchAnalytics();
+  };
+  const handleEndClass = () => {
+    setIsLive(false);
+    setIsSharingScreen(false);
+    setStudentsJoined(0);
+  };
+  const handleShareScreen = () => {
+    setIsSharingScreen(!isSharingScreen);
+  };
   const students = [
     { id: "1", name: "Aisha K.", emotion: "happy", status: "active", score: 85 },
     { id: "2", name: "Ben R.", emotion: "confused", status: "active", score: 62 },
@@ -122,18 +289,6 @@ function TeacherDashboard() {
     averageScore: 74,
     weakTopics: ["Quadratic Equations", "Newton's Third Law", "Chemical Bonding"],
     overallProgress: 68
-  };
-  const handleStartClass = () => {
-    setIsLive(true);
-    setStudentsJoined(18);
-  };
-  const handleEndClass = () => {
-    setIsLive(false);
-    setIsSharingScreen(false);
-    setStudentsJoined(0);
-  };
-  const handleShareScreen = () => {
-    setIsSharingScreen(!isSharingScreen);
   };
   return <div className="space-y-6 stagger-children max-w-7xl mx-auto">
       {
@@ -241,80 +396,133 @@ function TeacherDashboard() {
         </div>
       </div>
 
-      {
-    /* 2. Real-Time Emotion Summary */
-  }
+      {/* Error Banner */}
+      {error && (
+        <div className="glass rounded-2xl p-4 border border-destructive/30 bg-destructive/5">
+          <p className="text-sm text-destructive flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4" />
+            {error}
+          </p>
+        </div>
+      )}
+
+      {/* 2. Real-Time Emotion Summary */}
       <div className="glass rounded-2xl p-6">
-        <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
-          <Eye className="h-5 w-5 text-primary" />
-          Class Emotion Overview
-        </h2>
-        
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          {Object.entries(emotionDistribution).map(([emotion, percentage]) => {
-    const emotionKey = emotion;
-    const e = EMOTIONS[emotionKey];
-    return <div
-      key={emotion}
-      className="p-4 rounded-xl border border-border/60 text-center"
-      style={{ background: `${e.color}08` }}
-    >
-                <div className="text-4xl mb-2">{e.emoji}</div>
-                <p className="text-sm font-semibold mb-1">{e.label}</p>
-                <p className="text-2xl font-bold" style={{ color: e.color }}>
-                  {percentage}%
-                </p>
-              </div>;
-  })}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-display text-xl font-bold flex items-center gap-2">
+            <Eye className="h-5 w-5 text-primary" />
+            Class Emotion Overview
+          </h2>
+          {analytics && (
+            <div className="text-sm text-muted-foreground">
+              Dominant: <span className="font-semibold text-foreground">{analytics.dominant_emotion}</span> ({analytics.dominant_percentage}%)
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+          {analytics && analytics.distribution ? (
+            analytics.distribution.map((item) => {
+              const key = item.emotion.toLowerCase();
+              const e = EMOTIONS[key] || { emoji: "❓", label: item.emotion, color: "#888" };
+              return (
+                <div
+                  key={item.emotion}
+                  className="p-4 rounded-xl border border-border/60 text-center"
+                  style={{ background: `${e.color}08` }}
+                >
+                  <div className="text-3xl mb-1">{e.emoji}</div>
+                  <p className="text-xs font-semibold mb-1">{e.label}</p>
+                  <p className="text-xl font-bold" style={{ color: e.color }}>
+                    {item.percentage}%
+                  </p>
+                  <p className="text-xs text-muted-foreground">{item.count} students</p>
+                </div>
+              );
+            })
+          ) : (
+            <div className="col-span-full text-center py-8 text-muted-foreground">
+              {isLive ? (
+                <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+              ) : (
+                <>
+                  <Eye className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                  <p>Start a class to see real-time emotion analytics</p>
+                </>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
-      {
-    /* 3. Class Performance Overview */
-  }
+      {/* 3. Effectiveness Metrics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="glass rounded-2xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <Award className="h-4 w-4" />
-            Average Score
+            <BarChart3 className="h-4 w-4" />
+            Avg. Emotion Reduction
           </h3>
           <div className="text-center">
-            <div className="text-5xl font-bold mb-2 text-gradient-primary">
-              {classStats.averageScore}%
+            <div className={`text-5xl font-bold mb-2 ${effectiveness && effectiveness.target_met ? "text-emotion-happy" : "text-emotion-confused"}`}>
+              {effectiveness ? `${effectiveness.average_reduction_pct}%` : "--"}
             </div>
-            <p className="text-sm text-muted-foreground">Class average this session</p>
+            <p className="text-sm text-muted-foreground">
+              Target: {effectiveness ? effectiveness.target_reduction_pct : 20}% minimum
+            </p>
+            {effectiveness && effectiveness.target_met && (
+              <p className="text-xs text-emotion-happy mt-1 flex items-center justify-center gap-1">
+                <CheckCircle2 className="h-3 w-3" /> Target met!
+              </p>
+            )}
           </div>
         </div>
 
         <div className="glass rounded-2xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
             <Target className="h-4 w-4" />
-            Overall Progress
+            Interventions
           </h3>
           <div className="text-center mb-3">
-            <div className="text-5xl font-bold mb-2">{classStats.overallProgress}%</div>
+            <div className="text-5xl font-bold mb-2">
+              {effectiveness ? effectiveness.completed_interventions : 0}
+              <span className="text-lg text-muted-foreground">/{effectiveness ? effectiveness.total_interventions : 0}</span>
+            </div>
+            <p className="text-sm text-muted-foreground">Completed / Total</p>
           </div>
           <div className="h-3 rounded-full bg-secondary overflow-hidden">
             <div
-    className="h-full rounded-full transition-all"
-    style={{
-      width: `${classStats.overallProgress}%`,
-      background: "var(--gradient-primary)"
-    }}
-  />
+              className="h-full rounded-full transition-all bg-primary"
+              style={{
+                width: effectiveness && effectiveness.total_interventions > 0
+                  ? `${(effectiveness.completed_interventions / effectiveness.total_interventions) * 100}%`
+                  : "0%"
+              }}
+            />
           </div>
         </div>
 
         <div className="glass rounded-2xl p-6">
           <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
             <TrendingDown className="h-4 w-4 text-destructive" />
-            Weak Topics
+            Variation Window
           </h3>
           <div className="space-y-2">
-            {classStats.weakTopics.map((topic, index) => <div key={index} className="flex items-center gap-2 p-2 rounded-lg bg-destructive/5 text-sm">
-                <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0" />
-                <span>{topic}</span>
-              </div>)}
+            {variationWindow && variationWindow.blocked_game_types.length > 0 ? (
+              variationWindow.blocked_game_types.map((gt, i) => (
+                <div key={i} className="flex items-center gap-2 p-2 rounded-lg bg-destructive/5 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-destructive flex-shrink-0" />
+                  <span>{gt} (blocked)</span>
+                </div>
+              ))
+            ) : (
+              <div className="flex items-center gap-2 p-2 rounded-lg bg-emotion-happy/5 text-sm">
+                <CheckCircle2 className="h-4 w-4 text-emotion-happy flex-shrink-0" />
+                <span>All game types available</span>
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground mt-1">
+              Window: {variationWindow ? variationWindow.window_minutes : 30} minutes
+            </p>
           </div>
         </div>
       </div>
@@ -356,34 +564,167 @@ function TeacherDashboard() {
         </div>
       </div>
 
-      {
-    /* 5. Smart Suggestions Panel */
-  }
+      {/* 5. Game Recommendation Panel */}
       <div className="glass rounded-2xl p-6">
-        <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
-          <Zap className="h-5 w-5 text-amber" />
-          AI Suggestions
-        </h2>
-        
-        <div className="space-y-3">
-          {smartSuggestions.map((suggestion) => <div
-    key={suggestion.id}
-    className="flex items-start gap-4 p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-colors"
-  >
-              <div className="h-10 w-10 rounded-lg flex items-center justify-center flex-shrink-0 bg-primary/10">
-                {suggestion.icon === "alert" && <AlertTriangle className="h-5 w-5 text-destructive" />}
-                {suggestion.icon === "lightbulb" && <CheckCircle2 className="h-5 w-5 text-emotion-happy" />}
-                {suggestion.icon === "game" && <FileText className="h-5 w-5 text-primary" />}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-display text-xl font-bold flex items-center gap-2">
+            <Gamepad2 className="h-5 w-5 text-primary" />
+            Game Recommendation Engine
+          </h2>
+          <div className="flex items-center gap-2">
+            <select
+              value={selectedSubject}
+              onChange={(e) => setSelectedSubject(e.target.value)}
+              className="px-3 py-1.5 rounded-lg text-sm border border-border bg-background"
+            >
+              {SUBJECTS.map((s) => (
+                <option key={s} value={s}>{s}</option>
+              ))}
+            </select>
+            <button
+              onClick={handleGenerateRecommendation}
+              disabled={loading.rec}
+              className="px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+            >
+              {loading.rec ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              Recommend
+            </button>
+          </div>
+        </div>
+
+        {recommendation ? (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm text-muted-foreground">{recommendation.trigger_reason}</p>
+                <p className="text-xs text-muted-foreground mt-1">
+                  Subject: <span className="font-medium text-foreground">{recommendation.subject}</span>
+                  {" | "}Game Type: <span className="font-medium text-foreground">{recommendation.game_type}</span>
+                  {" | "}ID: <span className="font-mono text-xs">{recommendation.intervention_id}</span>
+                </p>
               </div>
-              <div className="flex-1">
-                <p className="text-sm mb-2">{suggestion.message}</p>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors">
-                  {suggestion.action}
+            </div>
+
+            {/* Primary Recommendation */}
+            <div className="p-4 rounded-xl border border-primary/30 bg-primary/5">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0">
+                  <Gamepad2 className="h-5 w-5 text-primary" />
+                </div>
+                <div className="flex-1">
+                  <h3 className="font-semibold">{recommendation.recommendation.title}</h3>
+                  <p className="text-sm text-muted-foreground mt-1">{recommendation.recommendation.description}</p>
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendation.recommendation.difficulty}</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendation.recommendation.estimated_duration_minutes} min</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">Score: {recommendation.recommendation.engagement_score}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Alternatives */}
+            {recommendation.alternatives && recommendation.alternatives.length > 0 && (
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">ALTERNATIVES</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {recommendation.alternatives.map((alt) => (
+                    <div key={alt.game_id} className="p-3 rounded-lg border border-border/60">
+                      <p className="text-sm font-medium">{alt.title}</p>
+                      <p className="text-xs text-muted-foreground">{alt.game_type} | {alt.subject}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Game Controls */}
+            {gameStatus === "running" && activeGame && (
+              <div className="p-4 rounded-xl border border-amber/30 bg-amber/5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <Timer className="h-5 w-5 text-amber animate-pulse" />
+                    <div>
+                      <p className="text-sm font-semibold">Game in Progress</p>
+                      <p className="text-xs text-muted-foreground">
+                        {Math.floor(gameTimer / 60)}:{String(gameTimer % 60).padStart(2, "0")} remaining
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={handleCompleteGame}
+                    className="px-4 py-2 rounded-lg text-sm font-medium bg-emotion-happy text-white hover:bg-emotion-happy/90 transition-colors flex items-center gap-2"
+                  >
+                    <Trophy className="h-4 w-4" />
+                    Mark Complete
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {recommendation && gameStatus !== "running" && (
+              <div className="flex gap-3">
+                <button
+                  onClick={handleLaunchGame}
+                  disabled={gameStatus === "running"}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  <Play className="h-4 w-4" />
+                  Start Game
+                </button>
+                <button
+                  onClick={() => handleSubmitFeedback(recommendation.intervention_id)}
+                  disabled={loading[recommendation.intervention_id]}
+                  className="px-4 py-2 rounded-lg text-sm font-medium bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 flex items-center gap-2"
+                >
+                  {loading[recommendation.intervention_id] ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Record Result
                 </button>
               </div>
-            </div>)}
-        </div>
+            )}
+
+            {/* Variation Window Info */}
+            {variationWindow && variationWindow.blocked_game_types.length > 0 && (
+              <div className="text-xs text-muted-foreground">
+                Blocked types (30min): {variationWindow.blocked_game_types.join(", ")}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            <Brain className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            <p>Click "Recommend" to generate a subject-aware game suggestion</p>
+          </div>
+        )}
       </div>
+
+      {/* 5b. Pending Interventions */}
+      {pendingInterventions.length > 0 && (
+        <div className="glass rounded-2xl p-6">
+          <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
+            <Clock className="h-5 w-5 text-amber" />
+            Pending Interventions ({pendingInterventions.length})
+          </h2>
+          <div className="space-y-3">
+            {pendingInterventions.map((inv) => (
+              <div key={inv.intervention_id} className="flex items-center justify-between p-3 rounded-lg border border-border/60">
+                <div>
+                  <p className="text-sm font-medium">{inv.game_title}</p>
+                  <p className="text-xs text-muted-foreground">{inv.subject} | {new Date(inv.timestamp).toLocaleTimeString()}</p>
+                </div>
+                <button
+                  onClick={() => handleSubmitFeedback(inv.intervention_id)}
+                  disabled={loading[inv.intervention_id]}
+                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-1"
+                >
+                  {loading[inv.intervention_id] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                  Record Result
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {
     /* 6. Quick Actions */
@@ -461,6 +802,37 @@ function TeacherDashboard() {
             </div>)}
         </div>
       </div>
+
+      {/* Student Notification Overlay */}
+      {studentMessage && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-md">
+          <div
+            className={`mx-4 p-4 rounded-2xl shadow-2xl border flex items-start gap-3 animate-in slide-in-from-bottom-4 ${
+              studentMessage.type === "win"
+                ? "bg-emotion-happy/10 border-emotion-happy/30"
+                : "bg-primary/10 border-primary/30"
+            }`}
+          >
+            {studentMessage.type === "win" ? (
+              <PartyPopper className="h-6 w-6 text-emotion-happy flex-shrink-0 mt-0.5" />
+            ) : (
+              <Play className="h-6 w-6 text-primary flex-shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1">
+              <h4 className={`font-semibold ${studentMessage.type === "win" ? "text-emotion-happy" : "text-primary"}`}>
+                {studentMessage.title}
+              </h4>
+              <p className="text-sm text-foreground mt-1">{studentMessage.body}</p>
+            </div>
+            <button
+              onClick={() => setStudentMessage(null)}
+              className="p-1 hover:bg-background rounded-full flex-shrink-0"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+      )}
     </div>;
 }
 export {
