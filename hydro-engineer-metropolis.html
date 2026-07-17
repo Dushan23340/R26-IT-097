@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Hydro-Engineer: Metropolis</title>
+  <style>
+    :root {
+      --bg: #07121f;
+      --panel: rgba(7, 23, 45, 0.92);
+      --panel-2: rgba(10, 32, 58, 0.95);
+      --text: #f3fbff;
+      --muted: #8fd3ff;
+      --accent: #00b4d8;
+      --accent-2: #64ffda;
+      --success: #16c784;
+      --danger: #ff5f7d;
+      --warning: #ffcd5d;
+      --border: rgba(100, 255, 218, 0.3);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background:
+        radial-gradient(circle at top left, rgba(0, 180, 216, 0.16), transparent 28%),
+        linear-gradient(135deg, #030913 0%, var(--bg) 50%, #091b31 100%);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .launch-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(2, 8, 16, 0.78);
+      backdrop-filter: blur(8px);
+      z-index: 30;
+      transition: opacity 0.35s ease, visibility 0.35s ease;
+    }
+
+    .launch-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .launch-card {
+      width: min(440px, 100%);
+      text-align: center;
+      border-radius: 22px;
+      padding: 28px;
+      background: linear-gradient(150deg, rgba(7, 29, 53, 0.98), rgba(2, 17, 33, 0.98));
+      border: 1px solid rgba(100,255,218,0.17);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.4);
+    }
+
+    .launch-card h2 {
+      margin: 8px 0 8px;
+      font-size: 1.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent-2);
+    }
+
+    .launch-card p {
+      margin: 0 0 16px;
+      color: var(--muted);
+      line-height: 1.5;
+    }
+
+    .eyebrow {
+      display: inline-block;
+      margin: 0;
+      font-size: 0.8rem;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    .game-shell {
+      position: fixed;
+      inset: 0;
+      min-height: 100vh;
+      padding: 24px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(16px);
+      transition: opacity 0.45s ease, transform 0.45s ease, visibility 0.45s ease;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .game-shell.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .game-card {
+      width: min(1200px, 100%);
+      background: linear-gradient(160deg, rgba(8, 31, 56, 0.98), rgba(3, 16, 30, 0.98));
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      box-shadow: 0 20px 80px rgba(0, 0, 0, 0.35), inset 0 0 20px rgba(100, 255, 218, 0.1);
+      overflow: hidden;
+      backdrop-filter: blur(12px);
+    }
+
+    .topbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 28px;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(7, 20, 38, 0.8);
+    }
+
+    .title-block h1 {
+      margin: 0 0 4px;
+      font-size: 1.4rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .title-block p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.95rem;
+    }
+
+    .stats {
+      display: flex;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .pill {
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(100,255,218,0.16);
+      font-weight: 700;
+      min-width: 120px;
+      text-align: center;
+    }
+
+    .content {
+      display: grid;
+      grid-template-columns: 1.45fr 0.85fr;
+      gap: 18px;
+      padding: 22px;
+    }
+
+    .visual-pane, .workspace {
+      background: linear-gradient(145deg, var(--panel), var(--panel-2));
+      border: 1px solid rgba(100,255,218,0.14);
+      border-radius: 18px;
+      padding: 20px;
+    }
+
+    .visual-pane {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .visual-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .visual-header h2 {
+      margin: 0;
+      font-size: 1.02rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent-2);
+    }
+
+    .status-badge {
+      padding: 8px 12px;
+      border-radius: 999px;
+      font-weight: 700;
+      font-size: 0.86rem;
+      background: rgba(255,255,255,0.06);
+    }
+
+    .status-badge.correct {
+      background: rgba(22, 199, 132, 0.2);
+      color: var(--success);
+    }
+
+    .status-badge.incorrect {
+      background: rgba(255, 95, 125, 0.18);
+      color: var(--danger);
+    }
+
+    .tank-scene {
+      position: relative;
+      border-radius: 18px;
+      padding: 16px;
+      background: radial-gradient(circle at top, rgba(0, 180, 216, 0.22), transparent 46%), rgba(4, 16, 31, 0.95);
+      border: 1px solid rgba(100,255,218,0.12);
+      min-height: 420px;
+      overflow: hidden;
+    }
+
+    .scene-grid {
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(100,255,218,0.07) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(100,255,218,0.07) 1px, transparent 1px);
+      background-size: 24px 24px;
+      pointer-events: none;
+    }
+
+    .schematic {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      height: 100%;
+      min-height: 360px;
+    }
+
+    .pipe {
+      stroke: #63d4ff;
+      stroke-width: 5;
+      stroke-linecap: round;
+      fill: none;
+      filter: drop-shadow(0 0 8px rgba(99, 212, 255, 0.35));
+    }
+
+    .pipe-fill {
+      stroke: #00b4d8;
+      stroke-width: 8;
+      stroke-linecap: round;
+      fill: none;
+      stroke-dasharray: 0 1000;
+      animation: pulseFlow 2.4s ease-in-out infinite;
+    }
+
+    .tank-shell {
+      fill: rgba(10, 28, 49, 0.95);
+      stroke: #64ffda;
+      stroke-width: 3;
+      filter: drop-shadow(0 0 12px rgba(100,255,218,0.15));
+    }
+
+    .tank-water {
+      fill: #00b4d8;
+      transition: height 0.8s cubic-bezier(.2,.8,.2,1), y 0.8s cubic-bezier(.2,.8,.2,1);
+      opacity: 0.95;
+      filter: drop-shadow(0 0 10px rgba(0,180,216,0.35));
+    }
+
+    .tank-water.error {
+      fill: #ff5f7d;
+      filter: drop-shadow(0 0 10px rgba(255,95,125,0.3));
+    }
+
+    .tank-water.success {
+      fill: #64ffda;
+      filter: drop-shadow(0 0 10px rgba(100,255,218,0.3));
+    }
+
+    .tank-glow {
+      fill: rgba(100,255,218,0.14);
+      stroke: rgba(100,255,218,0.35);
+      stroke-width: 1;
+      pointer-events: none;
+    }
+
+    .readout {
+      position: absolute;
+      right: 32px;
+      bottom: 24px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(2, 11, 22, 0.85);
+      border: 1px solid rgba(100,255,218,0.2);
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      z-index: 2;
+    }
+
+    .workspace {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .workspace h3 {
+      margin: 0;
+      font-size: 1.02rem;
+      color: var(--accent-2);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+
+    .question-card {
+      padding: 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    .question-card strong {
+      display: block;
+      margin-bottom: 8px;
+      font-size: 1rem;
+      line-height: 1.45;
+    }
+
+    .question-card .units {
+      display: inline-block;
+      margin-top: 6px;
+      color: var(--accent-2);
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .input-row input {
+      flex: 1;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(100,255,218,0.2);
+      background: rgba(1, 12, 24, 0.9);
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+    }
+
+    .input-row input:focus {
+      border-color: var(--accent-2);
+      box-shadow: 0 0 0 2px rgba(100,255,218,0.15);
+    }
+
+    button {
+      border: none;
+      cursor: pointer;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      color: var(--text);
+      transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.2s ease;
+    }
+
+    button:hover { transform: translateY(-1px); }
+
+    .primary-btn {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: #03111d;
+      box-shadow: 0 10px 20px rgba(0,180,216,0.2);
+    }
+
+    .secondary-btn {
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+
+    .feedback {
+      margin-top: 10px;
+      padding: 12px 13px;
+      border-radius: 12px;
+      font-weight: 700;
+      min-height: 48px;
+      display: flex;
+      align-items: center;
+      border: 1px solid transparent;
+      background: rgba(255,255,255,0.04);
+      color: var(--muted);
+    }
+
+    .feedback.success {
+      color: var(--success);
+      background: rgba(22,199,132,0.12);
+      border-color: rgba(22,199,132,0.2);
+    }
+
+    .feedback.error {
+      color: var(--danger);
+      background: rgba(255,95,125,0.14);
+      border-color: rgba(255,95,125,0.2);
+    }
+
+    .hint-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 4px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    .game-over {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(2, 8, 16, 0.8);
+      backdrop-filter: blur(8px);
+      z-index: 20;
+    }
+
+    .game-over.visible {
+      display: flex;
+    }
+
+    .game-over-card {
+      width: min(560px, 100%);
+      border-radius: 22px;
+      padding: 26px;
+      text-align: center;
+      background: linear-gradient(150deg, rgba(7, 29, 53, 0.98), rgba(2, 17, 33, 0.98));
+      border: 1px solid rgba(100,255,218,0.17);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.4);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .game-over-card h2 {
+      margin: 0 0 10px;
+      font-size: 1.8rem;
+      color: var(--accent-2);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .game-over-card p {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 1rem;
+      line-height: 1.5;
+    }
+
+    .confetti {
+      position: absolute;
+      width: 8px;
+      height: 16px;
+      border-radius: 2px;
+      opacity: 0.9;
+      animation: confettiFall 2.2s ease-out forwards;
+      z-index: 0;
+    }
+
+    @keyframes confettiFall {
+      0% { transform: translate3d(0, -40px, 0) rotate(0deg); opacity: 0; }
+      10% { opacity: 1; }
+      100% { transform: translate3d(var(--x), 280px, 0) rotate(540deg); opacity: 0; }
+    }
+
+    @keyframes pulseFlow {
+      0%, 100% { stroke-dashoffset: 0; opacity: 0.75; }
+      50% { stroke-dashoffset: 120; opacity: 1; }
+    }
+
+    @media (max-width: 920px) {
+      .content { grid-template-columns: 1fr; }
+      .topbar { flex-direction: column; align-items: flex-start; gap: 12px; }
+      .stats { width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div id="launchOverlay" class="launch-overlay">
+    <div class="launch-card">
+      <p class="eyebrow">Interactive STEM mission</p>
+      <h2>Hydro-Engineer: Metropolis</h2>
+      <p>Launch the district water challenge and solve the flow-rate problems to save the city.</p>
+      <button class="primary-btn" id="launchBtn">Launch Mission</button>
+    </div>
+  </div>
+
+  <div id="hydroGameWrapper" class="game-shell" aria-live="polite">
+    <div class="game-card">
+      <div class="topbar">
+        <div class="title-block">
+          <h1>Hydro-Engineer: Metropolis</h1>
+          <p>Route the water budget and protect the district reservoir.</p>
+        </div>
+        <div class="stats">
+          <div class="pill" id="progressPill">District 1/4</div>
+          <div class="pill" id="scorePill">Solved: 0/4</div>
+        </div>
+      </div>
+
+      <div class="content">
+        <section class="visual-pane">
+          <div class="visual-header">
+            <h2>Reservoir Flow Schematic</h2>
+            <div id="statusBadge" class="status-badge">Awaiting signal</div>
+          </div>
+
+          <div class="tank-scene">
+            <div class="scene-grid"></div>
+            <svg class="schematic" viewBox="0 0 540 380" role="img" aria-label="Pipe and reservoir schematic">
+              <rect x="40" y="70" width="460" height="280" rx="20" fill="rgba(255,255,255,0.02)" stroke="rgba(100,255,218,0.12)"></rect>
+              <path class="pipe" d="M95 155 H220 C240 155 242 155 260 155 H330 C360 155 365 155 402 155"></path>
+              <path class="pipe-fill" d="M95 155 H220 C240 155 242 155 260 155 H330 C360 155 365 155 402 155"></path>
+              <path class="pipe" d="M260 155 V255"></path>
+              <path class="pipe-fill" d="M260 155 V255"></path>
+              <rect class="tank-shell" x="330" y="90" width="140" height="220" rx="16"></rect>
+              <rect class="tank-glow" x="338" y="100" width="124" height="200" rx="12"></rect>
+              <rect id="waterLevel" class="tank-water" x="338" y="260" width="124" height="40" rx="10"></rect>
+              <rect x="295" y="90" width="40" height="12" rx="6" fill="#64ffda" opacity="0.8"></rect>
+              <rect x="295" y="245" width="40" height="12" rx="6" fill="#64ffda" opacity="0.8"></rect>
+              <circle cx="95" cy="155" r="10" fill="#64ffda"></circle>
+              <circle cx="402" cy="155" r="10" fill="#64ffda"></circle>
+            </svg>
+            <div class="readout" id="readout">Target: 0 L</div>
+          </div>
+        </section>
+
+        <aside class="workspace">
+          <h3>Math workspace</h3>
+          <div class="question-card">
+            <strong id="questionText">Loading station directives…</strong>
+            <span class="units" id="questionUnits">L</span>
+          </div>
+
+          <div class="input-row">
+            <input id="answerInput" type="number" inputmode="numeric" placeholder="Type your answer" aria-label="Answer input" />
+            <button class="primary-btn" id="submitBtn">Activate Valves</button>
+          </div>
+          <div class="input-row">
+            <button class="secondary-btn" id="resetBtn">Reset Valves</button>
+          </div>
+
+          <div id="feedback" class="feedback">Enter a number and trigger the pump sequence.</div>
+          <div class="hint-row">
+            <span>Use the units shown in the prompt.</span>
+            <span>3/4 correct = city saved</span>
+          </div>
+        </aside>
+      </div>
+    </div>
+  </div>
+
+  <div id="gameOverScreen" class="game-over" role="dialog" aria-modal="true" aria-labelledby="gameOverTitle">
+    <div class="game-over-card">
+      <h2 id="gameOverTitle">City Saved!</h2>
+      <p id="gameOverMessage">The reservoir is stable and the district is glowing blue.</p>
+      <div style="display:flex;justify-content:center;gap:10px;margin-top:16px;flex-wrap:wrap;">
+        <button class="primary-btn" id="playAgainBtn">Run Another Shift</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const questions = [
+      {
+        prompt: 'The central reservoir holds 0.05 Megaliters (ML). Convert this to Liters (L) to calibrate the intake pump.',
+        answer: 50000,
+        units: 'L',
+        targetLabel: '50,000 L'
+      },
+      {
+        prompt: 'The district needs 12,000 Liters of water. The pipe\'s flow rate is 25 Liters per second (L/s). For how many seconds must the valve stay open?',
+        answer: 480,
+        units: 's',
+        targetLabel: '480 s'
+      },
+      {
+        prompt: 'A storage tank has an initial volume of 5,000 L. Water pumps in at 150 L/min, but a minor leak drains it at 50 L/min. What is the total volume in the tank after 30 minutes?',
+        answer: 8000,
+        units: 'L',
+        targetLabel: '8,000 L'
+      },
+      {
+        prompt: 'The city\'s backup reservoir has a volume of 15 cubic meters (m³). Knowing that 1 m³ = 1,000 Liters, how many Kiloliters (kL) of water can it hold?',
+        answer: 15,
+        units: 'kL',
+        targetLabel: '15 kL'
+      }
+    ];
+
+    let currentIndex = 0;
+    let score = 0;
+    let answered = 0;
+
+    const wrapper = document.getElementById('hydroGameWrapper');
+    const launchOverlay = document.getElementById('launchOverlay');
+    const launchBtn = document.getElementById('launchBtn');
+    const questionText = document.getElementById('questionText');
+    const questionUnits = document.getElementById('questionUnits');
+    const answerInput = document.getElementById('answerInput');
+    const feedback = document.getElementById('feedback');
+    const statusBadge = document.getElementById('statusBadge');
+    const progressPill = document.getElementById('progressPill');
+    const scorePill = document.getElementById('scorePill');
+    const readout = document.getElementById('readout');
+    const waterLevel = document.getElementById('waterLevel');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const gameOverTitle = document.getElementById('gameOverTitle');
+    const gameOverMessage = document.getElementById('gameOverMessage');
+    const submitBtn = document.getElementById('submitBtn');
+    const resetBtn = document.getElementById('resetBtn');
+    const playAgainBtn = document.getElementById('playAgainBtn');
+
+    function showHydroGame() {
+      wrapper.classList.add('visible');
+      launchOverlay.classList.add('hidden');
+      setTimeout(() => {
+        answerInput.focus();
+      }, 120);
+    }
+
+    window.showHydroGame = showHydroGame;
+
+    function renderQuestion() {
+      const current = questions[currentIndex];
+      questionText.textContent = current.prompt;
+      questionUnits.textContent = current.units;
+      answerInput.value = '';
+      feedback.className = 'feedback';
+      feedback.textContent = 'Enter a number and trigger the pump sequence.';
+      statusBadge.className = 'status-badge';
+      statusBadge.textContent = 'Awaiting signal';
+      readout.textContent = `Target: ${current.targetLabel}`;
+      waterLevel.className = 'tank-water';
+      waterLevel.setAttribute('y', '260');
+      waterLevel.setAttribute('height', '40');
+      answerInput.focus();
+      progressPill.textContent = `District ${currentIndex + 1}/4`;
+      scorePill.textContent = `Solved: ${score}/${questions.length}`;
+    }
+
+    function setWaterLevel(levelPercent, isCorrect) {
+      const maxY = 260;
+      const minHeight = 40;
+      const maxHeight = 200;
+      const height = minHeight + (maxHeight - minHeight) * Math.max(0, Math.min(1, levelPercent / 100));
+      const y = maxY - height + 20;
+      waterLevel.setAttribute('y', `${y}`);
+      waterLevel.setAttribute('height', `${height}`);
+      waterLevel.classList.remove('success', 'error');
+      if (isCorrect) {
+        waterLevel.classList.add('success');
+      } else {
+        waterLevel.classList.add('error');
+      }
+    }
+
+    function checkAnswer() {
+      const current = questions[currentIndex];
+      const raw = answerInput.value.trim();
+      if (!raw) {
+        feedback.className = 'feedback error';
+        feedback.textContent = 'No reading entered. Type the value before opening the valves.';
+        statusBadge.className = 'status-badge incorrect';
+        statusBadge.textContent = 'Input required';
+        setWaterLevel(8, false);
+        return;
+      }
+
+      const numeric = Number(raw);
+      if (!Number.isFinite(numeric)) {
+        feedback.className = 'feedback error';
+        feedback.textContent = 'Only numeric values are accepted.';
+        statusBadge.className = 'status-badge incorrect';
+        statusBadge.textContent = 'Invalid input';
+        setWaterLevel(8, false);
+        return;
+      }
+
+      const isCorrect = numeric === current.answer;
+      answered += 1;
+      if (isCorrect) {
+        score += 1;
+        feedback.className = 'feedback success';
+        feedback.textContent = `Perfect! ${numeric} matches the reservoir target.`;
+        statusBadge.className = 'status-badge correct';
+        statusBadge.textContent = 'Valve stable';
+        setWaterLevel(100, true);
+      } else {
+        feedback.className = 'feedback error';
+        feedback.textContent = `The flow is off. The correct value is ${current.answer}.`;
+        statusBadge.className = 'status-badge incorrect';
+        statusBadge.textContent = 'Flood or dry';
+        const ratio = numeric / Math.max(1, current.answer);
+        if (numeric > current.answer) {
+          setWaterLevel(Math.min(140, ratio * 100), false);
+        } else {
+          setWaterLevel(Math.max(10, ratio * 100), false);
+        }
+      }
+
+      scorePill.textContent = `Solved: ${score}/${questions.length}`;
+      submitBtn.disabled = true;
+      resetBtn.disabled = true;
+      setTimeout(() => {
+        if (currentIndex < questions.length - 1) {
+          currentIndex += 1;
+          renderQuestion();
+          submitBtn.disabled = false;
+          resetBtn.disabled = false;
+        } else {
+          showGameOver();
+        }
+      }, 1200);
+    }
+
+    function showGameOver() {
+      const won = score >= 3;
+      gameOverTitle.textContent = won ? 'City Saved!' : 'Recalibration Needed';
+      gameOverMessage.textContent = won
+        ? `Excellent work. You solved ${score} of 4 districts and kept the metropolis flowing.`
+        : `You solved ${score} of 4 districts. Reset the valves and try again to stabilize the city.`;
+      gameOverScreen.classList.add('visible');
+      createConfetti();
+    }
+
+    function createConfetti() {
+      const card = document.querySelector('.game-over-card');
+      for (let i = 0; i < 28; i += 1) {
+        const confetti = document.createElement('div');
+        confetti.className = 'confetti';
+        confetti.style.background = ['#64ffda', '#00b4d8', '#ff5f7d', '#ffcd5d'][i % 4];
+        confetti.style.left = `${Math.random() * 100}%`;
+        confetti.style.setProperty('--x', `${(Math.random() - 0.5) * 220}px`);
+        confetti.style.top = '-20px';
+        confetti.style.animationDelay = `${Math.random() * 0.2}s`;
+        card.appendChild(confetti);
+      }
+    }
+
+    launchBtn.addEventListener('click', showHydroGame);
+
+    submitBtn.addEventListener('click', checkAnswer);
+    resetBtn.addEventListener('click', () => {
+      answerInput.value = '';
+      answerInput.focus();
+      feedback.className = 'feedback';
+      feedback.textContent = 'Input cleared. Try a fresh reading.';
+    });
+    playAgainBtn.addEventListener('click', () => {
+      gameOverScreen.classList.remove('visible');
+      launchOverlay.classList.remove('hidden');
+      currentIndex = 0;
+      score = 0;
+      answered = 0;
+      wrapper.classList.remove('visible');
+      renderQuestion();
+      submitBtn.disabled = false;
+      resetBtn.disabled = false;
+    });
+
+    answerInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        checkAnswer();
+      }
+    });
+
+    renderQuestion();
+  </script>
+</body>
+</html>

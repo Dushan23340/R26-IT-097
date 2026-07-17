@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Aqua-Fit: The Custom Aquarium Shop</title>
+  <style>
+    :root {
+      --bg: #e0f2f1;
+      --counter: #8d5a3b;
+      --counter-dark: #6b442f;
+      --seafoam: #7ad7c7;
+      --coral: #ff7a59;
+      --coral-dark: #e85d3d;
+      --blue: #4db6dc;
+      --blue-deep: #2e7d9a;
+      --glass: rgba(140, 231, 255, 0.38);
+      --text: #174b4f;
+      --cream: #fff8e7;
+      --success: #2ca25f;
+      --danger: #d84343;
+      --shadow: rgba(24, 60, 74, 0.16);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      background: linear-gradient(135deg, #f6fff7 0%, var(--bg) 100%);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    .launch-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(3, 16, 20, 0.74);
+      backdrop-filter: blur(6px);
+      z-index: 40;
+      transition: opacity 0.35s ease, visibility 0.35s ease;
+    }
+
+    .launch-overlay.hidden {
+      opacity: 0;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    .launch-card {
+      width: min(440px, 100%);
+      text-align: center;
+      padding: 28px;
+      border-radius: 24px;
+      background: linear-gradient(145deg, #fffefb, #eaf8f6);
+      border: 2px solid rgba(255,122,89,0.18);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.18);
+    }
+
+    .launch-card h2 {
+      margin: 8px 0 10px;
+      font-size: 1.45rem;
+      color: var(--coral-dark);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .launch-card p {
+      margin: 0 0 16px;
+      color: #4f6f75;
+      line-height: 1.5;
+    }
+
+    .game-shell {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      opacity: 0;
+      visibility: hidden;
+      transform: translateY(18px);
+      transition: opacity 0.45s ease, transform 0.45s ease, visibility 0.45s ease;
+      pointer-events: none;
+      z-index: 10;
+      background: rgba(224,242,241,0.7);
+      backdrop-filter: blur(3px);
+    }
+
+    .game-shell.visible {
+      opacity: 1;
+      visibility: visible;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    .shop {
+      width: min(1200px, 100%);
+      border-radius: 28px;
+      overflow: hidden;
+      background: linear-gradient(180deg, #f9fffe 0%, #dff6f3 100%);
+      box-shadow: 0 24px 70px rgba(22, 57, 68, 0.2);
+      border: 3px solid rgba(255,255,255,0.8);
+    }
+
+    .hud {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 18px 24px;
+      background: linear-gradient(90deg, #ff9d7a, #ff7a59);
+      color: white;
+    }
+
+    .hud h1 {
+      margin: 0;
+      font-size: 1.25rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    .hud .meta {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.22);
+      font-weight: 700;
+      min-width: 110px;
+      text-align: center;
+    }
+
+    .layout {
+      display: grid;
+      grid-template-columns: 0.9fr 1.2fr;
+      gap: 16px;
+      padding: 18px;
+    }
+
+    .left-panel, .right-panel {
+      border-radius: 20px;
+      background: rgba(255,255,255,0.75);
+      box-shadow: inset 0 0 0 1px rgba(23,75,79,0.08);
+      padding: 16px;
+    }
+
+    .left-panel {
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(214,247,241,0.9));
+    }
+
+    .customer-card {
+      padding: 16px;
+      border-radius: 18px;
+      background: linear-gradient(145deg, #fff7e6, #ffe7c8);
+      box-shadow: 0 8px 24px rgba(104, 76, 49, 0.12);
+      position: relative;
+      min-height: 260px;
+      overflow: hidden;
+    }
+
+    .customer-label {
+      position: absolute;
+      top: 12px;
+      left: 16px;
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      font-weight: 800;
+      color: var(--coral-dark);
+      background: rgba(255,255,255,0.74);
+      padding: 6px 8px;
+      border-radius: 999px;
+      z-index: 2;
+    }
+
+    .bubble {
+      position: absolute;
+      top: 10px;
+      right: 18px;
+      background: white;
+      color: var(--text);
+      border-radius: 20px;
+      padding: 12px 14px;
+      max-width: 220px;
+      font-weight: 700;
+      box-shadow: 0 10px 20px rgba(0,0,0,0.08);
+      border: 2px solid #ffd4b3;
+      animation: bob 1.7s ease-in-out infinite;
+    }
+
+    .bubble::after {
+      content: "";
+      position: absolute;
+      bottom: -10px;
+      left: 24px;
+      border-width: 10px 10px 0 10px;
+      border-style: solid;
+      border-color: white transparent transparent transparent;
+    }
+
+    @keyframes talk {
+      from { transform: translateX(-50%) scaleX(1); }
+      to { transform: translateX(-50%) scaleX(1.2); }
+    }
+
+    @keyframes customerEnter {
+      0% { transform: translateX(-18px) scale(0.96); opacity: 0.7; }
+      100% { transform: translateX(0) scale(1); opacity: 1; }
+    }
+
+    @keyframes walkLoop {
+      0%, 100% { transform: translateX(0) translateY(0); }
+      50% { transform: translateX(8px) translateY(-3px); }
+    }
+
+    @keyframes bodyStep {
+      0% { transform: rotate(-2deg); }
+      100% { transform: rotate(2deg); }
+    }
+
+    @keyframes headBob {
+      0% { transform: rotate(-1deg); }
+      100% { transform: rotate(1deg); }
+    }
+
+    .customer {
+      position: absolute;
+      left: 28px;
+      bottom: 18px;
+      width: 140px;
+      height: 180px;
+      filter: drop-shadow(0 8px 18px rgba(0,0,0,0.14));
+      animation: customerEnter 0.5s ease-out;
+    }
+
+    .customer.walking {
+      animation: customerEnter 0.5s ease-out, walkLoop 0.7s ease-in-out infinite;
+    }
+
+    .customer.walking .person-body {
+      animation: bodyStep 0.35s ease-in-out infinite alternate;
+    }
+
+    .customer.walking .person-head {
+      animation: headBob 0.35s ease-in-out infinite alternate;
+    }
+
+    .person-head {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      background: #f2c39b;
+      margin: 0 auto 8px;
+      border: 3px solid #8c5f32;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .person-eye {
+      position: absolute;
+      top: 22px;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #2f5f66;
+    }
+
+    .person-eye.left { left: 18px; }
+    .person-eye.right { right: 18px; }
+
+    .person-mouth {
+      position: absolute;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 18px;
+      height: 8px;
+      border-bottom: 3px solid #8c5f32;
+      border-radius: 0 0 999px 999px;
+    }
+
+    .customer.talking .person-mouth {
+      animation: talk 0.18s ease-in-out infinite alternate;
+    }
+
+    .customer {
+      position: absolute;
+      left: 28px;
+      bottom: 18px;
+      width: 140px;
+      height: 180px;
+      filter: drop-shadow(0 8px 18px rgba(0,0,0,0.14));
+      animation: customerEnter 0.5s ease-out;
+    }
+
+    .person-body {
+      width: 72px;
+      height: 90px;
+      margin: 0 auto;
+      border-radius: 24px 24px 18px 18px;
+      background: #ff7a59;
+      position: relative;
+      border: 3px solid #8c5f32;
+    }
+
+    .person-body::before {
+      content: "";
+      position: absolute;
+      inset: 10px 10px auto 10px;
+      height: 22px;
+      border-radius: 999px;
+      background: #fff2d1;
+    }
+
+    .person-body::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 10px;
+      width: 42px;
+      height: 16px;
+      border-radius: 999px;
+      background: #2f5f66;
+    }
+
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .shelf {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+
+    .tank-card {
+      background: linear-gradient(180deg, rgba(255,255,255,0.9), rgba(229,255,251,0.9));
+      border: 2px solid rgba(80, 130, 148, 0.14);
+      border-radius: 18px;
+      padding: 12px;
+      text-align: center;
+      cursor: pointer;
+      transition: transform 0.16s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+      box-shadow: 0 8px 18px rgba(0,0,0,0.06);
+    }
+
+    .tank-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 12px 24px rgba(0,0,0,0.1);
+    }
+
+    .tank-card.selected {
+      border-color: var(--coral);
+      box-shadow: 0 0 0 3px rgba(255,122,89,0.18);
+    }
+
+    .tank-card.correct {
+      border-color: var(--success);
+      box-shadow: 0 0 0 3px rgba(44,162,95,0.16);
+    }
+
+    .tank-card.incorrect {
+      border-color: var(--danger);
+      box-shadow: 0 0 0 3px rgba(216,67,67,0.16);
+    }
+
+    .tank-visual {
+      margin: 4px auto 8px;
+      position: relative;
+      width: 100%;
+      max-width: 130px;
+      aspect-ratio: 1 / 1.1;
+      display: flex;
+      align-items: end;
+      justify-content: center;
+    }
+
+    .tank-glass {
+      position: absolute;
+      inset: 8px 10px 10px 10px;
+      border-radius: 16px 16px 12px 12px;
+      background: linear-gradient(180deg, rgba(255,255,255,0.55), rgba(93, 201, 234, 0.45));
+      border: 3px solid rgba(255,255,255,0.8);
+      box-shadow: inset 0 -8px 20px rgba(41,122,152,0.22), 0 8px 18px rgba(76,140,155,0.16);
+      overflow: hidden;
+    }
+
+    .tank-water {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      height: 34%;
+      background: linear-gradient(180deg, rgba(130,232,255,0.85), rgba(31,148,195,0.85));
+      border-radius: 0 0 10px 10px;
+      transition: height 0.35s ease;
+    }
+
+    .tank-base {
+      position: absolute;
+      bottom: 0;
+      width: 84%;
+      height: 14px;
+      border-radius: 999px;
+      background: #7d4c36;
+      box-shadow: 0 4px 6px rgba(0,0,0,0.08);
+    }
+
+    .tank-caption {
+      font-size: 0.98rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .tank-dimensions {
+      font-size: 0.82rem;
+      color: #4d7f86;
+      margin-top: 4px;
+      line-height: 1.35;
+    }
+
+    .helper {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: rgba(255,255,255,0.88);
+      color: #4f6f75;
+      font-size: 0.95rem;
+      line-height: 1.5;
+      border: 1px solid rgba(23,75,79,0.08);
+    }
+
+    .overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(4, 17, 22, 0.75);
+      backdrop-filter: blur(6px);
+      z-index: 30;
+    }
+
+    .overlay.visible {
+      display: flex;
+    }
+
+    .overlay-card {
+      width: min(520px, 100%);
+      border-radius: 24px;
+      padding: 24px;
+      text-align: center;
+      background: linear-gradient(145deg, #fffefb, #eaf8f6);
+      border: 2px solid rgba(255,122,89,0.16);
+      box-shadow: 0 24px 70px rgba(0,0,0,0.2);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .overlay-card h2 {
+      margin: 8px 0 10px;
+      font-size: 1.5rem;
+      color: var(--coral-dark);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .overlay-card p {
+      margin: 8px 0 0;
+      color: #4f6f75;
+      line-height: 1.5;
+    }
+
+    .coin-row {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    .coin {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: gold;
+      box-shadow: 0 0 0 4px rgba(255,215,0,0.25);
+      animation: float 1.4s ease-in-out infinite alternate;
+    }
+
+    .fish {
+      position: absolute;
+      width: 20px;
+      height: 12px;
+      background: linear-gradient(90deg, #ff9d7a, #4db6dc);
+      border-radius: 999px;
+      animation: swim 2.8s linear infinite;
+      opacity: 0.9;
+    }
+
+    @keyframes bob {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-4px); }
+    }
+
+    @keyframes float {
+      from { transform: translateY(0); }
+      to { transform: translateY(-6px); }
+    }
+
+    @keyframes swim {
+      0% { transform: translateX(-30px) rotate(0deg); }
+      100% { transform: translateX(340px) rotate(4deg); }
+    }
+
+    @media (max-width: 920px) {
+      .layout { grid-template-columns: 1fr; }
+      .shelf { grid-template-columns: 1fr; }
+      .hud { flex-direction: column; align-items: flex-start; gap: 8px; }
+      .bubble { position: relative; top: auto; right: auto; margin-bottom: 10px; max-width: 100%; }
+      .customer { left: 50%; transform: translateX(-50%); }
+    }
+  </style>
+</head>
+<body>
+  <div id="launchOverlay" class="launch-overlay">
+    <div class="launch-card">
+      <h2>Aqua-Fit Shop</h2>
+      <p>Welcome to the aquarium counter. Click below to start helping customers choose the perfect tank.</p>
+      <button class="primary-btn" id="launchBtn" style="padding:12px 16px; border:none; border-radius:999px; background:linear-gradient(90deg, var(--coral), #ffb36a); color:white; font-weight:700; cursor:pointer;">Start Shift</button>
+    </div>
+  </div>
+
+  <div id="fishShopWrapper" class="game-shell" aria-live="polite">
+    <div class="shop">
+      <div class="hud">
+        <h1>Aqua-Fit: The Custom Aquarium Shop</h1>
+        <div class="meta">
+          <div class="badge" id="salaryBadge">Salary: $0</div>
+          <div class="badge" id="strikeBadge">Errors: 0 / 2</div>
+        </div>
+      </div>
+
+      <div class="layout">
+        <div class="left-panel">
+          <div class="customer-card">
+            <div class="customer-label" id="customerLabel">Friendly customer</div>
+            <div class="bubble" id="speechBubble">Customer is browsing...</div>
+            <div class="customer" id="customerCharacter" aria-hidden="true">
+              <div class="person-head">
+                <div class="person-eye left"></div>
+                <div class="person-eye right"></div>
+                <div class="person-mouth"></div>
+              </div>
+              <div class="person-body"></div>
+            </div>
+          </div>
+          <div class="helper">Use the volume formula: Length × Width × Height. Since 1,000 cm³ = 1 Liter = 1,000 mL, choose the tank that matches the customer’s target exactly.</div>
+        </div>
+
+        <div class="right-panel">
+          <div class="shelf" id="tankShelf"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="resultOverlay" class="overlay" role="dialog" aria-modal="true" aria-labelledby="resultTitle">
+    <div class="overlay-card">
+      <h2 id="resultTitle">Shift Complete!</h2>
+      <p id="resultMessage">Salary Bonus Earned!</p>
+      <div class="coin-row" id="coinRow"></div>
+      <div style="margin-top:16px;">
+        <button class="primary-btn" id="playAgainBtn" style="padding:12px 16px; border:none; border-radius:999px; background:linear-gradient(90deg, var(--coral), #ffb36a); color:white; font-weight:700; cursor:pointer;">Play Again</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const orders = [
+      {
+        customer: 'I need a tank that holds exactly 24 Liters.',
+        speech: 'Hi there! I need a tank that holds exactly 24 Liters for my goldfish.',
+        name: 'Mina the fish parent',
+        target: 24,
+        unit: 'L',
+        options: [
+          { label: 'A', dims: '30x20x30', volumeL: 18 },
+          { label: 'B', dims: '40x20x30', volumeL: 24, correct: true },
+          { label: 'C', dims: '50x20x30', volumeL: 30 }
+        ]
+      },
+      {
+        customer: 'I need a small nano-tank that holds exactly 8,000 mL.',
+        speech: 'Hello! I need a tiny nano-tank that holds exactly 8,000 milliliters.',
+        name: 'Theo the student',
+        target: 8000,
+        unit: 'mL',
+        options: [
+          { label: 'A', dims: '20x20x20', volumeL: 8, correct: true },
+          { label: 'B', dims: '20x20x30', volumeL: 12 },
+          { label: 'C', dims: '10x20x20', volumeL: 4 }
+        ]
+      },
+      {
+        customer: 'I need a wide breeding tank that holds exactly 60 Liters.',
+        speech: 'Can you help me pick a wide breeding tank that holds exactly 60 Liters?',
+        name: 'Lina the breeder',
+        target: 60,
+        unit: 'L',
+        options: [
+          { label: 'A', dims: '50x30x40', volumeL: 60, correct: true },
+          { label: 'B', dims: '40x30x40', volumeL: 48 },
+          { label: 'C', dims: '60x40x40', volumeL: 96 }
+        ]
+      },
+      {
+        customer: 'I want a custom tall tank holding exactly 45,000 mL.',
+        speech: 'I want a tall custom tank that holds exactly 45,000 milliliters!',
+        name: 'Ari the collector',
+        target: 45000,
+        unit: 'mL',
+        options: [
+          { label: 'A', dims: '30x30x40', volumeL: 36 },
+          { label: 'B', dims: '30x30x50', volumeL: 45, correct: true },
+          { label: 'C', dims: '40x30x50', volumeL: 60 }
+        ]
+      },
+      {
+        customer: 'Bring me a tank with a capacity of exactly 12 Liters.',
+        speech: 'Please find me a tank with a capacity of exactly 12 Liters for my desk.',
+        name: 'Niko the office helper',
+        target: 12,
+        unit: 'L',
+        options: [
+          { label: 'A', dims: '30x20x20', volumeL: 12, correct: true },
+          { label: 'B', dims: '25x20x20', volumeL: 10 },
+          { label: 'C', dims: '40x20x20', volumeL: 16 }
+        ]
+      }
+    ];
+
+    let currentIndex = 0;
+    let salary = 0;
+    let strikes = 0;
+    let locked = false;
+
+    const wrapper = document.getElementById('fishShopWrapper');
+    const launchOverlay = document.getElementById('launchOverlay');
+    const launchBtn = document.getElementById('launchBtn');
+    const overlay = document.getElementById('resultOverlay');
+    const resultTitle = document.getElementById('resultTitle');
+    const resultMessage = document.getElementById('resultMessage');
+    const coinRow = document.getElementById('coinRow');
+    const speechBubble = document.getElementById('speechBubble');
+    const customerLabel = document.getElementById('customerLabel');
+    const customerCharacter = document.getElementById('customerCharacter');
+    const salaryBadge = document.getElementById('salaryBadge');
+    const strikeBadge = document.getElementById('strikeBadge');
+    const tankShelf = document.getElementById('tankShelf');
+    const playAgainBtn = document.getElementById('playAgainBtn');
+
+    let speechInterval = null;
+    let speechTimeout = null;
+    let audioContext = null;
+    let talkOscillator = null;
+    let talkOscillator2 = null;
+    let talkGain = null;
+    let talkFilter = null;
+    let talkModulator = null;
+    let talkModGain = null;
+    let talkModInterval = null;
+    let talkSoundTimeout = null;
+
+    function ensureAudioContext() {
+      if (!audioContext) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) {
+          audioContext = new AudioCtx();
+        }
+      }
+      if (audioContext && audioContext.state === 'suspended') {
+        audioContext.resume();
+      }
+      return audioContext;
+    }
+
+    function stopTalkingSound() {
+      if (talkModInterval) {
+        clearInterval(talkModInterval);
+        talkModInterval = null;
+      }
+      if (talkSoundTimeout) {
+        clearTimeout(talkSoundTimeout);
+        talkSoundTimeout = null;
+      }
+      if (talkOscillator) {
+        try { talkOscillator.stop(); } catch (e) {}
+        talkOscillator = null;
+      }
+      if (talkOscillator2) {
+        try { talkOscillator2.stop(); } catch (e) {}
+        talkOscillator2 = null;
+      }
+      if (talkModulator) {
+        try { talkModulator.stop(); } catch (e) {}
+        talkModulator = null;
+      }
+      if (talkModGain) {
+        try { talkModGain.disconnect(); } catch (e) {}
+        talkModGain = null;
+      }
+      if (talkFilter) {
+        try { talkFilter.disconnect(); } catch (e) {}
+        talkFilter = null;
+      }
+      if (talkGain) {
+        try { talkGain.disconnect(); } catch (e) {}
+        talkGain = null;
+      }
+    }
+
+    function playTalkingSound(durationMs) {
+      const ctx = ensureAudioContext();
+      if (!ctx) return;
+      stopTalkingSound();
+
+      const gainNode = ctx.createGain();
+      gainNode.gain.setValueAtTime(0.0001, ctx.currentTime);
+      gainNode.gain.exponentialRampToValueAtTime(0.012, ctx.currentTime + 0.04);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + durationMs / 1000);
+      gainNode.connect(ctx.destination);
+
+      const filterNode = ctx.createBiquadFilter();
+      filterNode.type = 'bandpass';
+      filterNode.frequency.setValueAtTime(650, ctx.currentTime);
+      filterNode.Q.setValueAtTime(0.9, ctx.currentTime);
+      filterNode.connect(gainNode);
+
+      const oscillator = ctx.createOscillator();
+      oscillator.type = 'sine';
+      oscillator.frequency.setValueAtTime(190, ctx.currentTime);
+      oscillator.connect(filterNode);
+      oscillator.start();
+
+      const shimmerOscillator = ctx.createOscillator();
+      shimmerOscillator.type = 'triangle';
+      shimmerOscillator.frequency.setValueAtTime(320, ctx.currentTime);
+      const shimmerGain = ctx.createGain();
+      shimmerGain.gain.setValueAtTime(0.0025, ctx.currentTime);
+      shimmerOscillator.connect(shimmerGain);
+      shimmerGain.connect(gainNode);
+      shimmerOscillator.start();
+
+      const modulator = ctx.createOscillator();
+      modulator.type = 'sine';
+      modulator.frequency.setValueAtTime(4.8, ctx.currentTime);
+      const modGain = ctx.createGain();
+      modGain.gain.setValueAtTime(28, ctx.currentTime);
+      modulator.connect(modGain);
+      modGain.connect(oscillator.frequency);
+      modulator.start();
+
+      talkOscillator = oscillator;
+      talkOscillator2 = shimmerOscillator;
+      talkGain = gainNode;
+      talkFilter = filterNode;
+      talkModulator = modulator;
+      talkModGain = modGain;
+
+      talkModInterval = setInterval(() => {
+        if (!talkOscillator || !talkFilter) return;
+        const pitch = 170 + Math.random() * 45;
+        const formant = 520 + Math.random() * 240;
+        talkOscillator.frequency.setTargetAtTime(pitch, ctx.currentTime, 0.04);
+        talkFilter.frequency.setTargetAtTime(formant, ctx.currentTime, 0.04);
+      }, 70);
+
+      talkSoundTimeout = setTimeout(() => {
+        stopTalkingSound();
+      }, durationMs);
+    }
+
+    function stopSpeech() {
+      if (speechInterval) {
+        clearInterval(speechInterval);
+        speechInterval = null;
+      }
+      if (speechTimeout) {
+        clearTimeout(speechTimeout);
+        speechTimeout = null;
+      }
+      stopTalkingSound();
+      customerCharacter.classList.remove('talking', 'walking');
+    }
+
+    function typeSpeech(text) {
+      stopSpeech();
+      speechBubble.textContent = '';
+      customerCharacter.classList.add('talking', 'walking');
+      const durationMs = Math.max(600, text.length * 36);
+      playTalkingSound(durationMs);
+      let index = 0;
+      speechInterval = setInterval(() => {
+        speechBubble.textContent += text[index];
+        index += 1;
+        if (index >= text.length) {
+          clearInterval(speechInterval);
+          speechInterval = null;
+          speechTimeout = setTimeout(() => customerCharacter.classList.remove('talking', 'walking'), 300);
+          stopTalkingSound();
+        }
+      }, 22);
+    }
+
+    function showFishShopGame() {
+      ensureAudioContext();
+      stopSpeech();
+      wrapper.classList.add('visible');
+      launchOverlay.classList.add('hidden');
+      overlay.classList.remove('visible');
+      currentIndex = 0;
+      salary = 0;
+      strikes = 0;
+      locked = false;
+      salaryBadge.textContent = 'Salary: $0';
+      strikeBadge.textContent = 'Errors: 0 / 2';
+      customerLabel.textContent = 'Friendly customer';
+      speechBubble.textContent = 'Customer is browsing...';
+      tankShelf.innerHTML = '';
+      setTimeout(() => {
+        renderOrder();
+        const firstInput = document.querySelector('.tank-card');
+        if (firstInput) firstInput.focus();
+      }, 120);
+    }
+
+    window.showFishShopGame = showFishShopGame;
+
+    function renderOrder() {
+      if (currentIndex >= orders.length) {
+        endGame(true);
+        return;
+      }
+
+      const order = orders[currentIndex];
+      customerLabel.textContent = order.name;
+      typeSpeech(order.speech);
+      tankShelf.innerHTML = '';
+      locked = false;
+
+      order.options.forEach((option) => {
+        const card = document.createElement('button');
+        card.className = 'tank-card';
+        card.type = 'button';
+        card.dataset.label = option.label;
+        card.innerHTML = `
+          <div class="tank-visual" aria-hidden="true">
+            <div class="tank-glass">
+              <div class="tank-water" style="height:${Math.min(82, 28 + option.volumeL * 1.7)}%"></div>
+            </div>
+            <div class="tank-base"></div>
+          </div>
+          <div class="tank-caption">Tank ${option.label}</div>
+          <div class="tank-dimensions">${option.dims} cm</div>
+        `;
+        card.addEventListener('click', () => handleChoice(option));
+        tankShelf.appendChild(card);
+      });
+
+      salaryBadge.textContent = `Salary: $${salary}`;
+      strikeBadge.textContent = `Errors: ${strikes} / 2`;
+    }
+
+    function handleChoice(option) {
+      if (locked) return;
+      locked = true;
+
+      const card = Array.from(tankShelf.children).find((child) => child.dataset.label === option.label);
+      if (!card) return;
+
+      if (option.correct) {
+        salary += 20;
+        card.classList.add('correct');
+        typeSpeech(`Perfect! ${option.dims} cm fits the order.`);
+      } else {
+        strikes += 1;
+        card.classList.add('incorrect');
+        typeSpeech(`Oops! That tank is too small or too large for my request.`);
+      }
+
+      salaryBadge.textContent = `Salary: $${salary}`;
+      strikeBadge.textContent = `Errors: ${strikes} / 2`;
+      setTimeout(() => {
+        if (strikes >= 2) {
+          endGame(false);
+        } else {
+          currentIndex += 1;
+          renderOrder();
+        }
+      }, 900);
+    }
+
+    function endGame(won) {
+      if (won) {
+        resultTitle.textContent = 'Shift Complete!';
+        resultMessage.textContent = 'Salary Bonus Earned!';
+      } else {
+        resultTitle.textContent = 'Shift Failed!';
+        resultMessage.textContent = 'The fish tanks overflowed or were too cramped. Try again!';
+      }
+
+      coinRow.innerHTML = '';
+      for (let i = 0; i < (won ? 8 : 3); i += 1) {
+        const coin = document.createElement('div');
+        coin.className = 'coin';
+        coinRow.appendChild(coin);
+      }
+
+      if (won) {
+        for (let i = 0; i < 4; i += 1) {
+          const fish = document.createElement('div');
+          fish.className = 'fish';
+          fish.style.left = `${10 + i * 20}px`;
+          fish.style.top = `${28 + i * 10}px`;
+          fish.style.animationDelay = `${i * 0.2}s`;
+          overlay.appendChild(fish);
+        }
+      }
+
+      overlay.classList.add('visible');
+    }
+
+    launchBtn.addEventListener('click', showFishShopGame);
+
+    playAgainBtn.addEventListener('click', () => {
+      stopSpeech();
+      overlay.classList.remove('visible');
+      document.querySelectorAll('.fish').forEach((fish) => fish.remove());
+      currentIndex = 0;
+      salary = 0;
+      strikes = 0;
+      locked = false;
+      wrapper.classList.remove('visible');
+      launchOverlay.classList.remove('hidden');
+      salaryBadge.textContent = 'Salary: $0';
+      strikeBadge.textContent = 'Errors: 0 / 2';
+      customerLabel.textContent = 'Friendly customer';
+      speechBubble.textContent = 'Customer is browsing...';
+      tankShelf.innerHTML = '';
+    });
+  </script>
+</body>
+</html>
