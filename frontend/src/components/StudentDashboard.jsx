@@ -24,7 +24,6 @@ import {
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
 import EmotionDetector from "@/components/EmotionDetector";
-import { RealtimeEmotionSection } from "@/components/emotion/RealtimeEmotionSection";
 function StudentDashboard() {
   const { user } = useAuth();
   const [emotion, setEmotion] = useState("neutral");
@@ -32,7 +31,6 @@ function StudentDashboard() {
   const [currentLiveClass, setCurrentLiveClass] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [latestEngagement, setLatestEngagement] = useState(null);
 
   const mapStudentStateToUiKey = (state) => {
     const s = (state || "").toLowerCase();
@@ -314,23 +312,23 @@ function StudentDashboard() {
       {
     /* 1. Top Header - Simple Summary */
   }
-      <div className="card rounded-3xl p-8">
+      <div className="glass rounded-2xl p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex-1">
-            <h1 className="text-display-md text-foreground mb-2">
-              Welcome back, <span className="text-accent">{user?.name || "Student"}</span>! 👋
+            <h1 className="font-display text-3xl font-bold mb-2">
+              Welcome back, {user?.name || "Student"}! 👋
             </h1>
-            <p className="text-body-md text-text-secondary mb-4">Here's your learning overview for today</p>
+            <p className="text-muted-foreground mb-4">Here's your learning overview for today</p>
             
             {
     /* Progress Bar */
   }
             <div className="max-w-md">
-              <div className="flex items-center justify-between text-body-sm mb-2">
-                <span className="text-text-muted">Overall Progress</span>
-                <span className="font-bold text-accent">{overallProgress}%</span>
+              <div className="flex items-center justify-between text-sm mb-2">
+                <span className="text-muted-foreground">Overall Progress</span>
+                <span className="font-semibold">{overallProgress}%</span>
               </div>
-              <div className="h-3 rounded-full bg-bg-secondary overflow-hidden">
+              <div className="h-3 rounded-full bg-secondary overflow-hidden">
                 <div
     className="h-full rounded-full transition-all duration-500"
     style={{
@@ -339,8 +337,8 @@ function StudentDashboard() {
     }}
   />
               </div>
-              <p className="text-label-md text-text-muted mt-2">
-                {overallProgress >= 70 ? "✨ Doing Well!" : "💪 Keep Practicing!"}
+              <p className="text-xs text-muted-foreground mt-2">
+                {overallProgress >= 70 ? "\u{1F389} Doing Well!" : "\u{1F4AA} Keep Practicing!"}
               </p>
             </div>
           </div>
@@ -350,29 +348,24 @@ function StudentDashboard() {
   }
           <div className="flex items-center gap-4">
             <div
-    className="text-center px-8 py-6 rounded-2xl"
-    style={{ background: `${currentEmotion.color}10`, border: `2px solid ${currentEmotion.color}30` }}
+    className="text-center px-6 py-4 rounded-xl"
+    style={{ background: `${currentEmotion.color}10` }}
   >
-              <div className="text-6xl mb-2">{currentEmotion.emoji}</div>
-              <p className="text-label-md font-bold" style={{ color: currentEmotion.color }}>
-                {currentEmotion.label.toUpperCase()}
+              <div className="text-5xl mb-2">{currentEmotion.emoji}</div>
+              <p className="text-sm font-medium" style={{ color: currentEmotion.color }}>
+                {currentEmotion.label}
               </p>
             </div>
           </div>
         </div>
       </div>
 
-      {
-    /* 2. Live Classes and Status & Quick Stats - Side by side */
-  }
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {
-    /* Live Classes Section */
-  }
-        <div className="card rounded-3xl">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-heading-lg text-foreground flex items-center gap-3">
-              <Video className="h-5 w-5 text-accent" />
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2 glass rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-xl font-bold flex items-center gap-2">
+              <Video className="h-5 w-5 text-primary" />
               Live Classes
             </h2>
           </div>
@@ -431,55 +424,48 @@ function StudentDashboard() {
         </div>
 
         {
-    /* Your Status & Quick Stats Section */
+    /* 3. Quick Stats & Emotion */
   }
-        <div className="glass rounded-2xl p-6">
-          <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
-            <Target className="h-5 w-5 text-primary" />
-            Your Status & Quick Stats
-          </h2>
-          
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {
+        <div className="space-y-6">
+          {
     /* Simple Emotion Status */
   }
-            <div>
-              <h3 className="text-sm font-semibold mb-4">Your Status</h3>
-              <div className="text-center mb-4">
-                <div className="text-6xl mb-3">{currentEmotion.emoji}</div>
-                <p className="font-semibold text-lg" style={{ color: currentEmotion.color }}>
-                  {currentEmotion.label}
-                </p>
-                <p className="text-xs text-muted-foreground mt-2">
-                  {emotion === "happy" && "You're doing great! Keep it up!"}
-                  {emotion === "neutral" && "Steady focus detected. Good pace!"}
-                  {emotion === "confused" && "Take your time. We're here to help."}
-                  {emotion === "angry" && "It's okay to feel stuck. Try a short break or ask for help."}
-                </p>
-              </div>
+          <div className="glass rounded-2xl p-6">
+            <h3 className="text-sm font-semibold mb-4">Your Status</h3>
+            <div className="text-center mb-4">
+              <div className="text-6xl mb-3">{currentEmotion.emoji}</div>
+              <p className="font-semibold text-lg" style={{ color: currentEmotion.color }}>
+                {currentEmotion.label}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                {emotion === "happy" && "You're doing great! Keep it up!"}
+                {emotion === "neutral" && "Steady focus detected. Good pace!"}
+                {emotion === "confused" && "Take your time. We're here to help."}
+                {emotion === "angry" && "It's okay to feel stuck. Try a short break or ask for help."}
+              </p>
             </div>
+          </div>
 
-            {
+          {
     /* Quick Progress */
   }
-            <div>
-              <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-                <Target className="h-4 w-4" />
-                Quick Stats
-              </h3>
-              <div className="space-y-3">
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Quizzes Completed</span>
-                  <span className="font-semibold">12</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Avg. Score</span>
-                  <span className="font-semibold">78%</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-sm text-muted-foreground">Study Streak</span>
-                  <span className="font-semibold">5 days 🔥</span>
-                </div>
+          <div className="glass rounded-2xl p-6">
+            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
+              <Target className="h-4 w-4" />
+              Quick Stats
+            </h3>
+            <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Quizzes Completed</span>
+                <span className="font-semibold">12</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Avg. Score</span>
+                <span className="font-semibold">78%</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Study Streak</span>
+                <span className="font-semibold">5 days 🔥</span>
               </div>
             </div>
           </div>
@@ -552,18 +538,9 @@ function StudentDashboard() {
               <h3 className="font-semibold mb-1">{rec.title}</h3>
               <p className="text-sm text-muted-foreground mb-4">{rec.description}</p>
               
-              {rec.to ? (
-                <Link
-                  to={rec.to}
-                  className="w-full inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors"
-                >
-                  {rec.action}
-                </Link>
-              ) : (
-                <button className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors">
-                  {rec.action}
-                </button>
-              )}
+              <button className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors">
+                {rec.action}
+              </button>
             </div>)}
         </div>
       </div>

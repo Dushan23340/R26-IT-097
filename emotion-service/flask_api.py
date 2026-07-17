@@ -8,6 +8,10 @@ import threading
 import time
 import traceback
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import cv2
 import numpy as np
@@ -38,7 +42,7 @@ from emotion_service.ml.emotion_tracker import EmotionTracker
 
 app = Flask(__name__)
 
-CORS(app, resources={r"/*": {"origins": "*"}})
+CORS(app, resources={r"/*": {"origins": "*"}})  # type: ignore
 
 app.logger.setLevel(logging.INFO)
 
@@ -74,7 +78,13 @@ def _decode_base64_image(data_url_or_b64: str) -> np.ndarray | None:
 
     npimg = np.frombuffer(image_bytes, np.uint8)
 
-    frame = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+    if npimg.size == 0:
+        return None
+
+    try:
+        frame = cv2.imdecode(npimg, cv2.IMREAD_COLOR)
+    except Exception:
+        return None
 
     return frame
 
@@ -219,7 +229,7 @@ def predict():
         # TRACK EMOTION DATA
         # =================================================
 
-        tracker.update(student_id, student_state)
+        smoothed_state = tracker.update(student_id, student_state)
 
         analytics = tracker.get_metrics(student_id)
 
@@ -230,13 +240,20 @@ def predict():
         return jsonify({
 
             # Current emotion
-            "emotion": student_state,
+            "emotion": smoothed_state,
             "rawEmotion": raw_emotion,
 
             # Analytics
             "emotionDuration": analytics["emotionDuration"],
+            "currentContinuousDuration": analytics["currentContinuousDuration"],
             "transitionRate": analytics["transitionRate"],
             "stabilityScore": analytics["stabilityScore"],
+
+            # Engagement Indicators
+            "engagementIndicators": analytics["engagementIndicators"],
+
+            # Timeline
+            "timeline": analytics["timeline"],
 
             # Optional debug data
             "emotionCounts": analytics["emotionCounts"],

@@ -1,4 +1,5 @@
 import { useState } from "react"
+import { toast } from "sonner"
 import EmotionDetector from "@/components/EmotionDetector"
 import { EmotionStatusPanel } from "@/components/emotion/EmotionStatusPanel"
 import { EngagementAlerts } from "@/components/emotion/EngagementAlerts"
@@ -26,6 +27,7 @@ function calculateEngagementScore({ emotion, stabilityScore, transitionRate }) {
 function buildAlertMessages({ metrics, emotion, history }) {
   const alerts = []
   const now = Date.now()
+  const randomSuffix = () => Math.random().toString(36).substring(2, 9)
   const dominant = (metrics.dominantEmotion || "").toLowerCase()
   const frustratedCount = Number(metrics.emotionCounts?.Frustrated || 0)
   const confusedDuration = Number(metrics.emotionDuration?.Confused || 0)
@@ -37,25 +39,25 @@ function buildAlertMessages({ metrics, emotion, history }) {
     .filter((item) => (item.emotion || "").toLowerCase().includes("frustrated")).length
 
   if (frustratedCount >= 3 || recentFrustrated >= 3 || dominant.includes("frustrated")) {
-    alerts.push({ id: `${now}-frustrated`, message: "Repeated frustration detected. Consider a short hint or easier task." })
+    alerts.push({ id: `${now}-frustrated-${randomSuffix()}`, message: "Repeated frustration detected. Consider a short hint or easier task." })
   }
 
   if (confusedDuration >= 30 || latestEmotion.includes("confused")) {
-    alerts.push({ id: `${now}-confused`, message: "Confusion is high. Prompt a concept recap or guided example." })
+    alerts.push({ id: `${now}-confused-${randomSuffix()}`, message: "Confusion is high. Prompt a concept recap or guided example." })
   }
 
   if (stability <= 0.35) {
-    alerts.push({ id: `${now}-stability`, message: "Stability dropped. Student focus may be fluctuating quickly." })
+    alerts.push({ id: `${now}-stability-${randomSuffix()}`, message: "Stability dropped. Student focus may be fluctuating quickly." })
   }
 
   if (boredDuration >= 45 || latestEmotion.includes("bored")) {
-    alerts.push({ id: `${now}-bored`, message: "Boredom is lasting. Suggest interactive activity or challenge question." })
+    alerts.push({ id: `${now}-bored-${randomSuffix()}`, message: "Boredom is lasting. Suggest interactive activity or challenge question." })
   }
 
   return alerts
 }
 
-function RealtimeEmotionSection({ studentId, onEngagementUpdate }) {
+function RealtimeEmotionSection({ studentId, onEngagementUpdate, hideAlerts = false }) {
   const [snapshot, setSnapshot] = useState({
     emotion: null,
     rawEmotion: null,
@@ -87,29 +89,40 @@ function RealtimeEmotionSection({ studentId, onEngagementUpdate }) {
 
     setSnapshot(nextSnapshot)
 
+    const nextHistoryItem = {
+      ts: Date.now(),
+      emotion: payload.emotion,
+      stabilityScore: payload.metrics?.stabilityScore || 0,
+      transitionRate: payload.metrics?.transitionRate || 0,
+    }
+
     setEmotionHistory((prev) => {
-      const next = [
-        ...prev,
-        {
-          ts: Date.now(),
-          emotion: payload.emotion,
-          stabilityScore: payload.metrics?.stabilityScore || 0,
-          transitionRate: payload.metrics?.transitionRate || 0,
-        },
-      ].slice(-24)
-
-      const newAlerts = buildAlertMessages({
-        metrics: payload.metrics || {},
-        emotion: payload.emotion,
-        history: next,
-      })
-
-      if (newAlerts.length) {
-        setAlerts((old) => [...newAlerts, ...old].slice(0, 10))
-      }
-
-      return next
+      return [...prev, nextHistoryItem].slice(-24)
     })
+
+    const nextHistory = [...emotionHistory, nextHistoryItem].slice(-24)
+    const newAlerts = buildAlertMessages({
+      metrics: payload.metrics || {},
+      emotion: payload.emotion,
+      history: nextHistory,
+    })
+
+    if (newAlerts.length) {
+      if (!hideAlerts) {
+        newAlerts.forEach((alert) => {
+          toast.warning(alert.message, { duration: 3500 })
+        })
+      }
+      setAlerts((old) => {
+        const merged = [...newAlerts, ...old]
+        const seenIds = new Set()
+        return merged.filter((item) => {
+          if (seenIds.has(item.id)) return false
+          seenIds.add(item.id)
+          return true
+        }).slice(0, 10)
+      })
+    }
 
     const engagementScore = calculateEngagementScore({
       emotion: nextSnapshot.emotion,
@@ -161,7 +174,7 @@ function RealtimeEmotionSection({ studentId, onEngagementUpdate }) {
         emotionCounts={snapshot.metrics.emotionCounts}
       />
 
-      <EngagementAlerts alerts={alerts} />
+      {!hideAlerts && <EngagementAlerts alerts={alerts} />}
     </section>
   )
 }

@@ -1,0 +1,7 @@
+{
+  "venvPath": "emotion-service",
+  "venv": ".venv",
+  "extraPaths": [
+    "emotion-service/src"
+  ]
+}

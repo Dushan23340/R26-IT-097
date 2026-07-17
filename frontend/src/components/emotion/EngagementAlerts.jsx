@@ -1,16 +1,9 @@
 import { AlertTriangle } from "lucide-react"
-import { toast } from "sonner"
-import { useEffect } from "react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 
 function EngagementAlerts({ alerts }) {
   const latest = alerts[0]
-
-  useEffect(() => {
-    if (!latest) return
-    toast.warning(latest.message, { duration: 3500 })
-  }, [latest])
 
   return (
     <div className="space-y-3">
