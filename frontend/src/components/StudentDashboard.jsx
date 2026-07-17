@@ -23,7 +23,6 @@ import {
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
 import EmotionDetector from "@/components/EmotionDetector";
-import { RealtimeEmotionSection } from "@/components/emotion/RealtimeEmotionSection";
 function StudentDashboard() {
   const { user } = useAuth();
   const [emotion, setEmotion] = useState("neutral");
@@ -31,7 +30,6 @@ function StudentDashboard() {
   const [currentLiveClass, setCurrentLiveClass] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
-  const [latestEngagement, setLatestEngagement] = useState(null);
 
   const mapStudentStateToUiKey = (state) => {
     const s = (state || "").toLowerCase();
@@ -352,45 +350,6 @@ function StudentDashboard() {
         </div>
       </div>
 
-      {
-    /* 2. Live Class Section */
-  }
-      <RealtimeEmotionSection
-        studentId={user?.id || user?.email || "student_dashboard"}
-        onEngagementUpdate={(payload) => {
-          setLatestEngagement(payload);
-          const state = (payload?.dominantEmotion || "").toLowerCase();
-          if (state.includes("engaged")) setEmotion("happy");
-          else if (state.includes("bored")) setEmotion("bored");
-          else if (state.includes("confused")) setEmotion("confused");
-          else if (state.includes("frustrated")) setEmotion("frustrated");
-        }}
-      />
-
-      <div className="glass rounded-2xl p-4">
-        <h3 className="text-sm font-semibold mb-2">Research Integration Feed</h3>
-        <p className="text-xs text-muted-foreground mb-3">
-          Latest engagement payload exposed for adaptive content, teacher dashboard, and analytics module.
-        </p>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm">
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Engagement Score</p>
-            <p className="font-semibold">{latestEngagement?.engagementScore ?? "--"}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Dominant Emotion</p>
-            <p className="font-semibold">{latestEngagement?.dominantEmotion ?? "--"}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Stability</p>
-            <p className="font-semibold">{latestEngagement?.stabilityScore?.toFixed?.(2) ?? "--"}</p>
-          </div>
-          <div className="rounded-lg border border-border/60 px-3 py-2">
-            <p className="text-xs text-muted-foreground">Transition Rate</p>
-            <p className="font-semibold">{latestEngagement?.transitionRate?.toFixed?.(3) ?? "--"}</p>
-          </div>
-        </div>
-      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 glass rounded-2xl p-6">
