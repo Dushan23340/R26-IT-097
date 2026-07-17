@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Link } from "@tanstack/react-router";
 import {
   Play,
   Calendar,
@@ -114,6 +115,15 @@ function StudentDashboard() {
       description: "Improve your problem-solving skills",
       action: "Read Article",
       duration: "8 min"
+    },
+    {
+      id: "4",
+      type: "quiz",
+      title: "Play: Track & Field Analytics",
+      description: "Solve four circle-related lane stagger questions in an Olympic-style game.",
+      action: "Launch Game",
+      duration: "4 min",
+      to: "/track-field-analytics"
     }
   ];
   const progressData = [
