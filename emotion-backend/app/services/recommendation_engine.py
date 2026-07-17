@@ -46,8 +46,15 @@ class RecommendationEngine:
         if not available_games:
             available_games = games
 
-        # Step 4: Select primary recommendation
-        primary = random.choice(available_games)
+        # Prefer the Fraction Room recommendation for bored math learners.
+        if emotion == "BORED" and subject.upper() == "MATHEMATICS":
+            preferred = [g for g in available_games if g.game_id == "gm_math_bored_03"]
+            if preferred:
+                primary = preferred[0]
+            else:
+                primary = random.choice(available_games)
+        else:
+            primary = random.choice(available_games)
 
         # Step 5: Build alternatives from other emotions in same subject
         alternatives = self._build_alternatives(subject, emotion)

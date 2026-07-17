@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useRouter } from "@tanstack/react-router";
 import {
   Monitor,
   Users,
@@ -25,7 +26,10 @@ import {
   Send,
   Trophy,
   Timer,
-  PartyPopper
+  PartyPopper,
+  Activity,
+  TrendingUp,
+  Sparkles
 } from "lucide-react";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
@@ -34,6 +38,7 @@ import { emotionApi } from "@/lib/emotionApi";
 const SUBJECTS = ["General", "Mathematics", "Science", "English", "History", "Programming"];
 
 function TeacherDashboard() {
+  const router = useRouter();
   const { user } = useAuth();
   const [isLive, setIsLive] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
@@ -49,6 +54,10 @@ function TeacherDashboard() {
   const [variationWindow, setVariationWindow] = useState(null);
   const [loading, setLoading] = useState({});
   const [error, setError] = useState(null);
+
+  // Pattern & trend data
+  const [pattern, setPattern] = useState(null);
+  const [trend, setTrend] = useState(null);
 
   // Game session state
   const [activeGame, setActiveGame] = useState(null);
@@ -72,7 +81,21 @@ function TeacherDashboard() {
     fetchEffectiveness();
     fetchPending();
     fetchVariationWindow();
+    fetchPattern();
+    fetchTrend();
   }, []);
+
+  // Fetch pattern & trend when live
+  useEffect(() => {
+    if (!isLive) return;
+    fetchPattern();
+    fetchTrend();
+    const interval = setInterval(() => {
+      fetchPattern();
+      fetchTrend();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [isLive]);
 
   async function fetchAnalytics() {
     try {
@@ -111,16 +134,97 @@ function TeacherDashboard() {
     }
   }
 
+  async function fetchPattern() {
+    try {
+      const data = await emotionApi.getPattern();
+      setPattern(data);
+    } catch (e) {
+      console.error("Failed to fetch pattern", e);
+    }
+  }
+
+  async function fetchTrend() {
+    try {
+      const data = await emotionApi.getTrend(10);
+      setTrend(data);
+    } catch (e) {
+      console.error("Failed to fetch trend", e);
+    }
+  }
+
   async function handleGenerateRecommendation() {
     setLoading((l) => ({ ...l, rec: true }));
+    setError(null);
+
+    const fallbackRecommendation = {
+      timestamp: new Date().toISOString(),
+      dominant_emotion: analytics?.dominant_emotion || "BORED",
+      trigger_reason: "Using the local Fraction Room recommendation.",
+      recommendation: {
+        game_id: "gm_math_bored_03",
+        title: "Fraction Room Rescue",
+        description: "A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles.",
+        subject: "Mathematics",
+        game_type: "escape room game",
+        difficulty: "Medium",
+        target_emotion: analytics?.dominant_emotion || "BORED",
+        estimated_duration_minutes: 5,
+        engagement_score: 9.6,
+      },
+      alternatives: [
+        {
+          game_id: "gm_math_circle_track_04",
+          title: "Track & Field Analytics",
+          description: "Practice circle circumference and lane staggers in a track field challenge.",
+          subject: "Mathematics",
+          game_type: "analytics game",
+          difficulty: "Easy",
+          estimated_duration_minutes: 4,
+          engagement_score: 9.4,
+        },
+      ],
+      intervention_id: "local-fallback",
+    };
+
     try {
+      if (!analytics) {
+        await fetchAnalytics();
+      }
       const dominant = analytics?.dominant_emotion || "BORED";
+      console.log("Generating recommendation for emotion:", dominant, "subject:", selectedSubject);
       const data = await emotionApi.generateRecommendation(dominant, selectedSubject);
-      setRecommendation(data);
+      console.log("Recommendation data:", data);
+
+      const normalizedRecommendation = data?.recommendation
+        ? data
+        : {
+            ...fallbackRecommendation,
+            trigger_reason: data?.trigger_reason || fallbackRecommendation.trigger_reason,
+            recommendation: {
+              ...fallbackRecommendation.recommendation,
+              game_id: data?.game_id || data?.recommendation?.game_id || fallbackRecommendation.recommendation.game_id,
+              title: data?.game_title || data?.recommendation?.title || fallbackRecommendation.recommendation.title,
+              description:
+                data?.description || data?.recommendation?.description || fallbackRecommendation.recommendation.description,
+              subject: data?.subject || data?.recommendation?.subject || fallbackRecommendation.recommendation.subject,
+              game_type: data?.game_type || data?.recommendation?.game_type || fallbackRecommendation.recommendation.game_type,
+              difficulty: data?.difficulty || data?.recommendation?.difficulty || fallbackRecommendation.recommendation.difficulty,
+              target_emotion:
+                data?.target_emotion || data?.recommendation?.target_emotion || fallbackRecommendation.recommendation.target_emotion,
+              estimated_duration_minutes:
+                data?.estimated_duration_minutes || data?.recommendation?.estimated_duration_minutes || fallbackRecommendation.recommendation.estimated_duration_minutes,
+              engagement_score:
+                data?.engagement_score || data?.recommendation?.engagement_score || fallbackRecommendation.recommendation.engagement_score,
+            },
+          };
+
+      setRecommendation(normalizedRecommendation);
       await fetchVariationWindow();
       await fetchPending();
     } catch (e) {
-      setError(e.message);
+      console.error("Recommendation error:", e);
+      setError("Unable to connect to recommendation backend. Showing local Fraction Room recommendation.");
+      setRecommendation(fallbackRecommendation);
     } finally {
       setLoading((l) => ({ ...l, rec: false }));
     }
@@ -146,18 +250,23 @@ function TeacherDashboard() {
     }
   }
 
+  const recommendedGame = recommendation?.recommendation || recommendation;
+
+  const GAME_ROUTE_MAP = {
+    gm_math_bored_03: "/fraction-room",
+    gm_math_circle_track_04: "/track-field-analytics",
+  };
+
+  function handleOpenGame(gameId) {
+    if (!gameId) return;
+    const gameRoute = GAME_ROUTE_MAP[gameId] || "/fraction-room";
+    router.navigate({ to: gameRoute });
+  }
+
   function handleLaunchGame() {
     if (!recommendation) return;
-    const duration = recommendation.recommendation?.estimated_duration_minutes || 5;
-    setActiveGame(recommendation);
-    setGameTimer(duration * 60); // seconds
-    setGameStatus("running");
-    setStudentMessage({
-      type: "start",
-      title: `Game Started: ${recommendation.recommendation.title}`,
-      body: "Good luck! Do your best!",
-    });
-    setTimeout(() => setStudentMessage(null), 5000);
+
+    handleOpenGame(recommendedGame?.game_id);
   }
 
   function handleCompleteGame() {
@@ -406,6 +515,23 @@ function TeacherDashboard() {
         </div>
       )}
 
+      {/* Pattern Detection Alert */}
+      {pattern && pattern.pattern_detected && (
+        <div className="glass rounded-2xl p-4 border border-amber/30 bg-amber/5">
+          <div className="flex items-center gap-3">
+            <Sparkles className="h-5 w-5 text-amber animate-pulse" />
+            <div className="flex-1">
+              <p className="text-sm font-semibold text-amber">
+                Persistent Pattern Detected: {pattern.detected_emotion}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                This emotion has persisted above threshold for 2 consecutive aggregation cycles.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 2. Real-Time Emotion Summary */}
       <div className="glass rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
@@ -454,6 +580,93 @@ function TeacherDashboard() {
           )}
         </div>
       </div>
+
+      {/* 2b. Emotion Trend Chart */}
+      {trend && trend.snapshots && trend.snapshots.length > 0 && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="font-display text-xl font-bold flex items-center gap-2">
+              <TrendingUp className="h-5 w-5 text-primary" />
+              Emotion Trend (Last {trend.count} Snapshots)
+            </h2>
+          </div>
+          <div className="space-y-3">
+            {trend.snapshots.map((snap, idx) => {
+              const dist = snap.distribution || {};
+              const total = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
+              return (
+                <div key={idx} className="flex items-center gap-3">
+                  <span className="text-xs text-muted-foreground w-16 flex-shrink-0">
+                    {new Date(snap.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                  </span>
+                  <div className="flex-1 h-6 rounded-full bg-secondary overflow-hidden flex">
+                    {Object.entries(dist).map(([emotion, pct]) => {
+                      const key = emotion.toLowerCase();
+                      const e = EMOTIONS[key] || { color: "#888" };
+                      return (
+                        <div
+                          key={emotion}
+                          className="h-full transition-all"
+                          style={{
+                            width: `${(pct / total) * 100}%`,
+                            background: e.color,
+                          }}
+                          title={`${emotion}: ${pct}%`}
+                        />
+                      );
+                    })}
+                  </div>
+                  <span className="text-xs font-medium w-20 text-right">
+                    {snap.dominant_emotion}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Engagement Score Banner */}
+      {analytics && (
+        <div className="glass rounded-2xl p-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="relative h-16 w-16">
+                <svg className="h-16 w-16 -rotate-90" viewBox="0 0 36 36">
+                  <path
+                    className="text-secondary"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                  />
+                  <path
+                    className="text-emotion-happy"
+                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="3"
+                    strokeDasharray={`${analytics.class_engagement_score}, 100`}
+                  />
+                </svg>
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <span className="text-sm font-bold">{Math.round(analytics.class_engagement_score)}%</span>
+                </div>
+              </div>
+              <div>
+                <h3 className="font-semibold">Class Engagement Score</h3>
+                <p className="text-sm text-muted-foreground">
+                  {analytics.active_students} of {analytics.total_students} students active
+                </p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-xs text-muted-foreground">Window</p>
+              <p className="text-sm font-semibold">{analytics.window_seconds}s</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 3. Effectiveness Metrics */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -598,9 +811,9 @@ function TeacherDashboard() {
               <div>
                 <p className="text-sm text-muted-foreground">{recommendation.trigger_reason}</p>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Subject: <span className="font-medium text-foreground">{recommendation.subject}</span>
-                  {" | "}Game Type: <span className="font-medium text-foreground">{recommendation.game_type}</span>
-                  {" | "}ID: <span className="font-mono text-xs">{recommendation.intervention_id}</span>
+                  Subject: <span className="font-medium text-foreground">{recommendedGame?.subject || recommendation.subject}</span>
+                  {" | "}Game Type: <span className="font-medium text-foreground">{recommendedGame?.game_type || recommendation.game_type}</span>
+                  {" | "}ID: <span className="font-mono text-xs">{recommendation.intervention_id || recommendedGame?.game_id}</span>
                 </p>
               </div>
             </div>
@@ -612,12 +825,30 @@ function TeacherDashboard() {
                   <Gamepad2 className="h-5 w-5 text-primary" />
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-semibold">{recommendation.recommendation.title}</h3>
-                  <p className="text-sm text-muted-foreground mt-1">{recommendation.recommendation.description}</p>
+                  <h3 className="font-semibold">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenGame(recommendedGame?.game_id)}
+                      className="text-left text-inherit hover:text-primary underline-offset-4 hover:underline"
+                    >
+                      {recommendedGame?.title || "Recommended Game"}
+                    </button>
+                  </h3>
+                  <p className="text-sm text-muted-foreground mt-1">{recommendedGame?.description || "No description available."}</p>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendation.recommendation.difficulty}</span>
-                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendation.recommendation.estimated_duration_minutes} min</span>
-                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">Score: {recommendation.recommendation.engagement_score}</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendedGame?.difficulty || "Medium"}</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">{recommendedGame?.estimated_duration_minutes || 5} min</span>
+                    <span className="px-2 py-0.5 rounded text-xs bg-secondary">Score: {recommendedGame?.engagement_score || 0}</span>
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      onClick={handleLaunchGame}
+                      disabled={gameStatus === "running"}
+                      className="inline-flex items-center gap-2 rounded-lg bg-emotion-happy px-4 py-2 text-sm font-semibold text-white hover:bg-emotion-happy/90 transition-colors disabled:opacity-50"
+                    >
+                      <Play className="h-4 w-4" />
+                      {recommendedGame?.game_id === "gm_math_bored_03" ? `Start ${recommendedGame.title}` : "Start Game"}
+                    </button>
                   </div>
                 </div>
               </div>
@@ -629,10 +860,16 @@ function TeacherDashboard() {
                 <p className="text-xs font-semibold text-muted-foreground mb-2">ALTERNATIVES</p>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {recommendation.alternatives.map((alt) => (
-                    <div key={alt.game_id} className="p-3 rounded-lg border border-border/60">
-                      <p className="text-sm font-medium">{alt.title}</p>
+                    <button
+                      key={alt.game_id}
+                      type="button"
+                      onClick={() => handleOpenGame(alt.game_id)}
+                      className="text-left p-3 rounded-lg border border-border/60 hover:border-primary/80 transition-colors"
+                    >
+                      <p className="text-sm font-medium text-primary hover:underline">{alt.title}</p>
                       <p className="text-xs text-muted-foreground">{alt.game_type} | {alt.subject}</p>
-                    </div>
+                      <p className="mt-2 text-xs text-secondary">Click to open</p>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -670,7 +907,7 @@ function TeacherDashboard() {
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   <Play className="h-4 w-4" />
-                  Start Game
+                  {recommendedGame?.game_id === "gm_math_bored_03" ? "Open Fraction Room" : "Start Game"}
                 </button>
                 <button
                   onClick={() => handleSubmitFeedback(recommendation.intervention_id)}
