@@ -75,12 +75,30 @@ _MODEL_WIDTH = int(_MODEL_INPUT_SHAPE[2] or 224)
 _MODEL_CHANNELS = int(_MODEL_INPUT_SHAPE[3] or 3)
 
 
+def _apply_gamma_correction(image: np.ndarray, gamma: float = 1.2) -> np.ndarray:
+    """Improve contrast on underexposed or low-light face crops."""
+    inv_gamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** inv_gamma) * 255 for i in np.arange(256)], dtype="uint8")
+    return cv2.LUT(image, table)
+
+
 def _preprocess_face(face_image: np.ndarray) -> np.ndarray:
     """Preprocess a grayscale face ROI to match loaded model input shape."""
+    gray = face_image.astype(np.uint8)
+    if gray.ndim != 2:
+        gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+
+    gray = cv2.equalizeHist(gray)
+    gray = _apply_gamma_correction(gray, gamma=1.2)
+
+    clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+    enhanced = clahe.apply(gray)
+    filtered = cv2.bilateralFilter(enhanced, d=5, sigmaColor=75, sigmaSpace=75)
+
     resized = cv2.resize(
-        face_image,
+        filtered,
         (_MODEL_WIDTH, _MODEL_HEIGHT),
-        interpolation=cv2.INTER_AREA,
+        interpolation=cv2.INTER_CUBIC if (_MODEL_WIDTH >= face_image.shape[1] or _MODEL_HEIGHT >= face_image.shape[0]) else cv2.INTER_AREA,
     )
 
     if _MODEL_CHANNELS == 3:
@@ -94,25 +112,28 @@ def _preprocess_face(face_image: np.ndarray) -> np.ndarray:
     return np.expand_dims(normalized, axis=0)
 
 
-def predict_emotion(face_image: np.ndarray) -> str:
-    """
-    Predict emotion label from a grayscale face ROI.
-
-    Returns:
-        A label from EMOTION_LABELS.
-    """
+def predict_emotion_with_confidence(face_image: np.ndarray) -> tuple[str, float]:
+    """Predict emotion label and confidence from a grayscale face ROI."""
     if face_image is None or face_image.size == 0:
         raise ValueError("Cannot predict emotion from an empty face image.")
 
     try:
         input_tensor = _preprocess_face(face_image)
         prediction = EMOTION_MODEL.predict(input_tensor, verbose=0)
-        emotion_index = int(np.argmax(prediction))
+        probabilities = np.asarray(prediction[0], dtype="float32")
+        emotion_index = int(np.argmax(probabilities))
+        confidence = float(np.max(probabilities))
     except Exception as exc:
         raise RuntimeError(f"Emotion prediction failed: {exc}") from exc
 
     if emotion_index < 0 or emotion_index >= len(EMOTION_LABELS):
-        return "Unknown"
+        return "Unknown", 0.0
 
-    return EMOTION_LABELS[emotion_index]
+    return EMOTION_LABELS[emotion_index], confidence
+
+
+def predict_emotion(face_image: np.ndarray) -> str:
+    """Predict emotion label from a grayscale face ROI."""
+    label, _ = predict_emotion_with_confidence(face_image)
+    return label
 

@@ -79,8 +79,8 @@ function RealtimeEmotionSection({ studentId, onEngagementUpdate, hideAlerts = fa
 
   const handleEmotionUpdate = (payload) => {
     const nextSnapshot = {
-      emotion: payload.emotion,
-      rawEmotion: payload.rawEmotion,
+      studentState: payload.studentState || payload.emotion,
+      facialEmotion: payload.facialEmotion || payload.rawEmotion,
       dominantEmotion: payload.metrics?.dominantEmotion || payload.dominantEmotion || null,
       faceDetected: payload.faceDetected,
       serviceStatus: payload.serviceStatus || "connected",
@@ -158,8 +158,8 @@ function RealtimeEmotionSection({ studentId, onEngagementUpdate, hideAlerts = fa
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
         <EmotionStatusPanel
-          emotion={snapshot.emotion}
-          rawEmotion={snapshot.rawEmotion}
+          studentState={snapshot.studentState}
+          facialEmotion={snapshot.facialEmotion}
           dominantEmotion={snapshot.dominantEmotion}
           faceDetected={snapshot.faceDetected}
           serviceStatus={snapshot.serviceStatus}

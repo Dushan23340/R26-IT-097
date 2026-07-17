@@ -27,6 +27,8 @@ import EmotionDetector from "@/components/EmotionDetector";
 function StudentDashboard() {
   const { user } = useAuth();
   const [emotion, setEmotion] = useState("neutral");
+  const [attention, setAttention] = useState(87);
+  const [engagement, setEngagement] = useState(92);
   const [inLiveClass, setInLiveClass] = useState(false);
   const [currentLiveClass, setCurrentLiveClass] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -34,10 +36,11 @@ function StudentDashboard() {
 
   const mapStudentStateToUiKey = (state) => {
     const s = (state || "").toLowerCase();
-    if (s.includes("engaged")) return "happy";
-    if (s.includes("bored")) return "neutral";
+    if (s.includes("engaged")) return "neutral";
+    if (s.includes("bored")) return "bored";
     if (s.includes("confused")) return "confused";
-    if (s.includes("frustrated")) return "angry";
+    if (s.includes("frustrated")) return "frustrated";
+    if (s.includes("angry")) return "angry";
     return "neutral";
   };
   const overallProgress = 72;
@@ -242,9 +245,31 @@ function StudentDashboard() {
                 <EmotionDetector
                   className="mb-3"
                   intervalMs={2500}
-                  onEmotion={({ emotion: studentState }) => {
-                    if (studentState === "No face detected") return;
-                    setEmotion(mapStudentStateToUiKey(studentState));
+                  onEmotion={({ studentState, metrics }) => {
+                    const nextState = studentState || "Unknown"
+                    if (nextState === "No face detected") return;
+                    setEmotion(mapStudentStateToUiKey(nextState))
+
+                    const stability = Number(metrics?.stabilityScore || 0)
+                    const transition = Number(metrics?.transitionRate || 0)
+                    const counts = metrics?.emotionCounts || {}
+                    const totalCount = Object.values(counts).reduce((sum, value) => sum + Number(value || 0), 0) || 1
+                    const negativeCount = Number(counts?.Bored || 0) + Number(counts?.Confused || 0) + Number(counts?.Frustrated || 0)
+                    const negativeRatio = Math.min(1, negativeCount / totalCount)
+
+                    setAttention(Math.max(10, Math.min(100, Math.round(70 + stability * 20 - transition * 10 - negativeRatio * 15))))
+                    setEngagement(
+                      Math.max(
+                        10,
+                        Math.min(
+                          100,
+                          Math.round(
+                            Number(metrics?.engagementIndicators?.engagementScore || 0) ||
+                              Math.round(60 + stability * 25 - negativeRatio * 20)
+                          )
+                        )
+                      )
+                    )
                   }}
                 />
                 <div className="text-center">
@@ -270,11 +295,11 @@ function StudentDashboard() {
                 <div className="space-y-2 text-sm">
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Attention</span>
-                    <span className="font-medium">87%</span>
+                    <span className="font-medium">{attention}%</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-muted-foreground">Engagement</span>
-                    <span className="font-medium">92%</span>
+                    <span className="font-medium">{engagement}%</span>
                   </div>
                 </div>
               </div>

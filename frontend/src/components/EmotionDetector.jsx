@@ -64,13 +64,16 @@ const EmotionDetector = ({
         signal: controller.signal,
       })
 
-      setEmotion(prediction.emotion)
-      setRawEmotion(prediction.rawEmotion)
+      const studentState = prediction.studentState ?? prediction.emotion
+      const facialEmotion = prediction.facialEmotion ?? prediction.rawEmotion
+
+      setEmotion(studentState)
+      setRawEmotion(facialEmotion)
       setDominantEmotion(prediction.metrics?.dominantEmotion || null)
       setFaceDetected(prediction.faceDetected)
       setServiceStatus("connected")
 
-      onEmotion?.({ ...prediction, serviceStatus: "connected" })
+      onEmotion?.({ ...prediction, emotion: studentState, rawEmotion: facialEmotion, serviceStatus: "connected" })
     } catch (requestError) {
       const isAbort =
         requestError instanceof DOMException && requestError.name === "AbortError"
@@ -179,16 +182,19 @@ const EmotionDetector = ({
 
         <div className="flex items-center justify-between gap-3">
           <div className="text-sm">
-            <div className="font-semibold">
+            <div className="font-semibold">Student state</div>
+            <div className="text-xs text-muted-foreground mb-2">
               {emotion ?? "Detecting..."}
-              {loading ? " (updating)" : ""}
             </div>
+            <div className="font-semibold">Facial emotion</div>
             {rawEmotion ? (
               <div className="text-xs text-muted-foreground">
-                Model: {rawEmotion} {dominantEmotion ? `| Dominant: ${dominantEmotion}` : ""}
+                {rawEmotion} {dominantEmotion ? `| Dominant: ${dominantEmotion}` : ""}
               </div>
-            ) : null}
-            <div className="text-xs text-muted-foreground">
+            ) : (
+              <div className="text-xs text-muted-foreground">--</div>
+            )}
+            <div className="text-xs text-muted-foreground mt-2">
               {faceDetected ? "Face detected" : "No face detected"}
             </div>
           </div>

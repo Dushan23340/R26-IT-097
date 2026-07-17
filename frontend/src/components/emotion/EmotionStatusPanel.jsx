@@ -20,12 +20,16 @@ function toTone(emotion) {
 
 function EmotionStatusPanel({
   emotion,
+  studentState,
   rawEmotion,
+  facialEmotion,
   dominantEmotion,
   faceDetected,
   serviceStatus,
 }) {
-  const tone = toTone(emotion)
+  const currentState = studentState ?? emotion
+  const currentFacial = facialEmotion ?? rawEmotion
+  const tone = toTone(currentState)
   const statusClass = EMOTION_BADGE_STYLES[tone]
 
   return (
@@ -34,14 +38,22 @@ function EmotionStatusPanel({
         <CardTitle className="text-sm">Live Emotion Status</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3 text-sm">
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground">Current</span>
-          <Badge className={statusClass}>{emotion || "Detecting..."}</Badge>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className="rounded-2xl border border-border/60 p-3 bg-secondary/50">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Student State</p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">{currentState || "Detecting..."}</span>
+              <Badge className={statusClass}>{currentState || "Unknown"}</Badge>
+            </div>
+          </div>
+          <div className="rounded-2xl border border-border/60 p-3 bg-secondary/50">
+            <p className="text-xs uppercase tracking-[0.2em] text-muted-foreground mb-2">Facial Emotion</p>
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-medium">{currentFacial || "--"}</span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-muted-foreground">Model</span>
-          <span className="font-medium">{rawEmotion || "--"}</span>
-        </div>
+
         <div className="flex items-center justify-between gap-2">
           <span className="text-muted-foreground">Dominant</span>
           <span className="font-medium">{dominantEmotion || "--"}</span>

@@ -29,10 +29,17 @@ function normalizePredictResponse(payload = {}) {
   const dominantFromCounts =
     Object.entries(emotionCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || null
 
+  const normalizedStudentState = (payload.studentState || payload.emotion || "").toString().trim() || null
+  const normalizedFacialEmotion = (payload.facialEmotion || payload.rawEmotion || "").toString().trim() || null
+
   return {
-    emotion: payload.emotion ?? null,
-    rawEmotion: payload.rawEmotion ?? null,
-    faceDetected: payload.emotion !== "No face detected",
+    emotion: normalizedStudentState,
+    studentState: normalizedStudentState,
+    rawEmotion: normalizedFacialEmotion,
+    facialEmotion: normalizedFacialEmotion,
+    emotionConfidence: Number(payload.emotionConfidence || payload.confidence || 0),
+    attentionScore: Number(payload.attentionScore || 0),
+    faceDetected: Boolean(normalizedFacialEmotion && normalizedFacialEmotion !== "No face detected"),
     metrics: {
       emotionDuration: metricsRoot.emotionDuration || {},
       transitionRate: Number(metricsRoot.transitionRate || 0),
@@ -41,6 +48,7 @@ function normalizePredictResponse(payload = {}) {
       dominantEmotion:
         metricsRoot.dominantEmotion || payload.dominantEmotion || dominantFromCounts,
       totalTransitions: Number(metricsRoot.totalTransitions || 0),
+      engagementIndicators: metricsRoot.engagementIndicators || payload.engagementIndicators || {},
     },
   }
 }

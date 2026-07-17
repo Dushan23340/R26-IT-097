@@ -33,8 +33,10 @@ if str(SRC_DIR) not in sys.path:
 # =========================================================
 
 from emotion_service.ml.face_detection import detect_faces
-from emotion_service.ml.emotion_model import MODEL_PATH, predict_emotion
+from emotion_service.ml.emotion_model import MODEL_PATH, predict_emotion, predict_emotion_with_confidence
 from emotion_service.ml.emotion_tracker import EmotionTracker
+from emotion_service.ml.realtime_pipeline import map_raw_to_student_state
+from emotion_service.ml.student_state import compute_attention_score
 
 # =========================================================
 # APP SETUP
@@ -89,26 +91,23 @@ def _decode_base64_image(data_url_or_b64: str) -> np.ndarray | None:
     return frame
 
 
-def _map_raw_to_student_state(raw_emotion: str) -> str:
-    """
-    Convert raw FER emotions into engagement states.
-    """
-
-    raw = (raw_emotion or "").strip().lower()
-
-    if raw in {"happy", "neutral", "surprise"}:
-        return "Engaged"
-
-    if raw in {"sad"}:
-        return "Bored"
-
-    if raw in {"fear"}:
-        return "Confused"
-
-    if raw in {"angry", "disgust"}:
-        return "Frustrated"
-
-    return "Engaged"
+def _map_raw_to_student_state(
+    raw_emotion: str,
+    confidence: float,
+    previous_state: str | None = None,
+    probabilities: list[float] | None = None,
+    stability_score: float = 0.0,
+    transition_rate: float = 0.0,
+) -> str:
+    """Convert raw FER emotions into engagement states using confidence gating."""
+    return map_raw_to_student_state(
+        raw_emotion,
+        confidence=confidence,
+        previous_state=previous_state,
+        probabilities=probabilities,
+        stability_score=stability_score,
+        transition_rate=transition_rate,
+    )
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -191,23 +190,28 @@ def predict():
         }), 200
 
     # =====================================================
-    # Get first face
+    # Get first face and expand the ROI to include contextual features
     # =====================================================
 
+    def expand_face_box(x_val, y_val, w_val, h_val, frame_shape, margin=0.18):
+        height, width = frame_shape[:2]
+        dx = int(w_val * margin)
+        dy = int(h_val * margin)
+        x1 = max(0, x_val - dx)
+        y1 = max(0, y_val - dy)
+        x2 = min(width, x_val + w_val + dx)
+        y2 = min(height, y_val + h_val + dy)
+        return x1, y1, x2, y2
+
     x, y, w, h = faces[0]
+    x1, y1, x2, y2 = expand_face_box(x, y, w, h, gray.shape, margin=0.18)
 
-    x = max(0, x)
-    y = max(0, y)
-
-    x2 = min(gray.shape[1], x + w)
-    y2 = min(gray.shape[0], y + h)
-
-    if x2 <= x or y2 <= y:
+    if x2 <= x1 or y2 <= y1:
         return jsonify({
             "emotion": "No face detected"
         }), 200
 
-    face_roi = gray[y:y2, x:x2]
+    face_roi = gray[y1:y2, x1:x2]
 
     if face_roi.size == 0:
         return jsonify({
@@ -221,9 +225,20 @@ def predict():
     try:
 
         with _PREDICTION_LOCK:
-            raw_emotion = predict_emotion(face_roi)
+            raw_emotion, confidence = predict_emotion_with_confidence(face_roi)
 
-        student_state = _map_raw_to_student_state(raw_emotion)
+        previous_metrics = tracker.get_metrics(student_id)
+        previous_state = previous_metrics.get("currentEmotion")
+        stability_score = float(previous_metrics.get("stabilityScore", 0.0) or 0.0)
+        transition_rate = float(previous_metrics.get("transitionRate", 0.0) or 0.0)
+
+        student_state = _map_raw_to_student_state(
+            raw_emotion,
+            confidence=confidence,
+            previous_state=previous_state,
+            stability_score=stability_score,
+            transition_rate=transition_rate,
+        )
 
         # =================================================
         # TRACK EMOTION DATA
@@ -232,6 +247,11 @@ def predict():
         smoothed_state = tracker.update(student_id, student_state)
 
         analytics = tracker.get_metrics(student_id)
+        attention_score = compute_attention_score(
+            stability_score=analytics["stabilityScore"],
+            transition_rate=analytics["transitionRate"],
+            emotion_confidence=confidence,
+        )
 
         # =================================================
         # RETURN RESPONSE
@@ -239,9 +259,13 @@ def predict():
 
         return jsonify({
 
-            # Current emotion
-            "emotion": smoothed_state,
+            # Current student state
+            "emotion": smoothed_state or "Unknown",
+            "studentState": smoothed_state or "Unknown",
             "rawEmotion": raw_emotion,
+            "facialEmotion": raw_emotion,
+            "emotionConfidence": round(confidence, 4),
+            "attentionScore": attention_score,
 
             # Analytics
             "emotionDuration": analytics["emotionDuration"],

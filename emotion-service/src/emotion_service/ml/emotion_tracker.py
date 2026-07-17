@@ -171,6 +171,7 @@ class EmotionTracker:
             "stabilityScore": stability_score,
             "emotionCounts": dict(emotion_counts),
             "totalTransitions": state.transition_count,
+            "currentEmotion": state.last_emotion or "Neutral",
             "engagementIndicators": {
                 "engagementScore": engagement_score,
                 "disengagementRatio": disengagement_ratio,
