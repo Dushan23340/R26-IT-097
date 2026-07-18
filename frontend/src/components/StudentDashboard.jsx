@@ -36,7 +36,7 @@ function StudentDashboard() {
 
   const mapStudentStateToUiKey = (state) => {
     const s = (state || "").toLowerCase();
-    if (s.includes("engaged")) return "neutral";
+    if (s.includes("engaged")) return "engaged";
     if (s.includes("bored")) return "bored";
     if (s.includes("confused")) return "confused";
     if (s.includes("frustrated")) return "frustrated";
@@ -244,6 +244,7 @@ function StudentDashboard() {
               <div className="glass rounded-2xl p-4">
                 <EmotionDetector
                   className="mb-3"
+                  studentId={user?.id ?? user?._id ?? user?.email ?? "default_student"}
                   intervalMs={2500}
                   onEmotion={({ studentState, metrics }) => {
                     const nextState = studentState || "Unknown"

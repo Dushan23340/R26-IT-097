@@ -1,3 +1,4 @@
+import json
 import os
 import numpy as np
 import matplotlib.pyplot as plt
@@ -19,7 +20,11 @@ from sklearn.utils.class_weight import compute_class_weight
 # SETTINGS
 # =====================================
 
-DATASET_DIR = "dataset/final_dataset"
+# Facial-expression-only dataset (Phase 1 restructuring). Bored/Confused/
+# Frustrated were moved out to dataset/engagement_eval since those are
+# cognitive/engagement states, not facial expressions, and mixing them into
+# one classifier was hurting minority-class accuracy.
+DATASET_DIR = "dataset/expression_dataset"
 
 IMG_SIZE = 224
 BATCH_SIZE = 32
@@ -211,6 +216,15 @@ history2 = model.fit(
 # =====================================
 
 model.save("model/emotion_mobilenetv2_final.keras")
+
+# Production loader (emotion_service.ml.emotion_model) looks for .h5 files
+# by priority, so export in that format too or the API keeps serving the
+# previous model.
+model.save("model/best_emotion_model.h5")
+
+with open("model/class_indices.json", "w", encoding="utf-8") as f:
+    index_to_class = {str(v): k for k, v in train_data.class_indices.items()}
+    json.dump(index_to_class, f, indent=2)
 
 print("\nFinal model saved!")
 

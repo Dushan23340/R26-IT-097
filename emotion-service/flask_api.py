@@ -33,7 +33,7 @@ if str(SRC_DIR) not in sys.path:
 # =========================================================
 
 from emotion_service.ml.face_detection import detect_faces
-from emotion_service.ml.emotion_model import MODEL_PATH, predict_emotion, predict_emotion_with_confidence
+from emotion_service.ml.fused_emotion_model import MODEL_PATH, predict_emotion_with_confidence
 from emotion_service.ml.emotion_tracker import EmotionTracker
 from emotion_service.ml.realtime_pipeline import map_raw_to_student_state
 from emotion_service.ml.student_state import compute_attention_score
@@ -98,6 +98,7 @@ def _map_raw_to_student_state(
     probabilities: list[float] | None = None,
     stability_score: float = 0.0,
     transition_rate: float = 0.0,
+    current_continuous_duration: float = 0.0,
 ) -> str:
     """Convert raw FER emotions into engagement states using confidence gating."""
     return map_raw_to_student_state(
@@ -107,6 +108,7 @@ def _map_raw_to_student_state(
         probabilities=probabilities,
         stability_score=stability_score,
         transition_rate=transition_rate,
+        current_continuous_duration=current_continuous_duration,
     )
 
 
@@ -144,6 +146,30 @@ def health():
         "modelLoaded": True,
         "modelPath": str(MODEL_PATH),
     }), 200
+
+
+@app.route("/students", methods=["GET"])
+def students():
+    """Real-time snapshot of every student currently being tracked by this
+    process. In-memory only (no persistence) - intended for a dashboard or
+    a downstream analytics service to poll."""
+
+    all_students = tracker.get_all_students()
+
+    results = [
+        {
+            "studentId": student_id,
+            "currentEmotion": metrics.get("currentEmotion", "Neutral"),
+            "stabilityScore": metrics.get("stabilityScore", 0.0),
+            "transitionRate": metrics.get("transitionRate", 0.0),
+            "emotionCounts": metrics.get("emotionCounts", {}),
+            "engagementIndicators": metrics.get("engagementIndicators", {}),
+            "lastSeenTimestamp": metrics.get("lastSeenTimestamp"),
+        }
+        for student_id, metrics in all_students.items()
+    ]
+
+    return jsonify({"students": results, "count": len(results)}), 200
 
 
 @app.route("/predict", methods=["POST"])
@@ -216,7 +242,10 @@ def predict():
             "emotion": "No face detected"
         }), 200
 
-    face_roi = gray[y1:y2, x1:x2]
+    # Fused model uses the color crop directly (image branch + MediaPipe
+    # landmark/blendshape branch both need real color+resolution, unlike
+    # the old grayscale-only pipeline).
+    face_roi = frame[y1:y2, x1:x2]
     cv2.imwrite("debug_face.jpg", face_roi)
 
     if face_roi.size == 0:
@@ -237,6 +266,7 @@ def predict():
         previous_state = previous_metrics.get("currentEmotion")
         stability_score = float(previous_metrics.get("stabilityScore", 0.0) or 0.0)
         transition_rate = float(previous_metrics.get("transitionRate", 0.0) or 0.0)
+        current_continuous_duration = float(previous_metrics.get("currentContinuousDuration", 0.0) or 0.0)
 
         student_state = _map_raw_to_student_state(
             raw_emotion,
@@ -244,6 +274,7 @@ def predict():
             previous_state=previous_state,
             stability_score=stability_score,
             transition_rate=transition_rate,
+            current_continuous_duration=current_continuous_duration,
         )
 
         # =================================================

@@ -6,7 +6,7 @@ from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from pathlib import Path
 
-DATASET_DIR = "dataset/final_dataset"
+DATASET_DIR = "dataset/expression_dataset"
 IMG_SIZE = 224
 BATCH_SIZE = 32
 

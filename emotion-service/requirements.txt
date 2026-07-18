@@ -1,8 +1,13 @@
-opencv-python
+opencv-contrib-python
+mediapipe
 numpy
 flask
 flask-cors
+python-dotenv
 tensorflow
 keras
 pandas
 tqdm
+scikit-learn
+matplotlib
+seaborn

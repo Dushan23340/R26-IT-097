@@ -40,6 +40,7 @@
   --color-teal-glow: var(--teal-glow);
   --color-amber: var(--amber);
   --color-emotion-happy: var(--emotion-happy);
+  --color-emotion-engaged: var(--emotion-engaged);
   --color-emotion-neutral: var(--emotion-neutral);
   --color-emotion-confused: var(--emotion-confused);
   --color-emotion-bored: var(--emotion-bored);
@@ -90,6 +91,7 @@
 
   /* Emotion palette */
   --emotion-happy: oklch(0.78 0.18 150);
+  --emotion-engaged: oklch(0.78 0.15 195);
   --emotion-neutral: oklch(0.82 0.13 95);
   --emotion-confused: oklch(0.78 0.16 60);
   --emotion-bored: oklch(0.7 0.1 50);

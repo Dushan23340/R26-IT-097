@@ -183,3 +183,19 @@ class EmotionTracker:
     def get_metrics(self, student_id: str) -> dict:
         state = self._get_or_create(student_id)
         return self._get_metrics_internal(state)
+
+    def get_all_students(self) -> dict[str, dict]:
+        """Real-time snapshot for every student currently being tracked.
+
+        Exists so a dashboard (ours or a teammate's analytics service) can
+        pull actual per-student state instead of mock data - this process
+        only holds tracker state in memory, so this is a live view, not a
+        persisted history.
+        """
+        return {
+            student_id: {
+                **self._get_metrics_internal(state),
+                "lastSeenTimestamp": state.emotion_history[-1]["time"] if state.emotion_history else state.start_time,
+            }
+            for student_id, state in self._students.items()
+        }

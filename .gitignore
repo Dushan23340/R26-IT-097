@@ -14,9 +14,17 @@ emotion-service/runs/
 emotion-service/dataset/daisee_frames/
 emotion-service/dataset/daisee_faces/
 emotion-service/dataset/final_dataset/
+emotion-service/dataset/expression_dataset/
+emotion-service/dataset/engagement_eval/
+emotion-service/dataset/facial_features.npz
 
 # Optional raw datasets
 emotion-service/dataset/raw/
+
+# Local model backups / runtime debug output
+emotion-service/model/legacy_6class_model/
+emotion-service/debug_face.jpg
+emotion-service/*.log
 
 # Root virtual env
 .venv/

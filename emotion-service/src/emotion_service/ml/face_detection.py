@@ -3,29 +3,36 @@ from __future__ import annotations
 from pathlib import Path
 
 import cv2
+import mediapipe as mp
 import numpy as np
+from mediapipe.tasks.python import BaseOptions, vision
+
+# Haar Cascade was sensitive to lighting/pose and missed partially rotated
+# faces in classroom conditions. MediaPipe's BlazeFace detector is more
+# robust to those and still runs comfortably in real time on CPU.
+_ML_DIR = Path(__file__).resolve().parent
+_SERVICE_DIR = _ML_DIR.parents[2]  # emotion-service/
+MODEL_PATH = _SERVICE_DIR / "model" / "mediapipe" / "blaze_face_short_range.tflite"
+
+MIN_DETECTION_CONFIDENCE = 0.5
 
 
-CASCADE_FILENAME = "haarcascade_frontalface_default.xml"
-CASCADE_PATH = Path(getattr(cv2, "data").haarcascades) / CASCADE_FILENAME
-
-
-def _load_face_cascade() -> cv2.CascadeClassifier:
-    """Load and validate the Haar Cascade face detector."""
-    if not CASCADE_PATH.exists():
+def _load_face_detector() -> vision.FaceDetector:
+    if not MODEL_PATH.exists():
         raise FileNotFoundError(
-            f"Haar Cascade file not found: {CASCADE_PATH}. "
-            "Please ensure OpenCV data files are installed."
+            f"MediaPipe face detector model not found: {MODEL_PATH}. "
+            "Download blaze_face_short_range.tflite from the MediaPipe model "
+            "zoo into emotion-service/model/mediapipe/."
         )
 
-    cascade = cv2.CascadeClassifier(str(CASCADE_PATH))
-    if cascade.empty():
-        raise RuntimeError(f"Failed to load Haar Cascade classifier from {CASCADE_PATH}.")
+    options = vision.FaceDetectorOptions(
+        base_options=BaseOptions(model_asset_path=str(MODEL_PATH)),
+        min_detection_confidence=MIN_DETECTION_CONFIDENCE,
+    )
+    return vision.FaceDetector.create_from_options(options)
 
-    return cascade
 
-
-FACE_CASCADE = _load_face_cascade()
+FACE_DETECTOR = _load_face_detector()
 
 
 def detect_faces(
@@ -35,21 +42,31 @@ def detect_faces(
     """
     Detect faces in a BGR frame and return bounding boxes.
 
+    `gray_frame` is accepted for backward compatibility with the previous
+    Haar Cascade signature but is unused - MediaPipe detects on the color
+    image directly.
+
     Returns:
         list of (x, y, w, h) tuples
     """
     if frame is None or frame.size == 0:
         return []
 
-    gray = gray_frame if gray_frame is not None else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = FACE_CASCADE.detectMultiScale(
-        gray,
-        scaleFactor=1.1,
-        minNeighbors=5,
-        minSize=(30, 30),
-    )
-    if faces is None or len(faces) == 0:
-        return []
+    rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb)
+    result = FACE_DETECTOR.detect(mp_image)
 
-    return [(int(f[0]), int(f[1]), int(f[2]), int(f[3])) for f in faces]
+    height, width = frame.shape[:2]
+    boxes: list[tuple[int, int, int, int]] = []
 
+    for detection in result.detections:
+        bbox = detection.bounding_box
+        x = max(0, bbox.origin_x)
+        y = max(0, bbox.origin_y)
+        w = min(bbox.width, width - x)
+        h = min(bbox.height, height - y)
+        if w <= 0 or h <= 0:
+            continue
+        boxes.append((int(x), int(y), int(w), int(h)))
+
+    return boxes

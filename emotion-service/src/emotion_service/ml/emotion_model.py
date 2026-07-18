@@ -57,9 +57,6 @@ def _load_emotion_labels() -> list[str]:
             pass
     return [
         "Angry",
-        "Bored",
-        "Confused",
-        "Frustrated",
         "Happy",
         "Normal"
     ]
