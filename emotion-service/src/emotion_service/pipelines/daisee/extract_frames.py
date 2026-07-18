@@ -21,7 +21,7 @@ def get_label(row) -> str:
         "frustration": row["Frustration"],
         "engagement": row["Engagement"],
     }
-    return max(emotions, key=emotions.get)
+    return max(emotions, key=lambda k: emotions[k])
 
 
 def find_video(file_name: str, video_dir: Path) -> str | None:

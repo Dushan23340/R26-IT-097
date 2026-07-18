@@ -7,7 +7,7 @@ import numpy as np
 
 
 CASCADE_FILENAME = "haarcascade_frontalface_default.xml"
-CASCADE_PATH = Path(cv2.data.haarcascades) / CASCADE_FILENAME
+CASCADE_PATH = Path(getattr(cv2, "data").haarcascades) / CASCADE_FILENAME
 
 
 def _load_face_cascade() -> cv2.CascadeClassifier:
@@ -48,5 +48,8 @@ def detect_faces(
         minNeighbors=5,
         minSize=(30, 30),
     )
-    return [tuple(map(int, face)) for face in faces]
+    if faces is None or len(faces) == 0:
+        return []
+
+    return [(int(f[0]), int(f[1]), int(f[2]), int(f[3])) for f in faces]
 

@@ -7,6 +7,9 @@ import cv2
 import numpy as np
 from keras.models import load_model
 
+import json
+from typing import Any
+
 # Resolve model path relative to this file:
 # emotion-service/src/emotion_service/ml/emotion_model.py
 _ML_DIR = Path(__file__).resolve().parent
@@ -14,6 +17,7 @@ _SRC_DIR = _ML_DIR.parents[1]  # emotion-service/src
 _SERVICE_DIR = _ML_DIR.parents[2]  # emotion-service/
 
 _MODEL_DIR = _SERVICE_DIR / "model"
+_CLASS_INDICES_PATH = _MODEL_DIR / "class_indices.json"
 
 # Allow overriding model path via env (useful for deployments / experiments).
 _ENV_MODEL_PATH = os.getenv("EMOTION_MODEL_PATH")
@@ -41,10 +45,30 @@ def _resolve_model_path() -> Path:
 
 
 MODEL_PATH = _resolve_model_path()
-EMOTION_LABELS = ["Angry", "Disgust", "Fear", "Happy", "Sad", "Surprise", "Neutral"]
 
 
-def _load_emotion_model():
+def _load_emotion_labels() -> list[str]:
+    if _CLASS_INDICES_PATH.exists():
+        try:
+            with open(_CLASS_INDICES_PATH, "r", encoding="utf-8") as f:
+                mapping = json.load(f)
+            return [mapping[str(i)] for i in range(len(mapping))]
+        except Exception:
+            pass
+    return [
+        "Angry",
+        "Bored",
+        "Confused",
+        "Frustrated",
+        "Happy",
+        "Normal"
+    ]
+
+
+EMOTION_LABELS = _load_emotion_labels()
+
+
+def _load_emotion_model() -> Any:
     """Load the FER model once at import time."""
     if not MODEL_PATH.exists():
         raise FileNotFoundError(

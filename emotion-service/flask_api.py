@@ -172,6 +172,9 @@ def predict():
             "error": "Invalid image"
         }), 400
 
+    print("Frame shape:", frame.shape, flush=True)
+    cv2.imwrite("debug_frame.jpg", frame)
+
     # =====================================================
     # Convert to grayscale
     # =====================================================
@@ -183,6 +186,8 @@ def predict():
     # =====================================================
 
     faces = detect_faces(frame, gray_frame=gray)
+
+    print("Number of faces detected:", len(faces), flush=True)
 
     if len(faces) == 0:
         return jsonify({
@@ -212,6 +217,7 @@ def predict():
         }), 200
 
     face_roi = gray[y1:y2, x1:x2]
+    cv2.imwrite("debug_face.jpg", face_roi)
 
     if face_roi.size == 0:
         return jsonify({
@@ -256,6 +262,13 @@ def predict():
         # =================================================
         # RETURN RESPONSE
         # =================================================
+
+        print("\n==========================", flush=True)
+        print(f"Raw Emotion     : {raw_emotion}", flush=True)
+        print(f"Student State   : {student_state}", flush=True)
+        print(f"Smoothed State  : {smoothed_state}", flush=True)
+        print(f"Confidence      : {confidence:.3f}", flush=True)
+        print("==========================\n", flush=True)
 
         return jsonify({
 

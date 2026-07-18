@@ -35,24 +35,26 @@ def predict_student_state(
     transition = max(0.0, min(1.0, float(transition_rate or 0.0)))
 
     if not normalized:
-        return previous_state or "Unknown"
+        return previous_state or "Neutral"
 
     if confidence < 0.35:
-        return previous_state or "Unknown"
+        return previous_state or "Neutral"
 
-    if normalized in {"angry", "disgust", "frustrated"} and confidence >= 0.65:
-        return "Frustrated"
-
-    if normalized == "sad" and confidence >= 0.65:
+    # Direct mappings from model's predicted learning states
+    if normalized == "bored" and confidence >= 0.5:
         return "Bored"
 
-    if normalized in {"fear", "confused"} and confidence >= 0.65:
+    if normalized == "confused" and confidence >= 0.5:
         return "Confused"
 
-    if normalized in {"happy", "neutral", "surprise"}:
-        if normalized == "surprise" and confidence >= 0.35:
-            return "Engaged"
+    if normalized == "frustrated" and confidence >= 0.5:
+        return "Frustrated"
 
+    if normalized == "angry" and confidence >= 0.5:
+        return "Frustrated"
+
+    # Engagement and neutral state checks
+    if normalized in {"happy", "normal", "neutral"}:
         if normalized == "happy" and confidence >= 0.45:
             return "Engaged"
 
@@ -62,6 +64,7 @@ def predict_student_state(
         if stability >= 0.7 and transition <= 0.25 and confidence >= 0.55:
             return "Engaged"
 
-        return previous_state or "Unknown"
+        return "Neutral"
 
-    return previous_state or "Unknown"
+    return previous_state or "Neutral"
+
