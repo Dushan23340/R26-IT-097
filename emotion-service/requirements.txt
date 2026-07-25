@@ -4,6 +4,7 @@ numpy
 flask
 flask-cors
 python-dotenv
+requests
 tensorflow
 keras
 pandas

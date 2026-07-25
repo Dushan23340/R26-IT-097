@@ -3,7 +3,16 @@ from typing import Dict, List, Optional
 import random
 
 from app.models.schemas import GameRecommendation, RecommendationResponse
-from app.services.game_catalog import get_games_for
+from app.services.game_catalog import get_all_games_for, get_games_for
+
+# Emotion->game mapping is intentionally OFF for now (explicit instruction:
+# "don't map games with emotions still... only do when teacher click
+# recommend button display games"). generate_recommendation() below picks
+# from every real game for the subject via get_all_games_for(), cycling
+# through them with the existing variation-window logic instead of pinning
+# to a specific emotion bucket. To re-enable emotion-based selection later,
+# swap the games = get_all_games_for(subject) line back to
+# games = get_games_for(subject, emotion).
 
 
 class RecommendationEngine:
@@ -35,10 +44,13 @@ class RecommendationEngine:
         emotion = dominant_emotion.upper()
         subject = subject.strip() or "General"
 
-        # Step 1: Look up games for (subject, emotion)
-        games = get_games_for(subject, emotion)
+        # Step 1: All real games for the subject, ignoring emotion (see
+        # module docstring note above - emotion mapping is off for now).
+        games = get_all_games_for(subject)
 
-        # Step 2: Filter out recently used game types within the window
+        # Step 2: Filter out recently used game types within the window, so
+        # repeated "Recommend" clicks cycle to a different game instead of
+        # returning the same one every time.
         recent_game_types = self._get_recent_game_types()
         available_games = [g for g in games if g.game_type not in recent_game_types]
 
@@ -46,15 +58,16 @@ class RecommendationEngine:
         if not available_games:
             available_games = games
 
-        # Prefer the Fraction Room recommendation for bored math learners.
-        if emotion == "BORED" and subject.upper() == "MATHEMATICS":
-            preferred = [g for g in available_games if g.game_id == "gm_math_bored_03"]
-            if preferred:
-                primary = preferred[0]
-            else:
-                primary = random.choice(available_games)
-        else:
-            primary = random.choice(available_games)
+        # Step 4: Never repeat the exact same game as the last click, when
+        # there's another option - the game-type filter alone can still
+        # land on the same game twice in a row once every type has been
+        # seen recently (e.g. only 2 real games/types exist right now).
+        last_game_id = self.recommendation_history[-1]["game_id"] if self.recommendation_history else None
+        not_last = [g for g in available_games if g.game_id != last_game_id]
+        if not_last:
+            available_games = not_last
+
+        primary = random.choice(available_games)
 
         # Step 5: Build alternatives from other emotions in same subject
         alternatives = self._build_alternatives(subject, emotion)

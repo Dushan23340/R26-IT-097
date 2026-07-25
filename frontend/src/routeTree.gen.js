@@ -13,8 +13,14 @@ import { Route as TrackFieldAnalyticsRouteImport } from './routes/track-field-an
 import { Route as TeacherRouteImport } from './routes/teacher'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PirateNavigatorRouteImport } from './routes/pirate-navigator'
+import { Route as PatternIslandsRouteImport } from './routes/pattern-islands'
 import { Route as LoginRouteImport } from './routes/login'
+import { Route as LessonsRouteImport } from './routes/lessons'
 import { Route as FractionRoomRouteImport } from './routes/fraction-room'
+import { Route as FishTankShopRouteImport } from './routes/fish-tank-shop'
+import { Route as EquationsEcoRouteImport } from './routes/equations-eco'
+import { Route as DarkRoomEscapeRouteImport } from './routes/dark-room-escape'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AdaptiveRouteImport } from './routes/adaptive'
 import { Route as IndexRouteImport } from './routes/index'
@@ -39,14 +45,44 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 })
+const PirateNavigatorRoute = PirateNavigatorRouteImport.update({
+  id: '/pirate-navigator',
+  path: '/pirate-navigator',
+  getParentRoute: () => rootRouteImport,
+})
+const PatternIslandsRoute = PatternIslandsRouteImport.update({
+  id: '/pattern-islands',
+  path: '/pattern-islands',
+  getParentRoute: () => rootRouteImport,
+})
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
   getParentRoute: () => rootRouteImport,
 })
+const LessonsRoute = LessonsRouteImport.update({
+  id: '/lessons',
+  path: '/lessons',
+  getParentRoute: () => rootRouteImport,
+})
 const FractionRoomRoute = FractionRoomRouteImport.update({
   id: '/fraction-room',
   path: '/fraction-room',
+  getParentRoute: () => rootRouteImport,
+})
+const FishTankShopRoute = FishTankShopRouteImport.update({
+  id: '/fish-tank-shop',
+  path: '/fish-tank-shop',
+  getParentRoute: () => rootRouteImport,
+})
+const EquationsEcoRoute = EquationsEcoRouteImport.update({
+  id: '/equations-eco',
+  path: '/equations-eco',
+  getParentRoute: () => rootRouteImport,
+})
+const DarkRoomEscapeRoute = DarkRoomEscapeRouteImport.update({
+  id: '/dark-room-escape',
+  path: '/dark-room-escape',
   getParentRoute: () => rootRouteImport,
 })
 const AdminRoute = AdminRouteImport.update({
@@ -69,8 +105,14 @@ const rootRouteChildren = {
   IndexRoute: IndexRoute,
   AdaptiveRoute: AdaptiveRoute,
   AdminRoute: AdminRoute,
+  DarkRoomEscapeRoute: DarkRoomEscapeRoute,
+  EquationsEcoRoute: EquationsEcoRoute,
+  FishTankShopRoute: FishTankShopRoute,
   FractionRoomRoute: FractionRoomRoute,
+  LessonsRoute: LessonsRoute,
   LoginRoute: LoginRoute,
+  PatternIslandsRoute: PatternIslandsRoute,
+  PirateNavigatorRoute: PirateNavigatorRoute,
   ProfileRoute: ProfileRoute,
   SignupRoute: SignupRoute,
   TeacherRoute: TeacherRoute,

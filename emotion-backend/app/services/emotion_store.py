@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from collections import defaultdict
-import random
 
 from app.models.schemas import EmotionEvent, EmotionType, EmotionDistribution
 
@@ -15,39 +14,12 @@ class EmotionStore:
     def __init__(self, window_seconds: int = 60):
         self.events: List[EmotionEvent] = []
         self.window_seconds = window_seconds
-        self._seed_mock_data()
-
-    def _seed_mock_data(self):
-        """Generate realistic mock emotion data for a class of 20 students."""
-        now = datetime.utcnow()
-        student_ids = [f"STU_{i:03d}" for i in range(1, 21)]
-        subjects = ["Mathematics", "Science", "English", "History", "Programming"]
-        emotions = list(EmotionType)
-
-        # Generate events over last 5 minutes
-        for seconds_ago in range(0, 300, 5):
-            timestamp = now - timedelta(seconds=seconds_ago)
-            # 3-8 students emit emotions each 5-second interval
-            active_students = random.sample(student_ids, k=random.randint(3, 8))
-            for student_id in active_students:
-                # Weighted random emotion (more NORMAL and HAPPY, fewer ANGRY)
-                emotion = random.choices(
-                    emotions,
-                    weights=[25, 30, 18, 15, 8, 4],
-                    k=1
-                )[0]
-                event = EmotionEvent(
-                    student_id=student_id,
-                    emotion=emotion,
-                    subject=random.choice(subjects),
-                    timestamp=timestamp,
-                    confidence=round(random.uniform(0.75, 0.99), 2)
-                )
-                self.events.append(event)
+        self._known_students: set = set()
 
     def add_event(self, event: EmotionEvent) -> None:
         """Add a new emotion event."""
         self.events.append(event)
+        self._known_students.add(event.student_id)
         self._cleanup_old_events()
 
     def _cleanup_old_events(self) -> None:
@@ -96,7 +68,7 @@ class EmotionStore:
 
         return {
             "timestamp": datetime.utcnow(),
-            "total_students": 20,
+            "total_students": len(self._known_students),
             "active_students": len(active_students),
             "window_seconds": self.window_seconds,
             "distribution": distribution,
@@ -109,7 +81,7 @@ class EmotionStore:
         """Return empty distribution structure."""
         return {
             "timestamp": datetime.utcnow(),
-            "total_students": 20,
+            "total_students": len(self._known_students),
             "active_students": 0,
             "window_seconds": self.window_seconds,
             "distribution": [

@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
+import { toast } from "sonner";
 import {
   Monitor,
   Users,
@@ -24,16 +25,14 @@ import {
   BarChart3,
   RefreshCw,
   Send,
-  Trophy,
-  Timer,
-  PartyPopper,
   Activity,
   TrendingUp,
   Sparkles
 } from "lucide-react";
-import { EMOTIONS } from "@/lib/emotions";
+import { EMOTIONS, toEmotionKey } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
 import { emotionApi } from "@/lib/emotionApi";
+import { getStudents as getLiveStudents } from "@/services/emotionApi";
 
 const SUBJECTS = ["General", "Mathematics", "Science", "English", "History", "Programming"];
 
@@ -50,7 +49,6 @@ function TeacherDashboard() {
   const [analytics, setAnalytics] = useState(null);
   const [recommendation, setRecommendation] = useState(null);
   const [effectiveness, setEffectiveness] = useState(null);
-  const [pendingInterventions, setPendingInterventions] = useState([]);
   const [variationWindow, setVariationWindow] = useState(null);
   const [loading, setLoading] = useState({});
   const [error, setError] = useState(null);
@@ -59,11 +57,62 @@ function TeacherDashboard() {
   const [pattern, setPattern] = useState(null);
   const [trend, setTrend] = useState(null);
 
-  // Game session state
-  const [activeGame, setActiveGame] = useState(null);
-  const [gameTimer, setGameTimer] = useState(0);
-  const [gameStatus, setGameStatus] = useState("idle"); // idle, running, completed
-  const [studentMessage, setStudentMessage] = useState(null);
+  // Real, live students currently being tracked by emotion-service (i.e.
+  // actually connected with their camera on right now) - not a synthetic
+  // roster. Empty until a student page actually starts sending frames.
+  const [liveStudents, setLiveStudents] = useState([]);
+  const [liveStudentsLoaded, setLiveStudentsLoaded] = useState(false);
+  const [studentsError, setStudentsError] = useState(null);
+
+  // What's currently broadcast live to students (set via handleLaunchGame
+  // below POSTing to /recommendation/active) - polled so the recommendation
+  // panel can show "Live for students: X" without a page refresh.
+  const [broadcastGame, setBroadcastGame] = useState(null);
+  // Live join/finish counts + per-student results for that same session.
+  const [sessionStats, setSessionStats] = useState(null);
+  const [ending, setEnding] = useState(false);
+
+  async function fetchActiveRecommendation() {
+    try {
+      const data = await emotionApi.getActiveRecommendation();
+      setBroadcastGame(data?.active_game ? data : null);
+    } catch (e) {
+      // silent — live-status badge is best-effort, not required for the dashboard to function
+    }
+  }
+
+  async function fetchActiveStats() {
+    try {
+      const data = await emotionApi.getActiveStats();
+      setSessionStats(data?.active_game ? data : null);
+    } catch (e) {
+      // silent — same best-effort reasoning as fetchActiveRecommendation
+    }
+  }
+
+  useEffect(() => {
+    fetchActiveRecommendation();
+    fetchActiveStats();
+    const interval = setInterval(() => {
+      fetchActiveRecommendation();
+      fetchActiveStats();
+    }, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function handleEndGame() {
+    setEnding(true);
+    try {
+      await emotionApi.endActiveRecommendation();
+      setBroadcastGame(null);
+      setSessionStats(null);
+      toast.success("Game ended for the class");
+    } catch (e) {
+      toast.error("Couldn't end the game - try again.");
+    } finally {
+      setEnding(false);
+    }
+  }
 
   // Fetch analytics periodically when live
   useEffect(() => {
@@ -71,7 +120,6 @@ function TeacherDashboard() {
     fetchAnalytics();
     const interval = setInterval(() => {
       fetchAnalytics();
-      fetchPending();
     }, 5000);
     return () => clearInterval(interval);
   }, [isLive]);
@@ -79,10 +127,30 @@ function TeacherDashboard() {
   // Initial fetch
   useEffect(() => {
     fetchEffectiveness();
-    fetchPending();
     fetchVariationWindow();
     fetchPattern();
     fetchTrend();
+  }, []);
+
+  async function fetchLiveStudents() {
+    try {
+      const data = await getLiveStudents();
+      setLiveStudents(Array.isArray(data) ? data : []);
+      setStudentsError(null);
+    } catch (e) {
+      setStudentsError(e.message || "Failed to load live student data");
+    } finally {
+      setLiveStudentsLoaded(true);
+    }
+  }
+
+  // Poll students actually connected right now (emotion-service's live,
+  // in-memory tracker - not a stored roster), so the panel reflects who's
+  // really here instead of a fixed list.
+  useEffect(() => {
+    fetchLiveStudents();
+    const interval = setInterval(fetchLiveStudents, 5000);
+    return () => clearInterval(interval);
   }, []);
 
   // Fetch pattern & trend when live
@@ -113,15 +181,6 @@ function TeacherDashboard() {
       setEffectiveness(data);
     } catch (e) {
       console.error("Failed to fetch effectiveness", e);
-    }
-  }
-
-  async function fetchPending() {
-    try {
-      const data = await emotionApi.getPendingInterventions();
-      setPendingInterventions(data.pending || []);
-    } catch (e) {
-      console.error("Failed to fetch pending", e);
     }
   }
 
@@ -220,7 +279,6 @@ function TeacherDashboard() {
 
       setRecommendation(normalizedRecommendation);
       await fetchVariationWindow();
-      await fetchPending();
     } catch (e) {
       console.error("Recommendation error:", e);
       setError("Unable to connect to recommendation backend. Showing local Fraction Room recommendation.");
@@ -241,7 +299,6 @@ function TeacherDashboard() {
         });
       }
       await emotionApi.submitFeedback(interventionId, post);
-      await fetchPending();
       await fetchEffectiveness();
     } catch (e) {
       setError(e.message);
@@ -252,63 +309,50 @@ function TeacherDashboard() {
 
   const recommendedGame = recommendation?.recommendation || recommendation;
 
-  const GAME_ROUTE_MAP = {
-    gm_math_bored_03: "/fraction-room",
-    gm_math_circle_track_04: "/track-field-analytics",
+  // Single source of truth for which recommendation-engine game_ids map to
+  // an actually playable game, and which broadcast key
+  // (emotion-backend's GAME_LIBRARY, see active_recommendation.py) switches
+  // students to it live. Add an entry here whenever a new real game is
+  // wired up on the backend's REAL_GAME_PREFERENCE table.
+  const REAL_GAMES = {
+    gm_math_bored_03: { route: "/fraction-room", gameKey: "fraction_room" },
+    gm_math_fraction_happy: { route: "/fraction-room", gameKey: "fraction_room" },
+    gm_math_fraction_confused: { route: "/fraction-room", gameKey: "fraction_room" },
+    gm_math_dark_room_01: { route: "/dark-room-escape", gameKey: "dark_room" },
+    gm_math_pirate_01: { route: "/pirate-navigator", gameKey: "pirate" },
+    gm_math_pirate_02: { route: "/pirate-navigator", gameKey: "pirate" },
+    gm_math_pirate_normal: { route: "/pirate-navigator", gameKey: "pirate" },
+    gm_math_equations_eco_01: { route: "/equations-eco", gameKey: "equations_eco" },
+    gm_math_fish_tank_01: { route: "/fish-tank-shop", gameKey: "fish_tank_shop" },
+    gm_math_pattern_islands_01: { route: "/pattern-islands", gameKey: "pattern_islands" },
   };
 
   function handleOpenGame(gameId) {
-    if (!gameId) return;
-    const gameRoute = GAME_ROUTE_MAP[gameId] || "/fraction-room";
-    router.navigate({ to: gameRoute });
+    const real = REAL_GAMES[gameId];
+    if (!real) return;
+    router.navigate({ to: real.route });
   }
 
-  function handleLaunchGame() {
+  async function handleLaunchGame() {
     if (!recommendation) return;
-
-    handleOpenGame(recommendedGame?.game_id);
-  }
-
-  function handleCompleteGame() {
-    if (!activeGame) return;
-    setGameStatus("completed");
-    setStudentMessage({
-      type: "win",
-      title: "Congratulations!",
-      body: `You completed "${activeGame.recommendation.title}"! Great job!`,
-    });
-    // Auto-submit feedback
-    if (activeGame.intervention_id) {
-      handleSubmitFeedback(activeGame.intervention_id);
+    const gameId = recommendedGame?.game_id;
+    const real = REAL_GAMES[gameId];
+    if (!real) {
+      setError("This recommendation doesn't have a playable game yet.");
+      return;
     }
-    setActiveGame(null);
-    setGameTimer(0);
-    setTimeout(() => setStudentMessage(null), 8000);
-  }
 
-  // Game countdown timer
-  useEffect(() => {
-    if (gameStatus !== "running" || gameTimer <= 0) return;
-    const interval = setInterval(() => {
-      setGameTimer((t) => {
-        if (t <= 1) {
-          clearInterval(interval);
-          handleCompleteGame();
-          return 0;
-        }
-        return t - 1;
-      });
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [gameStatus, gameTimer]);
-
-  // Build emotion distribution map from analytics
-  const emotionMap = {};
-  if (analytics && analytics.distribution) {
-    analytics.distribution.forEach((d) => {
-      const key = d.emotion.toLowerCase();
-      emotionMap[key] = d.percentage;
-    });
+    // Broadcast only - the teacher's own browser stays on the dashboard so
+    // they can monitor the live session panel below instead of getting
+    // pulled into the game themselves.
+    try {
+      const data = await emotionApi.setActiveRecommendation(real.gameKey);
+      setBroadcastGame(data);
+      await fetchActiveStats();
+      toast.success(`${recommendedGame.title} started for the class`);
+    } catch (e) {
+      toast.error("Couldn't notify students - they may need to refresh.");
+    }
   }
 
   const handleStartClass = () => {
@@ -324,40 +368,63 @@ function TeacherDashboard() {
   const handleShareScreen = () => {
     setIsSharingScreen(!isSharingScreen);
   };
-  const students = [
-    { id: "1", name: "Aisha K.", emotion: "happy", status: "active", score: 85 },
-    { id: "2", name: "Ben R.", emotion: "confused", status: "active", score: 62 },
-    { id: "3", name: "Chen W.", emotion: "happy", status: "active", score: 90 },
-    { id: "4", name: "Diya P.", emotion: "neutral", status: "active", score: 75 },
-    { id: "5", name: "Eli M.", emotion: "bored", status: "inactive", score: 55 },
-    { id: "6", name: "Fatima A.", emotion: "happy", status: "active", score: 88 },
-    { id: "7", name: "Gabe S.", emotion: "confused", status: "active", score: 60 },
-    { id: "8", name: "Hana L.", emotion: "neutral", status: "active", score: 72 },
-    { id: "9", name: "Ivan O.", emotion: "happy", status: "active", score: 82 },
-    { id: "10", name: "Jules N.", emotion: "frustrated", status: "inactive", score: 48 },
-    { id: "11", name: "Kavi T.", emotion: "happy", status: "active", score: 87 },
-    { id: "12", name: "Lina B.", emotion: "neutral", status: "active", score: 70 }
-  ];
-  const alerts = [
-    {
-      id: "1",
-      message: "High confusion detected (20%) - Consider explaining again",
-      type: "warning",
-      time: "2 min ago"
-    },
-    {
-      id: "2",
-      message: "3 students showing frustration - May need individual help",
-      type: "danger",
-      time: "5 min ago"
-    },
-    {
-      id: "3",
-      message: "Engagement dropped - Start a quick activity",
-      type: "warning",
-      time: "10 min ago"
+  // Real, live students - only whoever emotion-service is actually
+  // tracking right now (i.e. their camera is on and sending frames), not a
+  // stored/synthetic roster. "active" means seen in the last 15s; the
+  // in-memory tracker never explicitly removes a student on disconnect, so
+  // this freshness check is what actually distinguishes "here now" from
+  // "was here earlier and closed the tab".
+  const students = liveStudents.map((s) => {
+    const lastSeenSecondsAgo = s.lastSeenTimestamp ? Date.now() / 1000 - s.lastSeenTimestamp : Infinity;
+    return {
+      id: s.studentId,
+      name: s.studentId,
+      emotion: toEmotionKey(s.currentEmotion),
+      status: lastSeenSecondsAgo < 15 ? "active" : "inactive",
+      engagementScore: s.engagementIndicators?.engagementScore ?? null,
+    };
+  });
+  // Real, derived attention-drop alerts (replaces the old hardcoded mock
+  // list). Sourced from: pattern_detector (sustained BORED/CONFUSED/
+  // FRUSTRATED across 2 aggregation cycles), the live class engagement
+  // score, and at-risk students from analytics-service.
+  const alerts = [];
+  if (pattern?.detected) {
+    alerts.push({
+      id: "pattern",
+      message: `Persistent ${pattern.emotion?.toLowerCase()} detected across the class - consider starting a re-engagement activity`,
+      type: pattern.emotion === "FRUSTRATED" ? "danger" : "warning",
+      time: "Live",
+    });
+  }
+  if (analytics?.class_engagement_score != null) {
+    const score = Math.round(analytics.class_engagement_score);
+    if (score < 30) {
+      alerts.push({
+        id: "engagement",
+        message: `Class engagement score dropped to ${score}% - attention has fallen sharply`,
+        type: "danger",
+        time: "Live",
+      });
+    } else if (score < 50) {
+      alerts.push({
+        id: "engagement",
+        message: `Class engagement score is ${score}% - attention may be dropping`,
+        type: "warning",
+        time: "Live",
+      });
     }
-  ];
+  }
+  const NEGATIVE_EMOTIONS = new Set(["bored", "confused", "frustrated", "angry"]);
+  const atRiskCount = students.filter((s) => s.status === "active" && NEGATIVE_EMOTIONS.has(s.emotion)).length;
+  if (atRiskCount > 0) {
+    alerts.push({
+      id: "at-risk",
+      message: `${atRiskCount} student${atRiskCount > 1 ? "s" : ""} currently showing a negative emotion (bored/confused/frustrated/angry)`,
+      type: atRiskCount >= 3 ? "danger" : "warning",
+      time: "Live",
+    });
+  }
   const smartSuggestions = [
     {
       id: "1",
@@ -417,6 +484,11 @@ function TeacherDashboard() {
             </button>
           </div>
           <div className="max-h-96 overflow-y-auto">
+            {alerts.length === 0 && (
+              <div className="p-4 text-sm text-muted-foreground text-center">
+                No attention-drop alerts right now.
+              </div>
+            )}
             {alerts.map((alert) => <div key={alert.id} className="p-4 border-b border-border/40 last:border-b-0">
                 <div className="flex gap-3">
                   {alert.type === "danger" && <AlertTriangle className="h-5 w-5 text-emotion-angry flex-shrink-0 mt-0.5" />}
@@ -516,13 +588,13 @@ function TeacherDashboard() {
       )}
 
       {/* Pattern Detection Alert */}
-      {pattern && pattern.pattern_detected && (
+      {pattern && pattern.detected && (
         <div className="glass rounded-2xl p-4 border border-amber/30 bg-amber/5">
           <div className="flex items-center gap-3">
             <Sparkles className="h-5 w-5 text-amber animate-pulse" />
             <div className="flex-1">
               <p className="text-sm font-semibold text-amber">
-                Persistent Pattern Detected: {pattern.detected_emotion}
+                Persistent Pattern Detected: {pattern.emotion}
               </p>
               <p className="text-xs text-muted-foreground">
                 This emotion has persisted above threshold for 2 consecutive aggregation cycles.
@@ -549,8 +621,7 @@ function TeacherDashboard() {
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {analytics && analytics.distribution ? (
             analytics.distribution.map((item) => {
-              const key = item.emotion.toLowerCase();
-              const e = EMOTIONS[key] || { emoji: "❓", label: item.emotion, color: "#888" };
+              const e = EMOTIONS[toEmotionKey(item.emotion)] || { emoji: "❓", label: item.emotion, color: "#888" };
               return (
                 <div
                   key={item.emotion}
@@ -601,8 +672,7 @@ function TeacherDashboard() {
                   </span>
                   <div className="flex-1 h-6 rounded-full bg-secondary overflow-hidden flex">
                     {Object.entries(dist).map(([emotion, pct]) => {
-                      const key = emotion.toLowerCase();
-                      const e = EMOTIONS[key] || { color: "#888" };
+                      const e = EMOTIONS[toEmotionKey(emotion)] || { color: "#888" };
                       return (
                         <div
                           key={emotion}
@@ -755,9 +825,23 @@ function TeacherDashboard() {
           </div>
         </div>
         
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
-          {students.map((student) => {
-    const e = EMOTIONS[student.emotion];
+        {studentsError ? (
+          <div className="text-sm text-destructive flex items-center gap-2 py-4">
+            <AlertTriangle className="h-4 w-4" />
+            {studentsError} (is emotion-service running on port 5002?)
+          </div>
+        ) : !liveStudentsLoaded ? (
+          <div className="text-center py-8 text-muted-foreground">
+            <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+          </div>
+        ) : students.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            No students connected yet - they'll appear here once their camera starts sending emotion data.
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
+            {students.map((student) => {
+    const e = EMOTIONS[student.emotion] || { emoji: "❓", label: "No data", color: "var(--muted-foreground)" };
     return <div
       key={student.id}
       className={`p-3 rounded-xl border transition-all hover:scale-105 ${student.status === "inactive" ? "opacity-50" : ""}`}
@@ -772,9 +856,13 @@ function TeacherDashboard() {
                 </div>
                 <p className="text-sm font-medium truncate mb-1">{student.name}</p>
                 <p className="text-xs" style={{ color: e.color }}>{e.label}</p>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  {student.engagementScore != null ? `Engagement: ${student.engagementScore}%` : "No data yet"}
+                </p>
               </div>;
   })}
-        </div>
+          </div>
+        )}
       </div>
 
       {/* 5. Game Recommendation Panel */}
@@ -804,6 +892,63 @@ function TeacherDashboard() {
             </button>
           </div>
         </div>
+
+        {broadcastGame?.active_game && (
+          <div className="mb-4 rounded-xl border p-3" style={{ borderColor: "rgba(0,229,255,0.3)", backgroundColor: "rgba(0,229,255,0.05)" }}>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 text-xs font-semibold" style={{ color: "#00E5FF" }}>
+                <span className="h-2 w-2 rounded-full animate-pulse" style={{ backgroundColor: "#00E5FF" }} />
+                Live for students: {broadcastGame.label}
+                {broadcastGame.updated_at && (
+                  <span className="text-muted-foreground font-normal">
+                    (started {new Date(broadcastGame.updated_at).toLocaleTimeString()})
+                  </span>
+                )}
+              </div>
+              <button
+                onClick={handleEndGame}
+                disabled={ending}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+              >
+                {ending ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <PhoneOff className="h-3.5 w-3.5" />}
+                End Game
+              </button>
+            </div>
+
+            <div className="mt-3 flex items-center gap-4 text-sm">
+              <span><span className="font-bold text-foreground">{sessionStats?.joined_count ?? 0}</span> <span className="text-muted-foreground">playing</span></span>
+              <span><span className="font-bold text-foreground">{sessionStats?.finished_count ?? 0}</span> <span className="text-muted-foreground">finished</span></span>
+              {sessionStats?.results?.length > 0 && (
+                <span>
+                  <span className="font-bold text-emotion-happy">{sessionStats.results.filter((r) => r.outcome === "win").length}</span>{" "}
+                  <span className="text-muted-foreground">won</span>
+                  {" · "}
+                  <span className="font-bold text-destructive">{sessionStats.results.filter((r) => r.outcome === "loss").length}</span>{" "}
+                  <span className="text-muted-foreground">lost</span>
+                </span>
+              )}
+            </div>
+
+            {sessionStats?.results?.length > 0 && (
+              <div className="mt-3 max-h-40 overflow-y-auto space-y-1.5">
+                {sessionStats.results.slice().reverse().map((r, i) => (
+                  <div key={`${r.student_id}-${r.timestamp}-${i}`} className="flex items-center justify-between text-xs px-2 py-1.5 rounded-lg bg-background/40">
+                    <span className="text-foreground font-medium truncate max-w-[40%]">{r.student_name || r.student_id}</span>
+                    <span className="text-muted-foreground">
+                      {r.correct_count != null && r.total_count != null ? `${r.correct_count}/${r.total_count}` : (r.score != null ? `${Math.round(r.score)}%` : "-")}
+                    </span>
+                    <span className={r.outcome === "win" ? "text-emotion-happy font-semibold" : "text-destructive font-semibold"}>
+                      {r.outcome === "win" ? "Passed" : "Failed"}
+                    </span>
+                    <span className="text-muted-foreground">
+                      {r.duration_seconds != null ? `${Math.floor(r.duration_seconds / 60)}m ${r.duration_seconds % 60}s` : new Date(r.timestamp).toLocaleTimeString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {recommendation ? (
           <div className="space-y-4">
@@ -843,71 +988,24 @@ function TeacherDashboard() {
                   <div className="mt-4">
                     <button
                       onClick={handleLaunchGame}
-                      disabled={gameStatus === "running"}
                       className="inline-flex items-center gap-2 rounded-lg bg-emotion-happy px-4 py-2 text-sm font-semibold text-white hover:bg-emotion-happy/90 transition-colors disabled:opacity-50"
                     >
                       <Play className="h-4 w-4" />
-                      {recommendedGame?.game_id === "gm_math_bored_03" ? `Start ${recommendedGame.title}` : "Start Game"}
+                      {REAL_GAMES[recommendedGame?.game_id] ? `Start ${recommendedGame.title}` : "Start Game"}
                     </button>
                   </div>
                 </div>
               </div>
             </div>
 
-            {/* Alternatives */}
-            {recommendation.alternatives && recommendation.alternatives.length > 0 && (
-              <div>
-                <p className="text-xs font-semibold text-muted-foreground mb-2">ALTERNATIVES</p>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {recommendation.alternatives.map((alt) => (
-                    <button
-                      key={alt.game_id}
-                      type="button"
-                      onClick={() => handleOpenGame(alt.game_id)}
-                      className="text-left p-3 rounded-lg border border-border/60 hover:border-primary/80 transition-colors"
-                    >
-                      <p className="text-sm font-medium text-primary hover:underline">{alt.title}</p>
-                      <p className="text-xs text-muted-foreground">{alt.game_type} | {alt.subject}</p>
-                      <p className="mt-2 text-xs text-secondary">Click to open</p>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Game Controls */}
-            {gameStatus === "running" && activeGame && (
-              <div className="p-4 rounded-xl border border-amber/30 bg-amber/5">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <Timer className="h-5 w-5 text-amber animate-pulse" />
-                    <div>
-                      <p className="text-sm font-semibold">Game in Progress</p>
-                      <p className="text-xs text-muted-foreground">
-                        {Math.floor(gameTimer / 60)}:{String(gameTimer % 60).padStart(2, "0")} remaining
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    onClick={handleCompleteGame}
-                    className="px-4 py-2 rounded-lg text-sm font-medium bg-emotion-happy text-white hover:bg-emotion-happy/90 transition-colors flex items-center gap-2"
-                  >
-                    <Trophy className="h-4 w-4" />
-                    Mark Complete
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {recommendation && gameStatus !== "running" && (
+            {recommendation && (
               <div className="flex gap-3">
                 <button
                   onClick={handleLaunchGame}
-                  disabled={gameStatus === "running"}
                   className="px-4 py-2 rounded-lg text-sm font-medium bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-2"
                 >
                   <Play className="h-4 w-4" />
-                  {recommendedGame?.game_id === "gm_math_bored_03" ? "Open Fraction Room" : "Start Game"}
+                  {REAL_GAMES[recommendedGame?.game_id] ? `Start ${recommendedGame.title}` : "Start Game"}
                 </button>
                 <button
                   onClick={() => handleSubmitFeedback(recommendation.intervention_id)}
@@ -934,34 +1032,6 @@ function TeacherDashboard() {
           </div>
         )}
       </div>
-
-      {/* 5b. Pending Interventions */}
-      {pendingInterventions.length > 0 && (
-        <div className="glass rounded-2xl p-6">
-          <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
-            <Clock className="h-5 w-5 text-amber" />
-            Pending Interventions ({pendingInterventions.length})
-          </h2>
-          <div className="space-y-3">
-            {pendingInterventions.map((inv) => (
-              <div key={inv.intervention_id} className="flex items-center justify-between p-3 rounded-lg border border-border/60">
-                <div>
-                  <p className="text-sm font-medium">{inv.game_title}</p>
-                  <p className="text-xs text-muted-foreground">{inv.subject} | {new Date(inv.timestamp).toLocaleTimeString()}</p>
-                </div>
-                <button
-                  onClick={() => handleSubmitFeedback(inv.intervention_id)}
-                  disabled={loading[inv.intervention_id]}
-                  className="px-3 py-1.5 rounded-lg text-xs font-medium bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-1"
-                >
-                  {loading[inv.intervention_id] ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                  Record Result
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
 
       {
     /* 6. Quick Actions */
@@ -1040,36 +1110,6 @@ function TeacherDashboard() {
         </div>
       </div>
 
-      {/* Student Notification Overlay */}
-      {studentMessage && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-full max-w-md">
-          <div
-            className={`mx-4 p-4 rounded-2xl shadow-2xl border flex items-start gap-3 animate-in slide-in-from-bottom-4 ${
-              studentMessage.type === "win"
-                ? "bg-emotion-happy/10 border-emotion-happy/30"
-                : "bg-primary/10 border-primary/30"
-            }`}
-          >
-            {studentMessage.type === "win" ? (
-              <PartyPopper className="h-6 w-6 text-emotion-happy flex-shrink-0 mt-0.5" />
-            ) : (
-              <Play className="h-6 w-6 text-primary flex-shrink-0 mt-0.5" />
-            )}
-            <div className="flex-1">
-              <h4 className={`font-semibold ${studentMessage.type === "win" ? "text-emotion-happy" : "text-primary"}`}>
-                {studentMessage.title}
-              </h4>
-              <p className="text-sm text-foreground mt-1">{studentMessage.body}</p>
-            </div>
-            <button
-              onClick={() => setStudentMessage(null)}
-              className="p-1 hover:bg-background rounded-full flex-shrink-0"
-            >
-              ×
-            </button>
-          </div>
-        </div>
-      )}
     </div>;
 }
 export {

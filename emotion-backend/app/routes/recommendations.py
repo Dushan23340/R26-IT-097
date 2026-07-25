@@ -6,8 +6,94 @@ from app.services.emotion_store import emotion_store
 from app.services.recommendation_engine import recommendation_engine
 from app.services.intervention_tracker import intervention_tracker
 from app.services.dashboard_store import dashboard_store
+from app.services.active_recommendation import active_recommendation_store
 
 router = APIRouter(prefix="/recommendation", tags=["recommendations"])
+
+
+@router.get("/active")
+async def get_active_recommendation() -> Dict:
+    """
+    Get the teacher-broadcast active game (manual override, distinct from
+    the emotion-driven /latest and /generate recommendations). Games poll
+    this to detect when the teacher switches the class to a different game.
+    """
+    return active_recommendation_store.get_active()
+
+
+@router.post("/active")
+async def set_active_recommendation(body: Dict) -> Dict:
+    """
+    Body: {"game_key": "pirate"} - one of "fraction_room", "track_field", "pirate".
+    Starts a fresh session (join/finish counts reset).
+    """
+    game_key = body.get("game_key")
+    if not game_key:
+        return {"success": False, "error": "game_key is required"}
+    try:
+        active_recommendation_store.set_active(game_key)
+    except ValueError as exc:
+        return {"success": False, "error": str(exc)}
+    return {"success": True, **active_recommendation_store.get_active()}
+
+
+@router.post("/active/end")
+async def end_active_recommendation() -> Dict:
+    """Teacher ends the current live game session for the whole class."""
+    active_recommendation_store.end_active()
+    return {"success": True, "active_game": None}
+
+
+@router.post("/active/join")
+async def join_active_recommendation(body: Dict) -> Dict:
+    """
+    A student's game page calls this on mount when it detects itself as
+    the currently broadcast game. Body: {"student_id": "...", "session_id": "..."}.
+    session_id must match the current broadcast (from GET /active) or the
+    join is silently ignored - e.g. it's a stale session from before the
+    teacher ended/switched games.
+    """
+    student_id = body.get("student_id")
+    session_id = body.get("session_id")
+    if not student_id or not session_id:
+        return {"success": False, "error": "student_id and session_id are required"}
+    joined = active_recommendation_store.join(student_id, session_id)
+    return {"success": joined}
+
+
+@router.post("/active/finish")
+async def finish_active_recommendation(body: Dict) -> Dict:
+    """
+    A student's game page calls this when the game ends (win/loss). Body:
+    {"student_id": "...", "student_name": "...", "session_id": "...",
+     "outcome": "win"|"loss", "score": 75, "correct_count": 3, "total_count": 4,
+     "duration_seconds": 134}. student_name/correct_count/total_count/
+    duration_seconds are optional - fills out the teacher's results table
+    (Student Name, Score e.g. 3/4, Completion Time) when a game provides them.
+    """
+    student_id = body.get("student_id")
+    session_id = body.get("session_id")
+    outcome = body.get("outcome")
+    score = body.get("score")
+    if not student_id or not session_id or outcome not in ("win", "loss"):
+        return {"success": False, "error": "student_id, session_id, and outcome ('win'|'loss') are required"}
+    recorded = active_recommendation_store.record_result(
+        student_id,
+        session_id,
+        outcome,
+        score,
+        student_name=body.get("student_name"),
+        correct_count=body.get("correct_count"),
+        total_count=body.get("total_count"),
+        duration_seconds=body.get("duration_seconds"),
+    )
+    return {"success": recorded}
+
+
+@router.get("/active/stats")
+async def get_active_stats() -> Dict:
+    """Live join/finish counts + per-student results for the teacher dashboard to poll."""
+    return active_recommendation_store.get_stats()
 
 
 @router.get("/latest", response_model=RecommendationResponse)

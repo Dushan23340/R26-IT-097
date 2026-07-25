@@ -1,6 +1,6 @@
-import { EMOTIONS } from "@/lib/emotions";
+import { getEmotion } from "@/lib/emotions";
 function EmotionBadge({ emotion, pulse = false, size = "md" }) {
-  const e = EMOTIONS[emotion];
+  const e = getEmotion(emotion) || { label: emotion || "Unknown", emoji: "❓", color: "var(--muted-foreground)" };
   const sizing = {
     sm: "text-xs px-2 py-0.5 gap-1",
     md: "text-sm px-3 py-1 gap-1.5",

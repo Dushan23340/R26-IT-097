@@ -127,6 +127,15 @@ function StudentDashboard() {
       action: "Launch Game",
       duration: "4 min",
       to: "/track-field-analytics"
+    },
+    {
+      id: "5",
+      type: "quiz",
+      title: "Play: Uncharted Waters — The Pirate Navigator",
+      description: "Sail across four Pythagorean Theorem voyages to chart a course to the treasure.",
+      action: "Launch Game",
+      duration: "6 min",
+      to: "/pirate-navigator"
     }
   ];
   const progressData = [

@@ -15,6 +15,7 @@ load_dotenv(Path(__file__).resolve().parent / ".env")
 
 import cv2
 import numpy as np
+import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 
@@ -52,6 +53,49 @@ tracker = EmotionTracker()
 
 # Prevent TensorFlow concurrent prediction issues
 _PREDICTION_LOCK = threading.Lock()
+
+# =========================================================
+# ANALYTICS SERVICE FORWARDING (component IT22242754)
+# =========================================================
+# emotion-backend (the class-level analytics + game-recommendation service)
+# was built around the original shared vocabulary (Happy/Normal/Confused/
+# Bored/Frustrated/Angry as sibling states) that predates this service's
+# Phase 4 redesign, which now derives Bored/Confused/Frustrated/Engaged/
+# Neutral downstream instead of predicting them directly. This maps our
+# smoothed student state back onto that shared vocabulary for forwarding.
+
+ANALYTICS_SERVICE_URL = os.getenv("ANALYTICS_SERVICE_URL", "http://127.0.0.1:8000")
+
+_STATE_TO_ANALYTICS_EMOTION = {
+    "bored": "BORED",
+    "confused": "CONFUSED",
+    "frustrated": "FRUSTRATED",
+    "engaged": "HAPPY",
+    "neutral": "NORMAL",
+}
+
+
+def _forward_to_analytics_service(student_id: str, smoothed_state: str, confidence: float) -> None:
+    """Best-effort forward to the class-level analytics service. Never
+    raises - the analytics service being down or unreachable must not
+    affect this service's own /predict response."""
+    emotion_code = _STATE_TO_ANALYTICS_EMOTION.get((smoothed_state or "").strip().lower())
+    if emotion_code is None:
+        return
+
+    try:
+        requests.post(
+            f"{ANALYTICS_SERVICE_URL}/emotions",
+            json={
+                "student_id": str(student_id),
+                "emotion": emotion_code,
+                "confidence": float(confidence),
+            },
+            timeout=2,
+        )
+    except requests.RequestException:
+        pass
+
 
 # =========================================================
 # HELPER FUNCTIONS
@@ -282,6 +326,12 @@ def predict():
         # =================================================
 
         smoothed_state = tracker.update(student_id, student_state)
+
+        threading.Thread(
+            target=_forward_to_analytics_service,
+            args=(student_id, smoothed_state, confidence),
+            daemon=True,
+        ).start()
 
         analytics = tracker.get_metrics(student_id)
         attention_score = compute_attention_score(

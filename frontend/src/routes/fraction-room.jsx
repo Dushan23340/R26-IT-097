@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { getRecommendation, getAnalyticsCurrent } from "@/services/analyticsApi";
+import { useGameSession } from "@/hooks/useGameSession";
 import {
   Loader2,
   Clock3,
@@ -100,6 +101,8 @@ const Route = createFileRoute("/fraction-room")({
 });
 
 function FractionRoomPage() {
+  const { reportFinish } = useGameSession("fraction_room");
+  const reportedRef = useRef(false);
   const [started, setStarted] = useState(false);
   const [timeLeft, setTimeLeft] = useState(START_SECONDS);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -294,7 +297,29 @@ function FractionRoomPage() {
     }
   }, [currentIndex, started]);
 
+  // Report the outcome to the teacher's live session panel exactly once
+  // per attempt (completed/gameOver are set from three separate effects
+  // above, so a ref guard is simpler than trying to report inline at each
+  // call site).
+  useEffect(() => {
+    if (reportedRef.current) return;
+    if (completed) {
+      reportedRef.current = true;
+      reportFinish("win", Math.round((solvedIds.length / QUESTIONS.length) * 100), {
+        correctCount: solvedIds.length,
+        totalCount: QUESTIONS.length,
+      });
+    } else if (gameOver) {
+      reportedRef.current = true;
+      reportFinish("loss", Math.round((solvedIds.length / QUESTIONS.length) * 100), {
+        correctCount: solvedIds.length,
+        totalCount: QUESTIONS.length,
+      });
+    }
+  }, [completed, gameOver]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const startGame = () => {
+    reportedRef.current = false;
     setStarted(true);
     setTimeLeft(START_SECONDS);
     setCurrentIndex(0);
@@ -485,7 +510,7 @@ function FractionRoomPage() {
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="text-label-md text-text-muted">CURRENT CHALLENGE</div>
-                <h2 className="mt-1 text-heading-lg text-foreground">Paper #{currentIndex + 1}</h2>
+                <h2 className="mt-1 text-heading-lg text-foreground">Paper #{Math.min(currentIndex + 1, QUESTIONS.length)}</h2>
               </div>
               <div className="badge badge-primary">
                 BODMAS
@@ -493,7 +518,7 @@ function FractionRoomPage() {
             </div>
             <div className="mt-4 text-body-md leading-7 text-text-secondary">
               {started ? (
-                completed ? (
+                completed || !currentQuestion ? (
                   <p className="text-success font-semibold">✓ All papers solved! Claim your reward.</p>
                 ) : gameOver ? (
                   <p className="text-error font-semibold">✗ Door locked. Restart to try again.</p>

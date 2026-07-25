@@ -29,6 +29,10 @@ from recommendation import (
     estimate_time_to_master,
     generate_full_report
 )
+from lessons import list_lessons, get_lesson, get_quiz_for_lesson
+from mastery import score_submission
+from semantic_recommender import recommend_resources
+from analytics_bridge import push_quiz_result_async
 
 # ───────────────────────────────────────────────
 # Flask App Setup
@@ -128,6 +132,7 @@ def recommendations():
     data = request.get_json() or {}
     results = data.get("results", SAMPLE_QUIZ_RESULTS)
     student_id = data.get("student_id", "anonymous")
+    emotion = data.get("emotion")
 
     if not isinstance(results, dict):
         return jsonify({"success": False, "error": "results must be a dict {lo: bool}"}), 400
@@ -135,7 +140,7 @@ def recommendations():
     score = calculate_score(results)
     weak = get_weak_LOs(results)
     support = classify_support_level(score, len(weak), len(results))
-    recs = get_recommendations(weak, support)
+    recs = get_recommendations(weak, support, emotion=emotion)
 
     # Format response with LO descriptions
     formatted_recs = []
@@ -199,11 +204,12 @@ def full_report():
     data = request.get_json() or {}
     results = data.get("results", SAMPLE_QUIZ_RESULTS)
     student_id = data.get("student_id", "anonymous")
+    emotion = data.get("emotion")
 
     if not isinstance(results, dict):
         return jsonify({"success": False, "error": "results must be a dict {lo: bool}"}), 400
 
-    report = generate_full_report(student_id, results)
+    report = generate_full_report(student_id, results, emotion=emotion)
 
     return jsonify({
         "success": True,
@@ -283,6 +289,65 @@ def simulate_quiz():
 
 
 # ───────────────────────────────────────────────
+# GET Lessons (real per-lesson content, not generic Bloom categories)
+# ───────────────────────────────────────────────
+
+@app.route("/api/lessons", methods=["GET"])
+def get_lessons():
+    return jsonify({"success": True, "data": list_lessons()})
+
+
+@app.route("/api/lessons/<lesson_id>/quiz", methods=["GET"])
+def get_lesson_quiz(lesson_id):
+    quiz = get_quiz_for_lesson(lesson_id)
+    if not quiz:
+        return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
+    return jsonify({"success": True, "data": quiz})
+
+
+@app.route("/api/lessons/<lesson_id>/quiz/submit", methods=["POST"])
+def submit_lesson_quiz(lesson_id):
+    """
+    Score a real quiz submission with the weighted percentile mastery
+    model, generate emotion-aware Sentence-BERT recommendations for weak
+    LOs, and push the result to analytics-service (best-effort).
+
+    Body: { "student_id": "...", "student_name": "...", "student_email": "...",
+            "answers": {question_id: selected_option},
+            "emotion": "confused" (optional) }
+    """
+    if not get_lesson(lesson_id):
+        return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
+
+    data = request.get_json() or {}
+    student_id = data.get("student_id", "anonymous")
+    student_name = data.get("student_name", "")
+    student_email = data.get("student_email", "")
+    answers = data.get("answers", {})
+    emotion = data.get("emotion")
+
+    if not isinstance(answers, dict):
+        return jsonify({"success": False, "error": "answers must be a dict {question_id: selected_option}"}), 400
+
+    result = score_submission(lesson_id, answers)
+
+    recommendations = {
+        lo: recommend_resources(lo, emotion=emotion, top_k=3)
+        for lo in result["weak_los"]
+    }
+
+    if student_id != "anonymous":
+        lesson = get_lesson(lesson_id)
+        push_quiz_result_async(student_id, lesson_id, lesson["title"], result, student_name, student_email)
+
+    return jsonify({
+        "success": True,
+        "student_id": student_id,
+        "data": {**result, "recommendations": recommendations},
+    })
+
+
+# ───────────────────────────────────────────────
 # Error Handlers
 # ───────────────────────────────────────────────
 
@@ -300,7 +365,9 @@ def server_error(error):
 # ───────────────────────────────────────────────
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
+    # 5000 is unusable as a default on macOS - AirPlay Receiver (ControlCenter)
+    # binds it by default, so this must not silently fall back to 5000.
+    port = int(os.environ.get("PORT", 5005))
     debug = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
 
     print(f"Adaptive Learning API starting on http://127.0.0.1:{port}")

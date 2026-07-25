@@ -1,5 +1,6 @@
 import { Outlet, Link, createRootRoute } from "@tanstack/react-router";
 import { AppHeader } from "@/components/AppHeader";
+import { ActiveGameBanner } from "@/components/ActiveGameBanner";
 import { AuthProvider } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 function NotFoundComponent() {
@@ -32,6 +33,7 @@ function RootComponent() {
         <main className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 animate-fade-in">
           <Outlet />
         </main>
+        <ActiveGameBanner />
         <Toaster richColors position="top-right" />
       </div>
     </AuthProvider>;

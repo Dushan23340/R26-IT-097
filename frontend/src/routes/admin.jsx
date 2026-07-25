@@ -1,45 +1,83 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useEffect, useState } from "react";
 import { Users, Award, AlertTriangle, Download, Scale, TrendingUp } from "lucide-react";
-import { EMOTIONS } from "@/lib/emotions";
+import { EMOTIONS, toEmotionKey } from "@/lib/emotions";
+import { studentProfileApi } from "@/lib/studentProfileApi";
+
 const Route = createFileRoute("/admin")({
   head: () => ({
     meta: [
-      { title: "Admin Overview \u2014 AdaptiveMind" },
+      { title: "Admin Overview — AdaptiveMind" },
       { name: "description", content: "Institutional analytics, fairness audit, and student leaderboard for academic advisors." },
-      { property: "og:title", content: "Admin Overview \u2014 AdaptiveMind" },
+      { property: "og:title", content: "Admin Overview — AdaptiveMind" },
       { property: "og:description", content: "Institutional analytics and fairness audit." }
     ]
   }),
   component: AdminView
 });
-const summary = [
-  { label: "Total Students", value: "248", icon: Users, tone: "var(--teal)" },
-  { label: "Avg LO Achievement", value: "76.4%", icon: Award, tone: "var(--emotion-happy)" },
-  { label: "At-Risk Students", value: "18", icon: AlertTriangle, tone: "var(--emotion-frustrated)" },
-  { label: "Fairness Score", value: "0.93", icon: Scale, tone: "var(--amber)" }
-];
-const struggling = [
-  { area: "Recursion & Backtracking", count: 47, severity: 0.78 },
-  { area: "Dynamic Programming", count: 38, severity: 0.71 },
-  { area: "Graph Algorithms", count: 29, severity: 0.55 },
-  { area: "Complexity Analysis", count: 22, severity: 0.48 }
-];
-const fairness = [
-  { group: "Group A", parity: 0.94, recall: 0.91 },
-  { group: "Group B", parity: 0.92, recall: 0.93 },
-  { group: "Group C", parity: 0.95, recall: 0.89 },
-  { group: "Group D", parity: 0.91, recall: 0.92 }
-];
-const leaderboard = [
-  { name: "Maya Chen", id: "2024-1145", lo: 94, trend: "up", emotion: "happy", risk: "low" },
-  { name: "Jordan Patel", id: "2024-1167", lo: 91, trend: "up", emotion: "happy", risk: "low" },
-  { name: "Aisha Kumar", id: "2024-1289", lo: 88, trend: "up", emotion: "neutral", risk: "low" },
-  { name: "Tom Jensen", id: "2024-1302", lo: 76, trend: "flat", emotion: "neutral", risk: "low" },
-  { name: "Sara Hasan", id: "2024-1421", lo: 64, trend: "down", emotion: "confused", risk: "med" },
-  { name: "Vik Petrov", id: "2024-1488", lo: 52, trend: "down", emotion: "frustrated", risk: "high" },
-  { name: "Wren Quill", id: "2024-1503", lo: 48, trend: "down", emotion: "bored", risk: "high" }
-];
+
+function trendLabel(direction) {
+  if (direction === "improving") return "up";
+  if (direction === "declining") return "down";
+  if (direction === "stable") return "flat";
+  return "n/a";
+}
+
 function AdminView() {
+  const [overview, setOverview] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("All");
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    studentProfileApi
+      .getClassOverview()
+      .then((data) => {
+        if (!cancelled) setOverview(data);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err.message || "Failed to load analytics");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const students = overview?.students ?? [];
+  const filteredStudents =
+    filter === "At-Risk"
+      ? students.filter((s) => s.at_risk || s.risk === "high")
+      : filter === "Top Performers"
+        ? students.filter((s) => s.avg_score >= 80)
+        : students;
+
+  const fairness = overview?.fairness;
+  const fairnessGroups = fairness?.available
+    ? Object.entries(fairness.proficiency_rates).map(([group, rate]) => ({
+        group,
+        proficiencyRate: rate,
+        ratio: fairness.disparate_impact_ratios[group],
+        flagged: fairness.flagged_groups.includes(group),
+      }))
+    : [];
+
+  const summary = [
+    { label: "Total Students", value: overview ? String(overview.total_students) : "–", icon: Users, tone: "var(--teal)" },
+    { label: "Avg LO Achievement", value: overview?.avg_lo_score != null ? `${overview.avg_lo_score}%` : "–", icon: Award, tone: "var(--emotion-happy)" },
+    { label: "At-Risk Students", value: overview ? String(overview.at_risk_count) : "–", icon: AlertTriangle, tone: "var(--emotion-frustrated)" },
+    {
+      label: "Fairness",
+      value: fairness?.available ? (fairness.fair ? "Fair" : `${fairness.flagged_groups.length} flagged`) : "–",
+      icon: Scale,
+      tone: fairness?.available && !fairness.fair ? "var(--emotion-angry)" : "var(--amber)",
+    },
+  ];
+
   return <div className="space-y-6 stagger-children">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
@@ -53,6 +91,12 @@ function AdminView() {
           <Download className="h-4 w-4" /> Export Report
         </button>
       </div>
+
+      {error ? (
+        <div className="rounded-xl border border-destructive/30 bg-destructive/5 text-destructive px-4 py-3 text-sm">
+          Couldn't reach the student-profile analytics service ({error}). Is it running on port 5010?
+        </div>
+      ) : null}
 
       {
     /* Summary cards */
@@ -70,7 +114,7 @@ function AdminView() {
                   <Icon className="h-4 w-4" />
                 </div>
               </div>
-              <div className="font-display text-3xl font-bold" style={{ color: s.tone }}>{s.value}</div>
+              <div className="font-display text-3xl font-bold" style={{ color: s.tone }}>{loading ? "…" : s.value}</div>
             </div>;
   })}
       </div>
@@ -81,21 +125,24 @@ function AdminView() {
   }
         <div className="glass rounded-2xl p-5">
           <div className="text-sm font-semibold mb-4 flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4" style={{ color: "var(--emotion-frustrated)" }} /> Top Struggling Areas
+            <AlertTriangle className="h-4 w-4" style={{ color: "var(--emotion-frustrated)" }} /> Weakest LO Categories
           </div>
           <div className="space-y-4">
-            {struggling.map((s) => <div key={s.area}>
+            {(overview?.struggling_areas ?? []).map((s) => <div key={s.lo_level}>
                 <div className="flex justify-between items-center mb-1.5">
-                  <span className="text-sm font-medium">{s.area}</span>
-                  <span className="text-xs font-mono text-muted-foreground">{s.count} students</span>
+                  <span className="text-sm font-medium capitalize">{s.lo_level}</span>
+                  <span className="text-xs font-mono text-muted-foreground">{s.avg_score}% avg · {s.count} scores</span>
                 </div>
                 <div className="h-2 rounded-full bg-secondary overflow-hidden">
                   <div className="h-full rounded-full" style={{
-    width: `${s.severity * 100}%`,
+    width: `${s.avg_score}%`,
     background: `linear-gradient(90deg, var(--emotion-confused), var(--emotion-frustrated))`
   }} />
                 </div>
               </div>)}
+            {!loading && !overview?.struggling_areas?.length ? (
+              <p className="text-xs text-muted-foreground">No learning-outcome data recorded yet.</p>
+            ) : null}
           </div>
         </div>
 
@@ -105,31 +152,40 @@ function AdminView() {
         <div className="glass rounded-2xl p-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm font-semibold flex items-center gap-2">
-              <Scale className="h-4 w-4" style={{ color: "var(--amber)" }} /> Fairness Audit
+              <Scale className="h-4 w-4" style={{ color: "var(--amber)" }} /> Fairness Audit (Disparate Impact)
             </div>
-            <span
+            {fairness?.available ? (
+              <span
     className="text-[11px] px-2 py-1 rounded-full font-mono"
-    style={{ background: "color-mix(in oklab, var(--emotion-happy) 18%, transparent)", color: "var(--emotion-happy)" }}
+    style={{
+      background: `color-mix(in oklab, ${fairness.fair ? "var(--emotion-happy)" : "var(--emotion-angry)"} 18%, transparent)`,
+      color: fairness.fair ? "var(--emotion-happy)" : "var(--emotion-angry)",
+    }}
   >
-              ✓ All groups within tolerance
-            </span>
+                {fairness.fair ? "✓ All groups within tolerance" : `⚠ ${fairness.flagged_groups.join(", ")} outside tolerance`}
+              </span>
+            ) : null}
           </div>
-          <p className="text-xs text-muted-foreground mb-4">Demographic parity and recall across student demographic groups (target ≥ 0.85).</p>
+          <p className="text-xs text-muted-foreground mb-4">
+            {fairness?.available
+              ? `Proficiency (≥85%) achievement rate per demographic group vs. the best-performing group (target ratio 0.8–1.25).`
+              : fairness?.reason || "Not enough demographic data to compute a fairness audit yet."}
+          </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            {fairness.map((f) => <div
+            {fairnessGroups.map((f) => <div
     key={f.group}
     className="rounded-xl p-3 border border-border"
     style={{ background: "color-mix(in oklab, var(--card) 50%, transparent)" }}
   >
                 <div className="text-[10px] uppercase tracking-widest text-muted-foreground mb-1">{f.group}</div>
                 <div className="text-xs flex justify-between">
-                  <span>Parity</span><span className="font-mono" style={{ color: "var(--emotion-happy)" }}>{f.parity}</span>
+                  <span>Proficiency</span><span className="font-mono" style={{ color: "var(--emotion-happy)" }}>{Math.round(f.proficiencyRate * 100)}%</span>
                 </div>
                 <div className="text-xs flex justify-between mt-0.5">
-                  <span>Recall</span><span className="font-mono" style={{ color: "var(--teal)" }}>{f.recall}</span>
+                  <span>DI Ratio</span><span className="font-mono" style={{ color: f.flagged ? "var(--emotion-angry)" : "var(--teal)" }}>{f.ratio}</span>
                 </div>
                 <div className="mt-2 h-1 rounded-full overflow-hidden bg-secondary">
-                  <div className="h-full" style={{ width: `${f.parity * 100}%`, background: "var(--gradient-primary)" }} />
+                  <div className="h-full" style={{ width: `${f.proficiencyRate * 100}%`, background: "var(--gradient-primary)" }} />
                 </div>
               </div>)}
           </div>
@@ -145,10 +201,11 @@ function AdminView() {
             <Users className="h-4 w-4 text-primary" /> Student Performance List
           </div>
           <div className="flex gap-2">
-            {["All", "At-Risk", "Top Performers"].map((f, i) => <button
+            {["All", "At-Risk", "Top Performers"].map((f) => <button
     key={f}
+    onClick={() => setFilter(f)}
     className="text-xs px-3 py-1.5 rounded-full border border-border"
-    style={{ background: i === 0 ? "var(--gradient-primary)" : "transparent", color: i === 0 ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
+    style={{ background: filter === f ? "var(--gradient-primary)" : "transparent", color: filter === f ? "var(--primary-foreground)" : "var(--muted-foreground)" }}
   >
                 {f}
               </button>)}
@@ -168,30 +225,32 @@ function AdminView() {
               </tr>
             </thead>
             <tbody>
-              {leaderboard.map((s, i) => {
+              {filteredStudents.map((s, i) => {
     const riskColor = s.risk === "high" ? "var(--emotion-angry)" : s.risk === "med" ? "var(--emotion-confused)" : "var(--emotion-happy)";
-    const trendColor = s.trend === "up" ? "var(--emotion-happy)" : s.trend === "down" ? "var(--emotion-angry)" : "var(--muted-foreground)";
-    const e = EMOTIONS[s.emotion];
-    return <tr key={s.id} className="border-b border-border/50 hover:bg-card/40">
+    const trend = trendLabel(s.trend);
+    const trendColor = trend === "up" ? "var(--emotion-happy)" : trend === "down" ? "var(--emotion-angry)" : "var(--muted-foreground)";
+    const emotionKey = toEmotionKey(s.dominant_emotion);
+    const e = emotionKey ? EMOTIONS[emotionKey] : null;
+    return <tr key={s.student_id} className="border-b border-border/50 hover:bg-card/40">
                     <td className="py-3 pr-4 font-mono text-muted-foreground">#{i + 1}</td>
-                    <td className="py-3 pr-4 font-medium">{s.name}</td>
-                    <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">{s.id}</td>
+                    <td className="py-3 pr-4 font-medium">{s.full_name || s.student_id}</td>
+                    <td className="py-3 pr-4 font-mono text-xs text-muted-foreground">{s.student_id}</td>
                     <td className="py-3 pr-4">
                       <div className="flex items-center gap-2">
                         <div className="h-1.5 w-24 rounded-full bg-secondary overflow-hidden">
-                          <div className="h-full" style={{ width: `${s.lo}%`, background: "var(--gradient-primary)" }} />
+                          <div className="h-full" style={{ width: `${s.avg_score}%`, background: "var(--gradient-primary)" }} />
                         </div>
-                        <span className="font-mono text-xs">{s.lo}%</span>
+                        <span className="font-mono text-xs">{s.avg_score}%</span>
                       </div>
                     </td>
                     <td className="py-3 pr-4">
                       <span className="inline-flex items-center gap-1 text-xs font-mono" style={{ color: trendColor }}>
-                        <TrendingUp className="h-3.5 w-3.5" style={{ transform: s.trend === "down" ? "scaleY(-1)" : s.trend === "flat" ? "rotate(90deg)" : "none" }} />
-                        {s.trend}
+                        <TrendingUp className="h-3.5 w-3.5" style={{ transform: trend === "down" ? "scaleY(-1)" : trend === "flat" ? "rotate(90deg)" : "none" }} />
+                        {trend}
                       </span>
                     </td>
                     <td className="py-3 pr-4">
-                      <span className="text-base" title={e.label}>{e.emoji}</span>
+                      {e ? <span className="text-base" title={e.label}>{e.emoji}</span> : <span className="text-xs text-muted-foreground">–</span>}
                     </td>
                     <td className="py-3 pr-4">
                       <span
@@ -203,6 +262,9 @@ function AdminView() {
                     </td>
                   </tr>;
   })}
+              {!loading && !filteredStudents.length ? (
+                <tr><td colSpan={7} className="py-6 text-center text-xs text-muted-foreground">No students match this filter.</td></tr>
+              ) : null}
             </tbody>
           </table>
         </div>

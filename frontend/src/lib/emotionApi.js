@@ -26,6 +26,15 @@ export const emotionApi = {
     request(`/recommendation/generate?emotion=${encodeURIComponent(emotion)}&subject=${encodeURIComponent(subject)}`),
 
   getLatestRecommendation: () => request("/recommendation/latest"),
+  getActiveRecommendation: () => request("/recommendation/active"),
+  setActiveRecommendation: (gameKey) =>
+    request("/recommendation/active", {
+      method: "POST",
+      body: JSON.stringify({ game_key: gameKey }),
+    }),
+  endActiveRecommendation: () =>
+    request("/recommendation/active/end", { method: "POST" }),
+  getActiveStats: () => request("/recommendation/active/stats"),
   getRecommendationHistory: (sinceMinutes) =>
     request(`/recommendation/history${sinceMinutes ? `?since_minutes=${sinceMinutes}` : ""}`),
   getVariationWindow: () => request("/recommendation/variation-window"),

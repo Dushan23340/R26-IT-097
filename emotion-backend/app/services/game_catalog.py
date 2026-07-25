@@ -149,77 +149,86 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
             ),
         ],
     },
+    # Only two games are actually built and playable right now (Fraction
+    # Room, Pirate Navigator) - every emotion bucket below points at one of
+    # them, nothing else. Previously this held ~60 placeholder entries
+    # across 6 subjects with no matching frontend route; that meant the
+    # recommendation engine could recommend a "game" that didn't exist,
+    # especially whenever dominant_emotion fell back to "UNKNOWN" (no live
+    # emotion data yet) since that doesn't match any emotion key and used
+    # to fall through to a random placeholder. Add new buckets/entries here
+    # as more real games are built.
     "Mathematics": {
         "HAPPY": [
             GameRecommendation(
-                game_id="gm_math_happy_01",
-                title="Math Olympiad Relay",
-                description="Teams race to solve progressively harder math problems.",
+                game_id="gm_math_fraction_happy",
+                title="Fraction Room Rescue",
+                description="A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles - a fun challenge to ride the good mood.",
                 subject="Mathematics",
-                game_type="collaborative game",
-                difficulty="Hard",
-                target_emotion="HAPPY",
-                estimated_duration_minutes=15,
-                engagement_score=9.3
-            ),
-            GameRecommendation(
-                game_id="gm_math_happy_02",
-                title="Equation Builder Tournament",
-                description="Competition to build valid equations from given numbers.",
-                subject="Mathematics",
-                game_type="collaborative game",
+                game_type="escape room game",
                 difficulty="Medium",
                 target_emotion="HAPPY",
-                estimated_duration_minutes=12,
-                engagement_score=9.0
+                estimated_duration_minutes=5,
+                engagement_score=9.4
             ),
         ],
         "NORMAL": [
             GameRecommendation(
-                game_id="gm_math_norm_01",
-                title="Number Pattern Explorer",
-                description="Interactive discovery of sequences and patterns.",
+                game_id="gm_math_pirate_normal",
+                title="Uncharted Waters: The Pirate Navigator",
+                description="Sail across four Pythagorean Theorem voyages to chart a course to the treasure - steady practice to keep a settled class engaged.",
                 subject="Mathematics",
-                game_type="interactive game",
-                difficulty="Easy",
+                game_type="story-based game",
+                difficulty="Medium",
                 target_emotion="NORMAL",
-                estimated_duration_minutes=10,
-                engagement_score=8.1
+                estimated_duration_minutes=6,
+                engagement_score=8.3
             ),
             GameRecommendation(
-                game_id="gm_math_norm_02",
-                title="Math Fact Flash Cards",
-                description="Quick-fire multiplication and division facts.",
+                game_id="gm_math_equations_eco_01",
+                title="Equations Eco: Forest Restoration",
+                description="A grade-9 linear equations game - solve for x at each polluted pond to clear the water and restore the forest.",
                 subject="Mathematics",
-                game_type="interactive game",
-                difficulty="Easy",
+                game_type="adventure game",
+                difficulty="Medium",
                 target_emotion="NORMAL",
-                estimated_duration_minutes=8,
-                engagement_score=7.9
+                estimated_duration_minutes=7,
+                engagement_score=8.9
             ),
         ],
         "CONFUSED": [
             GameRecommendation(
-                game_id="gm_math_conf_01",
-                title="Visual Fraction Solver",
-                description="Use visual blocks and circles to understand fractions step-by-step.",
+                game_id="gm_math_fraction_confused",
+                title="Fraction Room Rescue",
+                description="A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles - step-by-step hints to rebuild understanding.",
                 subject="Mathematics",
-                game_type="concept-based game",
-                difficulty="Easy",
+                game_type="escape room game",
+                difficulty="Medium",
                 target_emotion="CONFUSED",
-                estimated_duration_minutes=12,
+                estimated_duration_minutes=5,
                 engagement_score=8.8
             ),
             GameRecommendation(
-                game_id="gm_math_conf_02",
-                title="Algebra Scaffold Walk",
-                description="Guided walkthrough of linear equations with hints at each step.",
+                game_id="gm_math_dark_room_01",
+                title="Escape the Dark Room",
+                description="A grade-9 algebraic fractions escape room - inspect furniture for hidden question scrolls before the glowing eyes catch you.",
                 subject="Mathematics",
-                game_type="concept-based game",
-                difficulty="Easy",
+                game_type="escape room game",
+                difficulty="Medium",
                 target_emotion="CONFUSED",
-                estimated_duration_minutes=15,
-                engagement_score=8.6
+                estimated_duration_minutes=6,
+                engagement_score=9.0
+            ),
+            GameRecommendation(
+                game_id="gm_math_fish_tank_01",
+                title="Fish Tank Shop",
+                description="A grade-9 liquid volume and capacity simulation - calculate l x b x h, convert cm3 to litres, and sell customers the right aquarium.",
+                subject="Mathematics",
+                game_type="simulation game",
+                difficulty="Medium",
+                target_emotion="CONFUSED",
+                estimated_duration_minutes=7,
+                engagement_score=8.7
             ),
         ],
         "BORED": [
@@ -235,74 +244,41 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 engagement_score=9.6
             ),
             GameRecommendation(
-                game_id="gm_math_bored_01",
-                title="Speed Arithmetic Blitz",
-                description="60-second rounds of rapid mental math against the clock.",
+                game_id="gm_math_pattern_islands_01",
+                title="Pattern Islands",
+                description="A grade-9 number patterns platformer - jump only on stepping stones that match each island's General Term Tn.",
                 subject="Mathematics",
-                game_type="quiz game",
+                game_type="platformer game",
                 difficulty="Medium",
                 target_emotion="BORED",
-                estimated_duration_minutes=5,
-                engagement_score=9.0
-            ),
-            GameRecommendation(
-                game_id="gm_math_bored_02",
-                title="Math Escape Room",
-                description="Solve math puzzles to unlock clues and escape the room.",
-                subject="Mathematics",
-                game_type="quiz game",
-                difficulty="Medium",
-                target_emotion="BORED",
-                estimated_duration_minutes=15,
+                estimated_duration_minutes=8,
                 engagement_score=9.2
             ),
         ],
         "FRUSTRATED": [
             GameRecommendation(
-                game_id="gm_math_frust_01",
-                title="Review Mastery Quiz",
-                description="Quiz on previously mastered topics to rebuild math confidence.",
+                game_id="gm_math_pirate_01",
+                title="Uncharted Waters: The Pirate Navigator",
+                description="Sail across four Pythagorean Theorem voyages to chart a course to the treasure - a lighter, story-driven reset after a rough stretch.",
                 subject="Mathematics",
-                game_type="easy challenge game",
-                difficulty="Easy",
+                game_type="story-based game",
+                difficulty="Medium",
                 target_emotion="FRUSTRATED",
-                estimated_duration_minutes=8,
-                engagement_score=8.4
-            ),
-            GameRecommendation(
-                game_id="gm_math_frust_02",
-                title="Peer Math Tutor",
-                description="Pair up: one student explains a concept they know well to another.",
-                subject="Mathematics",
-                game_type="easy challenge game",
-                difficulty="Easy",
-                target_emotion="FRUSTRATED",
-                estimated_duration_minutes=10,
-                engagement_score=8.7
+                estimated_duration_minutes=6,
+                engagement_score=9.3
             ),
         ],
         "ANGRY": [
             GameRecommendation(
-                game_id="gm_math_angry_01",
-                title="Math Meditation",
-                description="Guided breathing with simple counting puzzles to calm down.",
+                game_id="gm_math_pirate_02",
+                title="Uncharted Waters: The Pirate Navigator",
+                description="Sail across four Pythagorean Theorem voyages to chart a course to the treasure - a calmer, story-driven reset.",
                 subject="Mathematics",
-                game_type="calm-down game",
-                difficulty="Easy",
+                game_type="story-based game",
+                difficulty="Medium",
                 target_emotion="ANGRY",
-                estimated_duration_minutes=5,
-                engagement_score=7.6
-            ),
-            GameRecommendation(
-                game_id="gm_math_angry_02",
-                title="Pattern Coloring Break",
-                description="Color geometric patterns while listening to calming instructions.",
-                subject="Mathematics",
-                game_type="calm-down game",
-                difficulty="Easy",
-                target_emotion="ANGRY",
-                estimated_duration_minutes=7,
-                engagement_score=7.9
+                estimated_duration_minutes=6,
+                engagement_score=8.9
             ),
         ],
     },
@@ -909,3 +885,26 @@ def get_games_for(subject: str, emotion: str) -> List[GameRecommendation]:
 def list_subjects() -> List[str]:
     """Return all available subjects."""
     return list(GAME_CATALOG.keys())
+
+
+def get_all_games_for(subject: str) -> List[GameRecommendation]:
+    """
+    All games for a subject across every emotion bucket, deduped by title
+    (not game_id) - the same real game is currently listed under multiple
+    emotion buckets with a different game_id each time, which would
+    otherwise look like "different" games to a naive dedup and defeat the
+    point of cycling through visibly different recommendations. Used while
+    emotion->game mapping is intentionally disabled (see
+    recommendation_engine.py) so "Recommend" can cycle through every real
+    game for a subject instead of being pinned to whichever bucket the
+    current dominant emotion falls into.
+    """
+    subject_catalog = GAME_CATALOG.get(subject, GAME_CATALOG.get("General", {}))
+    seen: set = set()
+    games: List[GameRecommendation] = []
+    for bucket in subject_catalog.values():
+        for g in bucket:
+            if g.title not in seen:
+                seen.add(g.title)
+                games.append(g)
+    return games

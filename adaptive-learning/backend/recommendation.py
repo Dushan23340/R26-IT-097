@@ -11,6 +11,7 @@ from data import (
     get_resources_for_lo,
     get_quiz_template
 )
+from semantic_recommender import recommend_resources
 
 
 # ───────────────────────────────────────────────
@@ -100,14 +101,17 @@ def classify_support_level(score, weak_count, total_count):
 # STEP 7 — Generate Adaptive Recommendations
 # ───────────────────────────────────────────────
 
-def get_recommendations(weak_los, support_level_config=None):
+def get_recommendations(weak_los, support_level_config=None, emotion=None):
     """
-    Generate personalized resource recommendations for weak areas.
-    
+    Generate personalized resource recommendations for weak areas using
+    Sentence-BERT semantic matching (proposal 3.2), re-weighted by the
+    student's current emotional state when provided.
+
     Args:
         weak_los: list of weak learning outcome names
         support_level_config: dict from classify_support_level()
-    
+        emotion: optional current emotional state (confused/frustrated/bored/...)
+
     Returns:
         dict: {lo_name: [recommended_resources]}
     """
@@ -115,37 +119,11 @@ def get_recommendations(weak_los, support_level_config=None):
         support_level_config = SUPPORT_LEVELS["moderate"]
 
     max_resources = support_level_config.get("max_resources_per_lo", 3)
-    hint_level = support_level_config.get("hint_level", "medium")
 
-    recommendations = {}
-    for lo in weak_los:
-        # Pick resources: easier ones first for weak areas
-        all_resources = get_resources_for_lo(lo)
-        
-        # Sort by difficulty (easy -> medium -> hard)
-        difficulty_order = {"easy": 0, "medium": 1, "hard": 2}
-        sorted_resources = sorted(
-            all_resources,
-            key=lambda r: difficulty_order.get(r.get("difficulty", "medium"), 1)
-        )
-
-        # Adjust based on hint level
-        if hint_level == "high":
-            # More easy resources
-            filtered = [r for r in sorted_resources if r["difficulty"] in ("easy", "medium")]
-        elif hint_level == "low":
-            # Include harder resources too
-            filtered = sorted_resources
-        else:
-            filtered = sorted_resources
-
-        # Fallback: if filter removes everything, use all available
-        if not filtered:
-            filtered = sorted_resources
-
-        recommendations[lo] = filtered[:max_resources]
-
-    return recommendations
+    return {
+        lo: recommend_resources(lo, emotion=emotion, top_k=max_resources)
+        for lo in weak_los
+    }
 
 
 def generate_adaptive_path(results):
@@ -281,14 +259,15 @@ def estimate_time_to_master(weak_los, support_level_config=None):
 # STEP 9 — Full Adaptive Report
 # ───────────────────────────────────────────────
 
-def generate_full_report(student_id, results):
+def generate_full_report(student_id, results, emotion=None):
     """
     Generate a complete adaptive learning report for a student.
-    
+
     Args:
         student_id: str unique identifier
         results: dict {lo_name: bool}
-    
+        emotion: optional current emotional state, modulates recommendations
+
     Returns:
         dict: comprehensive adaptive report
     """
@@ -296,7 +275,7 @@ def generate_full_report(student_id, results):
     strong = get_strong_LOs(results)
     score = calculate_score(results)
     support = classify_support_level(score, len(weak), len(results))
-    recommendations = get_recommendations(weak, support)
+    recommendations = get_recommendations(weak, support, emotion=emotion)
     path = generate_adaptive_path(results)
     time_estimate = estimate_time_to_master(weak, support)
 

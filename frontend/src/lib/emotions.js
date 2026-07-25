@@ -12,7 +12,28 @@ function masteryColor(pct) {
   if (pct >= 50) return "var(--emotion-confused)";
   return "var(--emotion-angry)";
 }
+
+// Backend services (emotion-backend, analytics-service) use "normal" for the
+// flat/neutral facial expression; this frontend's EMOTIONS map uses
+// "neutral" for the same concept. Also guards against null/undefined
+// (a student with no recorded emotion history) and any other unrecognized
+// value, so callers never do a raw `EMOTIONS[x]` lookup that can return
+// undefined and crash on `.color`/`.emoji`/`.label` access.
+function toEmotionKey(label) {
+  if (!label) return null;
+  const normalized = String(label).toLowerCase();
+  if (normalized === "normal") return "neutral";
+  return normalized in EMOTIONS ? normalized : null;
+}
+
+function getEmotion(label) {
+  const key = toEmotionKey(label);
+  return key ? EMOTIONS[key] : null;
+}
+
 export {
   EMOTIONS,
-  masteryColor
+  masteryColor,
+  toEmotionKey,
+  getEmotion
 };

@@ -65,10 +65,80 @@ async function getRecommendation({ apiBaseUrl = ANALYTICS_BASE_URL } = {}) {
   }
 }
 
+async function getActiveRecommendation({ apiBaseUrl = ANALYTICS_BASE_URL } = {}) {
+  try {
+    const response = await analyticsClient.get("/recommendation/active", {
+      timeout: 8000,
+    })
+    return response.data
+  } catch (error) {
+    console.error("Failed to fetch active recommendation:", error)
+    throw error
+  }
+}
+
+async function setActiveRecommendation({ gameKey, apiBaseUrl = ANALYTICS_BASE_URL }) {
+  try {
+    const response = await analyticsClient.post("/recommendation/active", {
+      game_key: gameKey,
+    })
+    return response.data
+  } catch (error) {
+    console.error("Failed to set active recommendation:", error)
+    throw error
+  }
+}
+
+async function joinActiveGame({ studentId, sessionId, apiBaseUrl = ANALYTICS_BASE_URL }) {
+  try {
+    const response = await analyticsClient.post("/recommendation/active/join", {
+      student_id: studentId,
+      session_id: sessionId,
+    })
+    return response.data
+  } catch (error) {
+    console.error("Failed to register game join:", error)
+    throw error
+  }
+}
+
+async function finishActiveGame({
+  studentId,
+  studentName,
+  sessionId,
+  outcome,
+  score,
+  correctCount,
+  totalCount,
+  durationSeconds,
+  apiBaseUrl = ANALYTICS_BASE_URL,
+}) {
+  try {
+    const response = await analyticsClient.post("/recommendation/active/finish", {
+      student_id: studentId,
+      student_name: studentName,
+      session_id: sessionId,
+      outcome,
+      score,
+      correct_count: correctCount,
+      total_count: totalCount,
+      duration_seconds: durationSeconds,
+    })
+    return response.data
+  } catch (error) {
+    console.error("Failed to report game result:", error)
+    throw error
+  }
+}
+
 export {
   ANALYTICS_BASE_URL,
   sendEmotionEvent,
   getAnalyticsCurrent,
   getAnalyticsTrend,
   getRecommendation,
+  getActiveRecommendation,
+  setActiveRecommendation,
+  joinActiveGame,
+  finishActiveGame,
 }

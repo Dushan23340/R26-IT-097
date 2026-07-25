@@ -82,4 +82,15 @@ async function healthCheck({ apiBaseUrl = DEFAULT_API_BASE_URL } = {}) {
   }
 }
 
-export { DEFAULT_API_BASE_URL, healthCheck, normalizePredictResponse, predictEmotion }
+async function getStudents({ apiBaseUrl = DEFAULT_API_BASE_URL } = {}) {
+  try {
+    const response = await apiClient.get(`${apiBaseUrl.replace(/\/$/, "")}/students`, {
+      timeout: 8000,
+    })
+    return response.data
+  } catch (error) {
+    throw new Error(getErrorMessage(error))
+  }
+}
+
+export { DEFAULT_API_BASE_URL, healthCheck, normalizePredictResponse, predictEmotion, getStudents }
