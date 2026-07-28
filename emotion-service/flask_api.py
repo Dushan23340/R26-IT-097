@@ -38,6 +38,7 @@ from emotion_service.ml.fused_emotion_model import MODEL_PATH, predict_emotion_w
 from emotion_service.ml.emotion_tracker import EmotionTracker
 from emotion_service.ml.realtime_pipeline import map_raw_to_student_state
 from emotion_service.ml.student_state import compute_attention_score
+from emotion_service.anonymize import anonymize_student_id
 
 # =========================================================
 # APP SETUP
@@ -208,6 +209,7 @@ def students():
             "transitionRate": metrics.get("transitionRate", 0.0),
             "emotionCounts": metrics.get("emotionCounts", {}),
             "engagementIndicators": metrics.get("engagementIndicators", {}),
+            "analyticsWindowSeconds": metrics.get("analyticsWindowSeconds"),
             "lastSeenTimestamp": metrics.get("lastSeenTimestamp"),
         }
         for student_id, metrics in all_students.items()
@@ -223,8 +225,11 @@ def predict():
 
     image_b64 = payload.get("image")
 
-    # Student ID from frontend
-    student_id = payload.get("studentId", "default_student")
+    # FR10: real student_id is anonymised immediately on entry - everything
+    # downstream (tracker keys, /students responses, forwarded events) uses
+    # only the pseudonym from here on, never the raw ID/email this request
+    # arrived with.
+    student_id = anonymize_student_id(payload.get("studentId", "default_student"))
 
     if not image_b64:
         return jsonify({
@@ -243,7 +248,6 @@ def predict():
         }), 400
 
     print("Frame shape:", frame.shape, flush=True)
-    cv2.imwrite("debug_frame.jpg", frame)
 
     # =====================================================
     # Convert to grayscale
@@ -290,7 +294,6 @@ def predict():
     # landmark/blendshape branch both need real color+resolution, unlike
     # the old grayscale-only pipeline).
     face_roi = frame[y1:y2, x1:x2]
-    cv2.imwrite("debug_face.jpg", face_roi)
 
     if face_roi.size == 0:
         return jsonify({
@@ -361,11 +364,14 @@ def predict():
             "emotionConfidence": round(confidence, 4),
             "attentionScore": attention_score,
 
-            # Analytics
+            # Analytics - all computed over the trailing analyticsWindowSeconds
+            # window (configurable via EMOTION_ANALYTICS_WINDOW_SECONDS), not
+            # the whole session - see emotion_tracker.py's _trim_to_window.
             "emotionDuration": analytics["emotionDuration"],
             "currentContinuousDuration": analytics["currentContinuousDuration"],
             "transitionRate": analytics["transitionRate"],
             "stabilityScore": analytics["stabilityScore"],
+            "analyticsWindowSeconds": analytics["analyticsWindowSeconds"],
 
             # Engagement Indicators
             "engagementIndicators": analytics["engagementIndicators"],

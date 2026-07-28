@@ -167,13 +167,20 @@ def get_student_lo_history(student_id: str) -> list[dict[str, Any]]:
 
 
 def get_student_emotional_states(student_id: str) -> list[dict[str, Any]]:
+    """lesson_id/lesson_title joined in (not just session_id) so callers can
+    tell live-class emotion readings (lesson_id="live-class" - see
+    emotion-backend's student_profile_bridge.create_session) apart from
+    quiz-session readings, since quiz-taking doesn't capture emotion at all
+    today and would otherwise be indistinguishable at this level."""
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT session_id, timestamp, emotion_label, confidence
-            FROM emotional_states
-            WHERE student_id = %s
-            ORDER BY timestamp ASC
+            SELECT es.session_id, es.timestamp, es.emotion_label, es.confidence,
+                   ls.lesson_id, ls.lesson_title, ls.start_time
+            FROM emotional_states es
+            JOIN learning_sessions ls ON ls.session_id = es.session_id
+            WHERE es.student_id = %s
+            ORDER BY es.timestamp ASC
             """,
             (student_id,),
         )
@@ -185,7 +192,8 @@ def get_student_engagement(student_id: str) -> list[dict[str, Any]]:
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT em.session_id, ls.start_time, em.engagement_score, em.time_on_task_seconds, em.interaction_count
+            SELECT em.session_id, ls.start_time, ls.lesson_id, ls.lesson_title,
+                   em.engagement_score, em.time_on_task_seconds, em.interaction_count
             FROM engagement_metrics em
             JOIN learning_sessions ls ON ls.session_id = em.session_id
             WHERE em.student_id = %s

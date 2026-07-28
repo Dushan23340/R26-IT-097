@@ -14,12 +14,10 @@ class EmotionStore:
     def __init__(self, window_seconds: int = 60):
         self.events: List[EmotionEvent] = []
         self.window_seconds = window_seconds
-        self._known_students: set = set()
 
     def add_event(self, event: EmotionEvent) -> None:
         """Add a new emotion event."""
         self.events.append(event)
-        self._known_students.add(event.student_id)
         self._cleanup_old_events()
 
     def _cleanup_old_events(self) -> None:
@@ -37,14 +35,26 @@ class EmotionStore:
         if not self.events:
             return self._empty_distribution()
 
-        # Count emotions in window
+        # Each student's most-recent reading within the window is their
+        # "current" emotion. Counting raw events instead (as this used to)
+        # double/triple-counts a single student who's polled several times
+        # in the last window_seconds - e.g. EmotionDetector posts every
+        # ~2.5s, so one real student alone can produce ~24 events in a 60s
+        # window, showing up as "11 students Neutral, 2 students Frustrated"
+        # in the UI when only 1 student was ever actually present.
+        latest_by_student: Dict[str, EmotionEvent] = {}
+        for event in self.events:
+            existing = latest_by_student.get(event.student_id)
+            if existing is None or event.timestamp > existing.timestamp:
+                latest_by_student[event.student_id] = event
+
         emotion_counts = defaultdict(int)
         active_students = set()
-        for event in self.events:
+        for student_id, event in latest_by_student.items():
             emotion_counts[event.emotion.value] += 1
-            active_students.add(event.student_id)
+            active_students.add(student_id)
 
-        total = sum(emotion_counts.values())
+        total = len(latest_by_student)
         all_emotions = [e.value for e in EmotionType]
 
         distribution = []
@@ -68,7 +78,14 @@ class EmotionStore:
 
         return {
             "timestamp": datetime.utcnow(),
-            "total_students": len(self._known_students),
+            # No real class-roster system exists to source a "total
+            # students" distinct from who's actually emitting readings
+            # right now - it used to be a lifetime-cumulative count of
+            # every student_id ever seen since the process started (never
+            # cleared), so it kept climbing and showing e.g. "1 of 5" after
+            # just one real student joined. Window-scoped like
+            # active_students instead, so the two numbers agree.
+            "total_students": len(active_students),
             "active_students": len(active_students),
             "window_seconds": self.window_seconds,
             "distribution": distribution,
@@ -81,7 +98,7 @@ class EmotionStore:
         """Return empty distribution structure."""
         return {
             "timestamp": datetime.utcnow(),
-            "total_students": len(self._known_students),
+            "total_students": 0,
             "active_students": 0,
             "window_seconds": self.window_seconds,
             "distribution": [

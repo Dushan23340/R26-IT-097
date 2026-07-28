@@ -32,7 +32,7 @@ from recommendation import (
 from lessons import list_lessons, get_lesson, get_quiz_for_lesson
 from mastery import score_submission
 from semantic_recommender import recommend_resources
-from analytics_bridge import push_quiz_result_async
+from analytics_bridge import push_quiz_result_async, get_latest_weak_los, get_live_emotion
 
 # ───────────────────────────────────────────────
 # Flask App Setup
@@ -325,25 +325,67 @@ def submit_lesson_quiz(lesson_id):
     student_email = data.get("student_email", "")
     answers = data.get("answers", {})
     emotion = data.get("emotion")
+    duration_seconds = data.get("duration_seconds")
 
     if not isinstance(answers, dict):
         return jsonify({"success": False, "error": "answers must be a dict {question_id: selected_option}"}), 400
 
+    # No frontend page currently sends "emotion" explicitly (lessons.jsx has
+    # no webcam), so this was always None in practice, making
+    # EMOTION_BIAS dead code. Best-effort fall back to whatever
+    # emotion-service's live tracker last saw for this student (e.g. they
+    # were recently in a live class) - still None, same as before, if
+    # they've never been tracked.
+    if not emotion and student_id != "anonymous":
+        emotion = get_live_emotion(student_id)
+
     result = score_submission(lesson_id, answers)
 
     recommendations = {
-        lo: recommend_resources(lo, emotion=emotion, top_k=3)
+        lo: recommend_resources(lesson_id, lo, emotion=emotion, top_k=3)
         for lo in result["weak_los"]
     }
 
     if student_id != "anonymous":
         lesson = get_lesson(lesson_id)
-        push_quiz_result_async(student_id, lesson_id, lesson["title"], result, student_name, student_email)
+        push_quiz_result_async(
+            student_id, lesson_id, lesson["title"], result, student_name, student_email,
+            answered_count=len(answers), total_questions=len(lesson["questions"]),
+            duration_seconds=duration_seconds,
+        )
 
     return jsonify({
         "success": True,
         "student_id": student_id,
         "data": {**result, "recommendations": recommendations},
+    })
+
+
+# ───────────────────────────────────────────────
+# GET Student Dashboard Recommendations (real, derived from the student's
+# most recent quiz performance via analytics-service - not static/fake)
+# ───────────────────────────────────────────────
+
+@app.route("/api/students/<student_id>/recommendations", methods=["GET"])
+def student_dashboard_recommendations(student_id):
+    """Resource recommendations for the student dashboard's "Recommended
+    for You" panel, based on whichever LOs were still weak in this
+    student's most recent lesson attempt (via analytics-service) - the
+    same semantic_recommender used right after a quiz submission, just
+    retrievable without requiring a fresh submission first."""
+    latest = get_latest_weak_los(student_id)
+    if not latest:
+        return jsonify({"success": True, "data": {"lesson_id": None, "recommendations": []}})
+
+    lesson = get_lesson(latest["lesson_id"])
+    resources = []
+    for lo in latest["weak_los"]:
+        for res in recommend_resources(latest["lesson_id"], lo, top_k=2):
+            resources.append({**res, "lo_level": lo, "lesson_title": lesson["title"] if lesson else latest["lesson_id"]})
+
+    return jsonify({
+        "success": True,
+        "data": {"lesson_id": latest["lesson_id"], "recommendations": resources},
     })
 
 

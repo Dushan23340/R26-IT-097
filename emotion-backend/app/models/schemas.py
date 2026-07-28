@@ -74,6 +74,10 @@ class GameRecommendation(BaseModel):
     target_emotion: str
     estimated_duration_minutes: int
     engagement_score: float
+    # Real lessons (adaptive-learning's /api/lessons) this game is actually
+    # about - only Mathematics games are tagged so far (game_catalog.py),
+    # since those are the only ones with matching real lesson content.
+    lesson_id: Optional[str] = None
 
 
 class RecommendationResponse(BaseModel):

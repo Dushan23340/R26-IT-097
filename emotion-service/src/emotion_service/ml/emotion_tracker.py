@@ -1,9 +1,20 @@
 from __future__ import annotations
 
+import os
 import time
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import TypedDict
+
+# FR06: "engagement indicators [computed] within a configurable time
+# window" - previously emotion_history grew unbounded for the tracker
+# process's entire lifetime, so all the analytics below (duration,
+# transition rate, stability, engagement score) silently drifted from
+# "how is this student doing right now" toward "how have they done on
+# average since the process started", which is a different (and less
+# useful) statistic. 60s matches emotion-backend's own EmotionStore window
+# (app/services/emotion_store.py) for consistency across the platform.
+DEFAULT_WINDOW_SECONDS = float(os.getenv("EMOTION_ANALYTICS_WINDOW_SECONDS", "60"))
 
 
 class EmotionHistoryItem(TypedDict):
@@ -22,17 +33,37 @@ class _StudentState:
     raw_window: list[str] = field(default_factory=list)
     timeline: list[dict[str, float | str | dict | int]] = field(default_factory=list)
     last_timeline_snapshot: float = 0.0
+    # Independent of emotion_history, which now gets window-trimmed - this
+    # must keep pointing at the true last update time even once the window
+    # empties out, or get_all_students()'s "active"/"inactive" freshness
+    # check falls back to session start time and looks permanently stale.
+    last_seen_time: float = field(default_factory=time.time)
 
 
 class EmotionTracker:
-    def __init__(self) -> None:
+    def __init__(self, window_seconds: float = DEFAULT_WINDOW_SECONDS) -> None:
         self._students: dict[str, _StudentState] = {}
+        self.window_seconds = window_seconds
 
     def _get_or_create(self, student_id: str) -> _StudentState:
         key = student_id or "default_student"
         if key not in self._students:
             self._students[key] = _StudentState()
         return self._students[key]
+
+    def _trim_to_window(self, state: _StudentState, now: float) -> None:
+        """Drops emotion_history entries older than window_seconds so every
+        analytic derived from it (duration, transition rate, stability,
+        engagement score, disengagement/negative ratios) reflects only the
+        current window - not the whole session. Called both on every
+        update() and lazily on read, so a student who's gone quiet (no new
+        frames) still sees their windowed stats decay/reset rather than
+        staying frozen on old data. state.timeline is untouched - FR07's
+        chronological timeline is deliberately a full-session record, a
+        separate requirement from FR06's windowed engagement indicators."""
+        cutoff = now - self.window_seconds
+        if state.emotion_history and state.emotion_history[0]["time"] < cutoff:
+            state.emotion_history = [item for item in state.emotion_history if item["time"] >= cutoff]
 
     def update(self, student_id: str, emotion: str) -> str:
         """
@@ -44,6 +75,8 @@ class EmotionTracker:
         """
         state = self._get_or_create(student_id)
         current_time = time.time()
+        state.last_seen_time = current_time
+        self._trim_to_window(state, current_time)
 
         # 1. Temporal Smoothing (Sliding Window of 5 Majority Voting)
         state.raw_window.append(emotion)
@@ -124,10 +157,23 @@ class EmotionTracker:
         return max(0.0, duration)
 
     def _get_transition_rate(self, state: _StudentState) -> float:
-        total_time = time.time() - state.start_time
-        if total_time <= 0:
+        """Transitions per second within the current window only - was
+        previously state.transition_count / (now - state.start_time), a
+        lifetime-average that kept diluting toward zero the longer a
+        session ran, rather than reflecting recent behaviour. Recomputed
+        from the (already window-trimmed) emotion_history rather than the
+        incrementally-maintained lifetime transition_count, since that
+        counter has no per-transition timestamps to filter by window."""
+        history = state.emotion_history
+        if len(history) < 2:
             return 0.0
-        return state.transition_count / total_time
+        windowed_transitions = sum(
+            1 for i in range(1, len(history)) if history[i]["emotion"] != history[i - 1]["emotion"]
+        )
+        span = min(self.window_seconds, time.time() - state.start_time)
+        if span <= 0:
+            return 0.0
+        return windowed_transitions / span
 
     def _get_stability_score(self, state: _StudentState) -> float:
         if not state.emotion_history:
@@ -177,11 +223,19 @@ class EmotionTracker:
                 "disengagementRatio": disengagement_ratio,
                 "negativeEmotionRatio": negative_ratio
             },
+            # FR06: all of the above (except totalTransitions, a deliberate
+            # lifetime counter) are computed over this many trailing
+            # seconds, not the whole session - see _trim_to_window.
+            "analyticsWindowSeconds": self.window_seconds,
             "timeline": state.timeline
         }
 
     def get_metrics(self, student_id: str) -> dict:
         state = self._get_or_create(student_id)
+        # Trimmed here too (not just in update()) so a student who's gone
+        # quiet shows decayed/reset windowed stats on the next poll, rather
+        # than staying frozen on whatever was last computed while active.
+        self._trim_to_window(state, time.time())
         return self._get_metrics_internal(state)
 
     def get_all_students(self) -> dict[str, dict]:
@@ -192,10 +246,12 @@ class EmotionTracker:
         only holds tracker state in memory, so this is a live view, not a
         persisted history.
         """
+        for state in self._students.values():
+            self._trim_to_window(state, time.time())
         return {
             student_id: {
                 **self._get_metrics_internal(state),
-                "lastSeenTimestamp": state.emotion_history[-1]["time"] if state.emotion_history else state.start_time,
+                "lastSeenTimestamp": state.last_seen_time,
             }
             for student_id, state in self._students.items()
         }

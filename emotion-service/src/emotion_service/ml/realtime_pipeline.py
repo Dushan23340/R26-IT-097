@@ -17,8 +17,10 @@ def _calibrate_for_classroom(
     previous_state: Optional[str] = None,
 ) -> str:
     """Apply classroom-specific calibration to a facial-expression label
-    before mapping. The model's label space is angry/happy/normal - any
-    other value is unrecognized and falls back to the previous state.
+    before mapping. The fused model's label space is
+    angry/bored/confused/frustrated/happy/normal (see
+    train_fused_model_v3.py) - any other value is unrecognized and falls
+    back to the previous state.
     """
     normalized = _normalize_emotion(raw_emotion)
     confidence_value = float(confidence or 0.0)
@@ -26,7 +28,7 @@ def _calibrate_for_classroom(
     if normalized == "happy":
         return "happy" if confidence_value >= 0.35 else previous_state or LOW_CONFIDENCE_FALLBACK
 
-    if normalized in {"angry", "normal"}:
+    if normalized in {"angry", "normal", "bored", "confused", "frustrated"}:
         return normalized
 
     return previous_state or LOW_CONFIDENCE_FALLBACK

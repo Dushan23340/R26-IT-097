@@ -27,12 +27,26 @@ import {
   Send,
   Activity,
   TrendingUp,
-  Sparkles
+  Sparkles,
+  ClipboardCheck,
+  ThumbsUp,
+  ThumbsDown,
+  Pencil,
+  ShieldAlert
 } from "lucide-react";
 import { EMOTIONS, toEmotionKey } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
 import { emotionApi } from "@/lib/emotionApi";
+import { adaptiveApiService } from "@/lib/adaptiveApi";
 import { getStudents as getLiveStudents } from "@/services/emotionApi";
+import { studentProfileApi } from "@/lib/studentProfileApi";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 
 const SUBJECTS = ["General", "Mathematics", "Science", "English", "History", "Programming"];
 
@@ -42,8 +56,41 @@ function TeacherDashboard() {
   const [isLive, setIsLive] = useState(false);
   const [isSharingScreen, setIsSharingScreen] = useState(false);
   const [studentsJoined, setStudentsJoined] = useState(0);
+  const [sessionId, setSessionId] = useState(null);
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState("Mathematics");
+  // Optional real-lesson narrowing for the Game Recommendation Engine -
+  // shared list (also reused by the "Start Quiz" picker below instead of
+  // fetching lessons twice).
+  const [allLessons, setAllLessons] = useState([]);
+  const [selectedLessonId, setSelectedLessonId] = useState("");
+
+  useEffect(() => {
+    adaptiveApiService
+      .getLessons()
+      .then((res) => setAllLessons(res.data || []))
+      .catch(() => {
+        // silent - the Recommend/Start Quiz pickers just show no lessons
+      });
+  }, []);
+
+  // Real "Start Quiz" broadcast (Quick Actions) - teacher picks one of
+  // adaptive-learning's real lessons; students see a live prompt to jump
+  // into it (StudentDashboard.jsx polls /quiz-broadcast/state).
+  const [showQuizPicker, setShowQuizPicker] = useState(false);
+  const [quizLessons, setQuizLessons] = useState([]);
+  const [loadingQuizLessons, setLoadingQuizLessons] = useState(false);
+  const [activeQuizBroadcast, setActiveQuizBroadcast] = useState(null);
+
+  // "Assign Activity" Quick Action - manual game broadcast picker.
+  const [showActivityPicker, setShowActivityPicker] = useState(false);
+
+  // "Send Message" Quick Action - real broadcast, built fresh (no existing
+  // backend for this one, unlike quiz/activity which reuse real systems).
+  const [showMessageDialog, setShowMessageDialog] = useState(false);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [activeMessageBroadcast, setActiveMessageBroadcast] = useState(null);
 
   // Real data from FastAPI backend
   const [analytics, setAnalytics] = useState(null);
@@ -63,6 +110,11 @@ function TeacherDashboard() {
   const [liveStudents, setLiveStudents] = useState([]);
   const [liveStudentsLoaded, setLiveStudentsLoaded] = useState(false);
   const [studentsError, setStudentsError] = useState(null);
+  // Real roster of who's actually joined the live class (pseudonym + real
+  // name) - cross-referenced against liveStudents (emotion-service's raw
+  // pseudonym-keyed tracker) below to show real names instead of anon_*
+  // ids, scoped to this class instead of every pseudonym ever tracked.
+  const [joinedStudents, setJoinedStudents] = useState([]);
 
   // What's currently broadcast live to students (set via handleLaunchGame
   // below POSTing to /recommendation/active) - polled so the recommendation
@@ -71,6 +123,68 @@ function TeacherDashboard() {
   // Live join/finish counts + per-student results for that same session.
   const [sessionStats, setSessionStats] = useState(null);
   const [ending, setEnding] = useState(false);
+
+  // Expert-in-the-loop queue (IT22197146 SO5) - statistically-generated
+  // insights from analytics-service wait here for a teacher/advisor
+  // approve/modify/reject decision before they count as "approved".
+  const [pendingRecommendations, setPendingRecommendations] = useState([]);
+  const [reviewingId, setReviewingId] = useState(null);
+  const [editingId, setEditingId] = useState(null);
+  const [editText, setEditText] = useState("");
+
+  // Class-wide LO/stability/fairness snapshot from analytics-service, used
+  // for the "at-risk" alert below (distinct from the live in-class
+  // negative-emotion alert, which only reflects the current moment).
+  const [classOverview, setClassOverview] = useState(null);
+
+  async function fetchPendingRecommendations() {
+    try {
+      const data = await studentProfileApi.getPendingRecommendations();
+      setPendingRecommendations(data.recommendations || []);
+    } catch (e) {
+      // silent — best-effort, analytics-service may not be running
+    }
+  }
+
+  async function fetchClassOverview() {
+    try {
+      const data = await studentProfileApi.getClassOverview();
+      setClassOverview(data);
+    } catch (e) {
+      // silent — same best-effort reasoning
+    }
+  }
+
+  useEffect(() => {
+    fetchPendingRecommendations();
+    fetchClassOverview();
+    const interval = setInterval(() => {
+      fetchPendingRecommendations();
+      fetchClassOverview();
+    }, 20000);
+    return () => clearInterval(interval);
+  }, []);
+
+  async function handleReview(id, action) {
+    setReviewingId(id);
+    try {
+      await studentProfileApi.reviewRecommendation(id, {
+        action,
+        reviewer: user?.name || user?.email || "teacher",
+        modified_text: action === "modify" ? editText : undefined,
+      });
+      setPendingRecommendations((prev) => prev.filter((r) => r.id !== id));
+      setEditingId(null);
+      setEditText("");
+      toast.success(
+        action === "approve" ? "Insight approved" : action === "modify" ? "Insight approved with edits" : "Insight rejected"
+      );
+    } catch (e) {
+      toast.error("Couldn't submit review - try again.");
+    } finally {
+      setReviewingId(null);
+    }
+  }
 
   async function fetchActiveRecommendation() {
     try {
@@ -135,7 +249,11 @@ function TeacherDashboard() {
   async function fetchLiveStudents() {
     try {
       const data = await getLiveStudents();
-      setLiveStudents(Array.isArray(data) ? data : []);
+      // getStudents() (services/emotionApi.js) returns the raw
+      // {count, students: [...]} body, not a bare array - Array.isArray(data)
+      // was always false here, so this silently fell back to [] on every
+      // successful fetch too, not just failures.
+      setLiveStudents(Array.isArray(data?.students) ? data.students : []);
       setStudentsError(null);
     } catch (e) {
       setStudentsError(e.message || "Failed to load live student data");
@@ -150,6 +268,23 @@ function TeacherDashboard() {
   useEffect(() => {
     fetchLiveStudents();
     const interval = setInterval(fetchLiveStudents, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Real joined-roster poll (unconditional, not gated on isLive, for the
+  // same remount-rehydration reason as the class-session state poll above -
+  // returns [] when no class is live, which is exactly what we want).
+  useEffect(() => {
+    async function poll() {
+      try {
+        const data = await emotionApi.getClassSessionStudents();
+        setJoinedStudents(Array.isArray(data?.students) ? data.students : []);
+      } catch (e) {
+        // silent - best-effort
+      }
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -250,8 +385,8 @@ function TeacherDashboard() {
         await fetchAnalytics();
       }
       const dominant = analytics?.dominant_emotion || "BORED";
-      console.log("Generating recommendation for emotion:", dominant, "subject:", selectedSubject);
-      const data = await emotionApi.generateRecommendation(dominant, selectedSubject);
+      console.log("Generating recommendation for emotion:", dominant, "subject:", selectedSubject, "lesson:", selectedLessonId);
+      const data = await emotionApi.generateRecommendation(dominant, selectedSubject, selectedLessonId);
       console.log("Recommendation data:", data);
 
       const normalizedRecommendation = data?.recommendation
@@ -333,6 +468,40 @@ function TeacherDashboard() {
     router.navigate({ to: real.route });
   }
 
+  // "Assign Activity" Quick Action - a manual, teacher-picked version of
+  // the same broadcast handleLaunchGame below uses for an AI recommendation.
+  // Mirrors emotion-backend's GAME_LIBRARY (active_recommendation.py) since
+  // there's no "list games" endpoint - same mirroring REAL_GAMES above
+  // already does for game_id -> route/gameKey.
+  const ACTIVITY_GAMES = [
+    { gameKey: "fraction_room", title: "Fraction Room", description: "Practice fractions hands-on in an interactive room." },
+    { gameKey: "dark_room", title: "Escape the Dark Room", description: "Solve math puzzles to escape." },
+    { gameKey: "pirate", title: "Uncharted Waters: The Pirate Navigator", description: "Navigate using math to chart a course." },
+    { gameKey: "equations_eco", title: "Equations Eco: Forest Restoration", description: "Solve equations to restore a forest ecosystem." },
+    { gameKey: "fish_tank_shop", title: "Fish Tank Shop", description: "Run a shop using math for pricing and stock." },
+    { gameKey: "pattern_islands", title: "Pattern Islands", description: "Identify and extend patterns across islands." },
+  ];
+
+  async function handleAssignActivity(game) {
+    try {
+      const data = await emotionApi.setActiveRecommendation(game.gameKey);
+      setBroadcastGame(data);
+      await fetchActiveStats();
+      setShowActivityPicker(false);
+      toast.success(`${game.title} assigned to the class`);
+    } catch (e) {
+      toast.error("Couldn't assign the activity - try again.");
+    }
+  }
+
+  function openActivityPicker() {
+    if (broadcastGame?.active_game) {
+      toast.error("An activity is already live - end it before assigning a new one.");
+      return;
+    }
+    setShowActivityPicker(true);
+  }
+
   async function handleLaunchGame() {
     if (!recommendation) return;
     const gameId = recommendedGame?.game_id;
@@ -355,33 +524,189 @@ function TeacherDashboard() {
     }
   }
 
-  const handleStartClass = () => {
-    setIsLive(true);
-    setStudentsJoined(18);
-    fetchAnalytics();
+  // Real live-class broadcast (students poll this and can Join, which
+  // starts their real webcam emotion capture) - replaces the previous
+  // purely-local isLive/studentsJoined=18 fake state.
+  const handleStartClass = async () => {
+    try {
+      const data = await emotionApi.startClassSession(selectedSubject, user?.name);
+      setIsLive(true);
+      setStudentsJoined(0);
+      setSessionId(data?.session_id ?? null);
+      fetchAnalytics();
+    } catch (e) {
+      toast.error("Couldn't start the class - try again.");
+    }
   };
-  const handleEndClass = () => {
+  const handleEndClass = async () => {
+    try {
+      await emotionApi.endClassSession();
+    } catch (e) {
+      // best-effort - still drop the local live state below either way
+    }
     setIsLive(false);
     setIsSharingScreen(false);
     setStudentsJoined(0);
+    setSessionId(null);
   };
+
+  // Class Management panel's "Create New Class" is a shortcut for the same
+  // real broadcast handleStartClass starts above - starting a new one while
+  // one is already live would silently reset the current session (wiping
+  // its joined students), so guard against that instead of doing it.
+  const handleCreateNewClass = () => {
+    if (isLive) {
+      toast.error("A class is already live - end it before starting a new one.");
+      return;
+    }
+    handleStartClass();
+  };
+
+  const handleCopySessionLink = async () => {
+    if (!sessionId) return;
+    try {
+      await navigator.clipboard.writeText(sessionId);
+      toast.success("Session ID copied - share it with students to join.");
+    } catch (e) {
+      toast.error("Couldn't copy - your browser blocked clipboard access.");
+    }
+  };
+
+  // Real joined-count while live (a student calls /class-session/join when
+  // they click Join on the dashboard) - polled the same way the game
+  // broadcast's session stats already are.
+  //
+  // Unconditional (not gated on isLive) and runs on every mount: isLive is
+  // local component state that resets to false whenever this component
+  // unmounts and remounts (e.g. the teacher navigates to Profile and back
+  // via client-side routing) - without this poll rehydrating from the
+  // real backend state, a still-genuinely-live class would wrongly show
+  // as "Not Started" here even though nothing was actually ended (the
+  // student dashboard, which polls independently, would keep correctly
+  // showing it live - a symptom of exactly this desync).
+  useEffect(() => {
+    async function poll() {
+      try {
+        const data = await emotionApi.getClassSessionState();
+        setIsLive(!!data?.is_live);
+        if (data?.is_live) {
+          setStudentsJoined(data.joined_count ?? 0);
+          setSessionId(data.session_id ?? null);
+          if (data.subject) setSelectedSubject(data.subject);
+        } else {
+          setStudentsJoined(0);
+          setSessionId(null);
+        }
+      } catch (e) {
+        // silent - best-effort
+      }
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // "Start Quiz" Quick Action - opens a real-lesson picker, then broadcasts
+  // the chosen lesson so students get a live prompt to jump into it.
+  const openQuizPicker = () => {
+    setShowQuizPicker(true);
+    setLoadingQuizLessons(true);
+    adaptiveApiService
+      .getLessons()
+      .then((res) => setQuizLessons(res.data || []))
+      .catch(() => toast.error("Couldn't load lessons - try again."))
+      .finally(() => setLoadingQuizLessons(false));
+  };
+
+  const handleLaunchQuiz = async (lesson) => {
+    try {
+      const data = await emotionApi.startQuizBroadcast(lesson.lesson_id, lesson.title, user?.name);
+      setActiveQuizBroadcast(data ?? null);
+      setShowQuizPicker(false);
+      toast.success(`Quiz started: ${lesson.title}`);
+    } catch (e) {
+      toast.error("Couldn't start the quiz - try again.");
+    }
+  };
+
+  const handleEndQuizBroadcast = async () => {
+    try {
+      await emotionApi.endQuizBroadcast();
+    } catch (e) {
+      // best-effort
+    }
+    setActiveQuizBroadcast(null);
+  };
+
+  // Poll so the "Start Quiz" card reflects an already-active broadcast
+  // (e.g. after a page refresh), same pattern as the live-class poll above.
+  useEffect(() => {
+    async function poll() {
+      try {
+        const data = await emotionApi.getQuizBroadcastState();
+        setActiveQuizBroadcast(data?.is_active ? data : null);
+      } catch (e) {
+        // silent - best-effort
+      }
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // "Send Message" Quick Action.
+  const handleSendMessage = async () => {
+    const message = messageDraft.trim();
+    if (!message) return;
+    setSendingMessage(true);
+    try {
+      const data = await emotionApi.sendMessageBroadcast(message, user?.name);
+      setActiveMessageBroadcast(data ?? null);
+      setShowMessageDialog(false);
+      setMessageDraft("");
+      toast.success("Message sent to the class");
+    } catch (e) {
+      toast.error("Couldn't send the message - try again.");
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  useEffect(() => {
+    async function poll() {
+      try {
+        const data = await emotionApi.getMessageBroadcastState();
+        setActiveMessageBroadcast(data?.is_active ? data : null);
+      } catch (e) {
+        // silent - best-effort
+      }
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleShareScreen = () => {
     setIsSharingScreen(!isSharingScreen);
   };
-  // Real, live students - only whoever emotion-service is actually
-  // tracking right now (i.e. their camera is on and sending frames), not a
-  // stored/synthetic roster. "active" means seen in the last 15s; the
-  // in-memory tracker never explicitly removes a student on disconnect, so
-  // this freshness check is what actually distinguishes "here now" from
-  // "was here earlier and closed the tab".
-  const students = liveStudents.map((s) => {
-    const lastSeenSecondsAgo = s.lastSeenTimestamp ? Date.now() / 1000 - s.lastSeenTimestamp : Infinity;
+  // Real roster (joinedStudents, from class_session_store.get_joined_students -
+  // who actually clicked Join for THIS class) cross-referenced with real,
+  // live emotion data (liveStudents, emotion-service's pseudonym-keyed
+  // tracker) matched on pseudonym === studentId, so the panel shows real
+  // names instead of anon_* ids and is scoped to this class instead of
+  // every pseudonym emotion-service has ever tracked. A joined student
+  // with no matching entry yet just means their camera hasn't started
+  // sending frames - shown as "waiting for camera", not omitted.
+  const liveByPseudonym = new Map(liveStudents.map((s) => [s.studentId, s]));
+  const students = joinedStudents.map((j) => {
+    const live = liveByPseudonym.get(j.pseudonym);
+    const lastSeenSecondsAgo = live?.lastSeenTimestamp ? Date.now() / 1000 - live.lastSeenTimestamp : Infinity;
     return {
-      id: s.studentId,
-      name: s.studentId,
-      emotion: toEmotionKey(s.currentEmotion),
+      id: j.pseudonym,
+      name: j.name,
+      emotion: live ? toEmotionKey(live.currentEmotion) : null,
       status: lastSeenSecondsAgo < 15 ? "active" : "inactive",
-      engagementScore: s.engagementIndicators?.engagementScore ?? null,
+      engagementScore: live?.engagementIndicators?.engagementScore ?? null,
     };
   });
   // Real, derived attention-drop alerts (replaces the old hardcoded mock
@@ -425,6 +750,25 @@ function TeacherDashboard() {
       time: "Live",
     });
   }
+  // Longitudinal (not just in-the-moment) risk from analytics-service:
+  // statistically volatile LO scores across sessions or a significant
+  // declining trend, per IT22197146's stability/trend engine.
+  if (classOverview?.at_risk_count > 0) {
+    alerts.push({
+      id: "lo-at-risk",
+      message: `${classOverview.at_risk_count} student${classOverview.at_risk_count > 1 ? "s" : ""} flagged by learning-outcome analytics (high score variance across lessons)`,
+      type: classOverview.at_risk_count >= 3 ? "danger" : "warning",
+      time: "Analytics",
+    });
+  }
+  if (pendingRecommendations.length > 0) {
+    alerts.push({
+      id: "pending-insights",
+      message: `${pendingRecommendations.length} statistical insight${pendingRecommendations.length > 1 ? "s" : ""} waiting for your review`,
+      type: "info",
+      time: "Analytics",
+    });
+  }
   const smartSuggestions = [
     {
       id: "1",
@@ -443,22 +787,6 @@ function TeacherDashboard() {
       message: "Most students are doing well - Introduce advanced challenge",
       action: "Add Challenge Question",
       icon: "lightbulb"
-    }
-  ];
-  const upcomingClasses = [
-    {
-      id: "1",
-      subject: "Physics - Mechanics",
-      time: "2:00 PM Today",
-      students: 24,
-      link: "abc-123-xyz"
-    },
-    {
-      id: "2",
-      subject: "Math - Calculus",
-      time: "10:00 AM Tomorrow",
-      students: 28,
-      link: "def-456-uvw"
     }
   ];
   const classStats = {
@@ -836,12 +1164,14 @@ function TeacherDashboard() {
           </div>
         ) : students.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
-            No students connected yet - they'll appear here once their camera starts sending emotion data.
+            {isLive
+              ? "No students have joined this class yet - they'll appear here as soon as they click Join."
+              : "No live class right now - start one to see joined students here."}
           </div>
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
             {students.map((student) => {
-    const e = EMOTIONS[student.emotion] || { emoji: "❓", label: "No data", color: "var(--muted-foreground)" };
+    const e = EMOTIONS[student.emotion] || { emoji: "\u{1F4F7}", label: "Waiting for camera", color: "var(--muted-foreground)" };
     return <div
       key={student.id}
       className={`p-3 rounded-xl border transition-all hover:scale-105 ${student.status === "inactive" ? "opacity-50" : ""}`}
@@ -865,6 +1195,99 @@ function TeacherDashboard() {
         )}
       </div>
 
+      {
+    /* 4b. Expert-in-the-Loop Review Queue (IT22197146 SO5) */
+  }
+      <div className="glass rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-display text-xl font-bold flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-primary" />
+            Statistical Insights — Expert Review
+          </h2>
+          <span className="text-sm text-muted-foreground">{pendingRecommendations.length} pending</span>
+        </div>
+
+        {classOverview?.at_risk_count > 0 && (
+          <div className="mb-4 flex items-center gap-2 text-sm p-3 rounded-lg border border-amber/30 bg-amber/5">
+            <ShieldAlert className="h-4 w-4 text-amber flex-shrink-0" />
+            <span>
+              {classOverview.at_risk_count} of {classOverview.total_students} students show unusually volatile
+              LO scores across lessons (stronger dropout/disengagement predictor than low average performance alone).
+            </span>
+          </div>
+        )}
+
+        {pendingRecommendations.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            <ClipboardCheck className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            No pending insights right now — the analytics engine queues one automatically whenever a student's
+            trend, stability, emotion-correlation, or engagement finding clears statistical significance.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {pendingRecommendations.map((rec) => (
+              <div key={rec.id} className="p-4 rounded-xl border border-border/60">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-primary/10 text-primary">
+                    {(rec.insight_type || "insight").replace(/_/g, " ")}
+                  </span>
+                  <span className="text-xs text-muted-foreground">Student {rec.student_id}</span>
+                </div>
+                {editingId === rec.id ? (
+                  <textarea
+                    value={editText}
+                    onChange={(e) => setEditText(e.target.value)}
+                    rows={3}
+                    className="w-full text-sm p-2 rounded-lg border border-border/60 bg-background"
+                  />
+                ) : (
+                  <p className="text-sm">{rec.recommendation_text}</p>
+                )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleReview(rec.id, "approve")}
+                    disabled={reviewingId === rec.id}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <ThumbsUp className="h-3.5 w-3.5" /> Approve
+                  </button>
+                  {editingId === rec.id ? (
+                    <button
+                      type="button"
+                      onClick={() => handleReview(rec.id, "modify")}
+                      disabled={reviewingId === rec.id || !editText.trim()}
+                      className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Save & Approve
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingId(rec.id);
+                        setEditText(rec.recommendation_text);
+                      }}
+                      className="px-3 py-1.5 rounded-lg text-xs font-medium border border-border/60 hover:bg-secondary transition-colors flex items-center gap-1.5"
+                    >
+                      <Pencil className="h-3.5 w-3.5" /> Edit
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleReview(rec.id, "reject")}
+                    disabled={reviewingId === rec.id}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-destructive/10 text-destructive hover:bg-destructive/20 transition-colors disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    <ThumbsDown className="h-3.5 w-3.5" /> Reject
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* 5. Game Recommendation Panel */}
       <div className="glass rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
@@ -875,12 +1298,31 @@ function TeacherDashboard() {
           <div className="flex items-center gap-2">
             <select
               value={selectedSubject}
-              onChange={(e) => setSelectedSubject(e.target.value)}
+              onChange={(e) => {
+                setSelectedSubject(e.target.value);
+                // A lesson picked under the old subject won't exist under
+                // the new one - drop it rather than silently keep sending
+                // a mismatched lesson_id to the backend.
+                setSelectedLessonId("");
+              }}
               className="px-3 py-1.5 rounded-lg text-sm border border-border bg-background"
             >
               {SUBJECTS.map((s) => (
                 <option key={s} value={s}>{s}</option>
               ))}
+            </select>
+            <select
+              value={selectedLessonId}
+              onChange={(e) => setSelectedLessonId(e.target.value)}
+              className="px-3 py-1.5 rounded-lg text-sm border border-border bg-background max-w-[180px]"
+              title="Optional - narrows the game to one related to this specific lesson, when available"
+            >
+              <option value="">Any lesson (subject-wide)</option>
+              {allLessons
+                .filter((l) => l.subject === selectedSubject)
+                .map((l) => (
+                  <option key={l.lesson_id} value={l.lesson_id}>{l.title}</option>
+                ))}
             </select>
             <button
               onClick={handleGenerateRecommendation}
@@ -960,6 +1402,17 @@ function TeacherDashboard() {
                   {" | "}Game Type: <span className="font-medium text-foreground">{recommendedGame?.game_type || recommendation.game_type}</span>
                   {" | "}ID: <span className="font-mono text-xs">{recommendation.intervention_id || recommendedGame?.game_id}</span>
                 </p>
+                {recommendation.lesson_id && (
+                  recommendation.lesson_matched ? (
+                    <p className="text-xs text-primary mt-1">
+                      Related to lesson: <span className="font-medium">{allLessons.find((l) => l.lesson_id === recommendation.lesson_id)?.title || recommendation.lesson_id}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      No game tagged to this lesson yet - showing a general {recommendedGame?.subject || recommendation.subject} game instead.
+                    </p>
+                  )
+                )}
               </div>
             </div>
 
@@ -1043,24 +1496,159 @@ function TeacherDashboard() {
         </h2>
         
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button className="p-4 rounded-xl border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all text-left">
+          <button
+            onClick={openQuizPicker}
+            className="p-4 rounded-xl border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
+          >
             <FileText className="h-6 w-6 text-primary mb-3" />
             <h3 className="font-semibold mb-1">Start Quiz</h3>
-            <p className="text-sm text-muted-foreground">Launch a quick quiz for the class</p>
+            {activeQuizBroadcast ? (
+              <p className="text-sm text-primary flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                Live: {activeQuizBroadcast.lesson_title}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Launch a quick quiz for the class</p>
+            )}
           </button>
-          
-          <button className="p-4 rounded-xl border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all text-left">
+          {activeQuizBroadcast && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEndQuizBroadcast();
+              }}
+              className="-mt-3 mb-1 md:col-start-1 text-xs text-muted-foreground hover:text-destructive text-left"
+            >
+              End quiz broadcast
+            </button>
+          )}
+
+          <button
+            onClick={openActivityPicker}
+            className="p-4 rounded-xl border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
+          >
             <Calendar className="h-6 w-6 text-primary mb-3" />
             <h3 className="font-semibold mb-1">Assign Activity</h3>
-            <p className="text-sm text-muted-foreground">Give students a practice task</p>
+            {broadcastGame?.active_game ? (
+              <p className="text-sm text-primary flex items-center gap-1">
+                <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
+                Live: {broadcastGame.label}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Give students a practice task</p>
+            )}
           </button>
-          
-          <button className="p-4 rounded-xl border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all text-left">
+
+          <button
+            onClick={() => setShowMessageDialog(true)}
+            className="p-4 rounded-xl border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
+          >
             <MessageSquare className="h-6 w-6 text-primary mb-3" />
             <h3 className="font-semibold mb-1">Send Message</h3>
-            <p className="text-sm text-muted-foreground">Broadcast message to all students</p>
+            {activeMessageBroadcast ? (
+              <p className="text-sm text-primary truncate">Sent: "{activeMessageBroadcast.message}"</p>
+            ) : (
+              <p className="text-sm text-muted-foreground">Broadcast message to all students</p>
+            )}
           </button>
         </div>
+
+        {showActivityPicker && (
+          <Dialog open={showActivityPicker} onOpenChange={setShowActivityPicker}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Assign an activity</DialogTitle>
+                <DialogDescription>
+                  Pick a game to broadcast live - students will be switched to it immediately.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {ACTIVITY_GAMES.map((game) => (
+                  <button
+                    key={game.gameKey}
+                    onClick={() => handleAssignActivity(game)}
+                    className="w-full flex items-center justify-between p-3 rounded-lg border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-colors text-left"
+                  >
+                    <div>
+                      <div className="font-medium">{game.title}</div>
+                      <div className="text-xs text-muted-foreground">{game.description}</div>
+                    </div>
+                    <Play className="h-4 w-4 text-primary shrink-0 ml-3" />
+                  </button>
+                ))}
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {showMessageDialog && (
+          <Dialog open={showMessageDialog} onOpenChange={setShowMessageDialog}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Send a message</DialogTitle>
+                <DialogDescription>
+                  Broadcast a short message to every student currently on their dashboard.
+                </DialogDescription>
+              </DialogHeader>
+              <textarea
+                value={messageDraft}
+                onChange={(e) => setMessageDraft(e.target.value)}
+                maxLength={500}
+                rows={4}
+                placeholder="e.g. Great work today - don't forget the quiz due Friday!"
+                className="w-full rounded-lg border border-border/60 bg-secondary/50 p-3 text-sm focus:outline-none focus:border-primary/40"
+              />
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-muted-foreground">{messageDraft.length}/500</span>
+                <button
+                  onClick={handleSendMessage}
+                  disabled={!messageDraft.trim() || sendingMessage}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold text-primary-foreground flex items-center gap-2 disabled:opacity-50"
+                  style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
+                >
+                  {sendingMessage ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+                  Send
+                </button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {showQuizPicker && (
+          <Dialog open={showQuizPicker} onOpenChange={setShowQuizPicker}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>Start a quiz</DialogTitle>
+                <DialogDescription>
+                  Pick a lesson to broadcast live - students will see a prompt to jump straight into its quiz.
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-2 max-h-80 overflow-y-auto">
+                {loadingQuizLessons ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">Loading lessons...</p>
+                ) : quizLessons.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-4 text-center">No lessons available.</p>
+                ) : (
+                  quizLessons.map((lesson) => (
+                    <button
+                      key={lesson.lesson_id}
+                      onClick={() => handleLaunchQuiz(lesson)}
+                      className="w-full flex items-center justify-between p-3 rounded-lg border border-border/60 hover:border-primary/40 hover:bg-primary/5 transition-colors text-left"
+                    >
+                      <div>
+                        <div className="font-medium">{lesson.title}</div>
+                        <div className="text-xs text-muted-foreground">
+                          {lesson.subject} - {lesson.question_count} questions
+                        </div>
+                      </div>
+                      <Play className="h-4 w-4 text-primary" />
+                    </button>
+                  ))
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {
@@ -1073,6 +1661,7 @@ function TeacherDashboard() {
             Class Management
           </h2>
           <button
+    onClick={handleCreateNewClass}
     className="px-4 py-2 rounded-lg text-sm font-semibold text-primary-foreground flex items-center gap-2 transition-all hover:scale-105"
     style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
   >
@@ -1080,33 +1669,44 @@ function TeacherDashboard() {
             Create New Class
           </button>
         </div>
-        
+
         <div className="space-y-3">
-          {upcomingClasses.map((cls) => <div key={cls.id} className="flex items-center justify-between p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-colors">
+          {isLive ? (
+            <div className="flex items-center justify-between p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-colors">
               <div className="flex-1">
-                <h3 className="font-semibold mb-1">{cls.subject}</h3>
+                <h3 className="font-semibold mb-1">{selectedSubject}</h3>
                 <div className="flex items-center gap-4 text-sm text-muted-foreground">
                   <span className="flex items-center gap-1">
                     <Clock className="h-3 w-3" />
-                    {cls.time}
+                    Live now
                   </span>
                   <span className="flex items-center gap-1">
                     <Users className="h-3 w-3" />
-                    {cls.students} students
+                    {studentsJoined} students joined
                   </span>
                 </div>
               </div>
-              
+
               <div className="flex items-center gap-3">
                 <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-secondary text-xs font-mono">
                   <Link className="h-3 w-3" />
-                  {cls.link}
+                  {sessionId ?? "..."}
                 </div>
-                <button className="px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors">
+                <button
+                  onClick={handleCopySessionLink}
+                  disabled={!sessionId}
+                  className="px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
                   Share Link
                 </button>
               </div>
-            </div>)}
+            </div>
+          ) : (
+            <div className="text-center py-8 text-muted-foreground">
+              <Calendar className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              <p>No live class right now - click "Create New Class" to start one.</p>
+            </div>
+          )}
         </div>
       </div>
 

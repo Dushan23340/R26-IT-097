@@ -19,6 +19,7 @@ emotion-service/dataset/expression_dataset_v2/
 emotion-service/dataset/engagement_eval/
 emotion-service/dataset/facial_features.npz
 emotion-service/dataset/facial_features_v2.npz
+emotion-service/dataset/facial_features_v3.npz
 
 # Optional raw datasets
 emotion-service/dataset/raw/
@@ -27,6 +28,7 @@ emotion-service/dataset/raw/
 emotion-service/model/legacy_6class_model/
 emotion-service/model/backup_v1_fer2013_only/
 emotion-service/model/backup_v1_fused_fer2013_only/
+emotion-service/model/backup_v2_fused_3class_only/
 emotion-service/debug_face.jpg
 emotion-service/debug_frame.jpg
 emotion-service/*.log

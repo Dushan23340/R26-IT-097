@@ -22,8 +22,11 @@ export const emotionApi = {
   getTrend: (n = 10) => request(`/analytics/trend?n=${n}`),
   getPattern: () => request("/analytics/pattern"),
 
-  generateRecommendation: (emotion, subject = "General") =>
-    request(`/recommendation/generate?emotion=${encodeURIComponent(emotion)}&subject=${encodeURIComponent(subject)}`),
+  generateRecommendation: (emotion, subject = "General", lessonId = "") =>
+    request(
+      `/recommendation/generate?emotion=${encodeURIComponent(emotion)}&subject=${encodeURIComponent(subject)}` +
+        (lessonId ? `&lesson_id=${encodeURIComponent(lessonId)}` : "")
+    ),
 
   getLatestRecommendation: () => request("/recommendation/latest"),
   getActiveRecommendation: () => request("/recommendation/active"),
@@ -46,4 +49,39 @@ export const emotionApi = {
       method: "POST",
       body: JSON.stringify({ post_emotions: postEmotions }),
     }),
+
+  // Real live-class broadcast (distinct from the game broadcast above) -
+  // teacher starts/ends, students poll + join.
+  getClassSessionState: () => request("/class-session/state"),
+  startClassSession: (subject, startedBy) =>
+    request("/class-session/start", {
+      method: "POST",
+      body: JSON.stringify({ subject, started_by: startedBy }),
+    }),
+  endClassSession: () => request("/class-session/end", { method: "POST" }),
+  joinClassSession: (studentId, sessionId, studentName) =>
+    request("/class-session/join", {
+      method: "POST",
+      body: JSON.stringify({ student_id: studentId, session_id: sessionId, student_name: studentName }),
+    }),
+  getClassSessionStudents: () => request("/class-session/students"),
+
+  // Real "Start Quiz" broadcast (Teacher Console Quick Actions) - teacher
+  // picks a real lesson, students poll and get prompted to jump into it.
+  getQuizBroadcastState: () => request("/quiz-broadcast/state"),
+  startQuizBroadcast: (lessonId, lessonTitle, startedBy) =>
+    request("/quiz-broadcast/start", {
+      method: "POST",
+      body: JSON.stringify({ lesson_id: lessonId, lesson_title: lessonTitle, started_by: startedBy }),
+    }),
+  endQuizBroadcast: () => request("/quiz-broadcast/end", { method: "POST" }),
+
+  // Real "Send Message" broadcast (Teacher Console Quick Actions).
+  getMessageBroadcastState: () => request("/message-broadcast/state"),
+  sendMessageBroadcast: (message, sentBy) =>
+    request("/message-broadcast/send", {
+      method: "POST",
+      body: JSON.stringify({ message, sent_by: sentBy }),
+    }),
+  clearMessageBroadcast: () => request("/message-broadcast/clear", { method: "POST" }),
 };

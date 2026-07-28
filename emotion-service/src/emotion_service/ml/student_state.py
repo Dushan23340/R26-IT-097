@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from typing import Optional
 
-# The CNN (Phase 2) only classifies facial expression (Angry/Happy/Normal) -
-# it never emits Bored/Confused directly. Validation against DAiSEE-labeled
-# engagement crops (dataset/engagement_eval, see
-# scripts/validate_engagement_signatures.py) showed raw expression alone
-# doesn't separate those states: "Normal" dominates 56-74% of predictions
-# across every ground-truth engagement label, including genuinely Engaged
-# faces. So Bored/Confused are inferred from how long/steady/erratic the
-# expression has been (duration, stability, transition rate) rather than
-# from which expression is currently showing. These thresholds are a
-# starting heuristic - tune them against real webcam sessions.
+# The fused model (train_fused_model_v3.py) directly classifies
+# Angry/Bored/Confused/Frustrated/Happy/Normal, so those five non-"normal"
+# labels are trusted directly below when confident enough. "Normal" is the
+# one label that stays ambiguous even with the 6-class model: validation
+# against DAiSEE-labeled engagement crops (dataset/engagement_eval, see
+# scripts/validate_engagement_signatures.py) showed "Normal" dominates
+# 56-74% of predictions across every ground-truth engagement label,
+# including genuinely Engaged faces - so Bored/Confused/Engaged are still
+# inferred behaviorally (duration, stability, transition rate) whenever the
+# raw expression is "normal". These thresholds are a starting heuristic -
+# tune them against real webcam sessions.
 BORED_MIN_DURATION_SECONDS = 20.0
 BORED_MIN_STABILITY = 0.6
 CONFUSED_MIN_TRANSITION_RATE = 0.15
@@ -45,9 +46,11 @@ def predict_student_state(
     """Predict classroom learning state from available evidence.
 
     This layer treats facial emotion as a feature provider, not the final
-    learning-state decision. `facial_emotion` is one of angry/happy/normal
-    (the CNN's label space) - Bored/Confused/Frustrated/Engaged are all
-    derived here, not predicted directly by the model.
+    learning-state decision. `facial_emotion` is one of
+    angry/bored/confused/frustrated/happy/normal (the fused model's label
+    space) - Engaged is always derived here, and Bored/Confused/Engaged are
+    additionally re-derived behaviorally whenever the raw label is the
+    ambiguous "normal" (see module docstring).
     """
     normalized = (facial_emotion or "").strip().lower()
     confidence = max(0.0, min(1.0, float(emotion_confidence or 0.0)))
@@ -68,6 +71,18 @@ def predict_student_state(
 
     if normalized == "happy" and confidence >= 0.45:
         return "Engaged"
+
+    # Direct, confident classifications from the fused model's own
+    # Bored/Confused/Frustrated classes - trusted as-is rather than
+    # re-derived, now that the model can tell them apart itself.
+    if normalized == "frustrated" and confidence >= 0.5:
+        return "Frustrated"
+
+    if normalized == "confused" and confidence >= 0.45:
+        return "Confused"
+
+    if normalized == "bored" and confidence >= 0.45:
+        return "Bored"
 
     if normalized == "normal":
         # Long, unbroken, unchanging flat expression = disengagement.

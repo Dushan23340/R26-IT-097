@@ -12,6 +12,8 @@ from keras.models import load_model
 from mediapipe.tasks.python import BaseOptions, vision
 from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
 
+from emotion_service.ml.occlusion import apply_region_weighting
+
 _ML_DIR = Path(__file__).resolve().parent
 _SERVICE_DIR = _ML_DIR.parents[2]  # emotion-service/
 _MODEL_DIR = _SERVICE_DIR / "model"
@@ -124,7 +126,11 @@ def _extract_landmark_features(face_image_bgr: np.ndarray) -> np.ndarray:
 def _preprocess_image(face_image_bgr: np.ndarray) -> np.ndarray:
     rgb = cv2.cvtColor(face_image_bgr, cv2.COLOR_BGR2RGB)
     resized = cv2.resize(rgb, (IMG_SIZE, IMG_SIZE), interpolation=cv2.INTER_CUBIC)
-    return preprocess_input(resized.astype("float32"))
+    # Occlusion handling (2/2): the same eye/mouth region-weighting applied
+    # during training (train_fused_model_v3.py) - must run before
+    # preprocess_input, on the same [0, 255] range, to match training.
+    weighted = apply_region_weighting(resized.astype("float32"))
+    return preprocess_input(weighted)
 
 
 def predict_emotion_with_confidence(face_image_bgr: np.ndarray) -> tuple[str, float]:

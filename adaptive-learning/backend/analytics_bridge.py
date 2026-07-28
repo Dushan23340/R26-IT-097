@@ -16,7 +16,15 @@ from datetime import datetime, timedelta
 
 import requests
 
+from anonymize import anonymize_student_id
+
 ANALYTICS_SERVICE_URL = os.environ.get("STUDENT_PROFILE_SERVICE_URL", "http://127.0.0.1:5010")
+# emotion-service (IT22140784) - real-time per-student emotion tracker.
+# Queried best-effort at quiz-submission time so the Sentence-BERT
+# recommendation engine's emotion bias (semantic_recommender.EMOTION_BIAS)
+# actually has live data to act on, instead of always receiving emotion=None
+# because no frontend page ever sent one.
+EMOTION_SERVICE_URL = os.environ.get("EMOTION_SERVICE_URL", "http://127.0.0.1:5002")
 _TIMEOUT = 3
 
 
@@ -29,6 +37,75 @@ def _post(path: str, payload: dict) -> dict | None:
         return None
 
 
+def _get(path: str) -> dict | None:
+    try:
+        response = requests.get(f"{ANALYTICS_SERVICE_URL}{path}", timeout=_TIMEOUT)
+        response.raise_for_status()
+        return response.json()
+    except requests.RequestException:
+        return None
+
+
+MASTERY_THRESHOLD = 75.0  # matches mastery.py's MASTERY_THRESHOLD
+
+
+# Only these map to an EMOTION_BIAS entry in semantic_recommender.py -
+# "Engaged"/"Neutral"/"Happy"/"Angry" have no bias rule, so returning them
+# unmapped is fine (the recommender just skips the bias step, same as
+# emotion=None did before).
+_TRACKER_STATE_TO_BIAS_KEY = {"confused": "confused", "bored": "bored", "frustrated": "frustrated"}
+
+
+def get_live_emotion(student_id: str) -> str | None:
+    """Best-effort lookup of this student's current tracked emotion from
+    emotion-service's in-memory tracker (GET /students) - only returns a
+    value if that student has actually been seen recently (e.g. currently
+    or recently in a live class with their webcam on); returns None
+    otherwise, same as if no emotion had been detected at all.
+
+    emotion-service anonymises student_id (FR10) before ever storing or
+    returning it, so this student_id must be hashed the same way before
+    comparing - matching against the raw ID would never match anything."""
+    pseudonym = anonymize_student_id(student_id)
+    try:
+        response = requests.get(f"{EMOTION_SERVICE_URL}/students", timeout=_TIMEOUT)
+        response.raise_for_status()
+        payload = response.json()
+    except requests.RequestException:
+        return None
+
+    for student in payload.get("students", []):
+        if str(student.get("studentId")) == pseudonym:
+            current = str(student.get("currentEmotion") or "").strip().lower()
+            return _TRACKER_STATE_TO_BIAS_KEY.get(current)
+    return None
+
+
+def get_latest_weak_los(student_id: str) -> dict | None:
+    """Synchronous (unlike push_quiz_result_async) - called directly from a
+    GET request handler, not fire-and-forget. Looks up this student's most
+    recent lesson session in analytics-service and returns any LOs still
+    below mastery for it, so the dashboard can show real "recommended for
+    you" resources without requiring a fresh quiz submission first."""
+    history = _get(f"/students/{student_id}/history")
+    if not history or not history.get("lo_history"):
+        return None
+
+    lo_history = history["lo_history"]
+    latest_session_id = max(lo_history, key=lambda row: row["start_time"])["session_id"]
+    latest_lesson_id = next(row["lesson_id"] for row in lo_history if row["session_id"] == latest_session_id)
+
+    weak_los = [
+        row["lo_level"]
+        for row in lo_history
+        if row["session_id"] == latest_session_id and float(row["score"]) < MASTERY_THRESHOLD
+    ]
+    if not weak_los:
+        return None
+
+    return {"lesson_id": latest_lesson_id, "weak_los": weak_los}
+
+
 def _push(
     student_id: str,
     student_name: str,
@@ -36,6 +113,9 @@ def _push(
     lesson_id: str,
     lesson_title: str,
     mastery_result: dict,
+    answered_count: int = 0,
+    total_questions: int = 0,
+    duration_seconds: int | None = None,
 ) -> None:
     # learning_sessions.student_id is a foreign key into student_profiles -
     # a real logged-in student has never had a profile row created for
@@ -52,8 +132,13 @@ def _push(
         "grade_level": "Grade 9",
     })
 
-    start_time = datetime.utcnow() - timedelta(minutes=5)
+    # duration_seconds is the real, frontend-measured quiz-taking time
+    # (lessons.jsx tracks it from quiz-screen mount to submit). Fall back to
+    # a placeholder 5-minute window only when it's missing (e.g. an older
+    # client), since learning_sessions.duration_seconds otherwise stays
+    # accurate for real submissions.
     end_time = datetime.utcnow()
+    start_time = end_time - timedelta(seconds=duration_seconds if duration_seconds else 300)
 
     session_response = _post("/sessions", {
         "student_id": student_id,
@@ -78,6 +163,19 @@ def _push(
             "max_score": 100,
         })
 
+    # Real engagement signal (SO2/proposal FR05): no interaction-tracking
+    # exists yet, so answered/total questions is the most honest proxy we
+    # actually have for "engagement" during a quiz - not fabricated/random.
+    if total_questions > 0 and duration_seconds:
+        _post("/engagement-metrics", {
+            "session_id": session_id,
+            "student_id": student_id,
+            "engagement_score": round(min(1.0, answered_count / total_questions), 4),
+            "time_on_task_seconds": duration_seconds,
+            "interaction_count": answered_count,
+            "quiz_attempts": 1,
+        })
+
 
 def push_quiz_result_async(
     student_id: str,
@@ -86,9 +184,17 @@ def push_quiz_result_async(
     mastery_result: dict,
     student_name: str = "",
     student_email: str = "",
+    answered_count: int = 0,
+    total_questions: int = 0,
+    duration_seconds: int | None = None,
 ) -> None:
     threading.Thread(
         target=_push,
         args=(student_id, student_name, student_email, lesson_id, lesson_title, mastery_result),
+        kwargs={
+            "answered_count": answered_count,
+            "total_questions": total_questions,
+            "duration_seconds": duration_seconds,
+        },
         daemon=True,
     ).start()

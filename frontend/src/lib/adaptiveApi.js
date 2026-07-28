@@ -51,12 +51,19 @@ export const adaptiveApiService = {
   // data into analytics-service.
   getLessons: () => adaptiveApi.get("/lessons"),
   getLessonQuiz: (lessonId) => adaptiveApi.get(`/lessons/${lessonId}/quiz`),
-  submitLessonQuiz: ({ lessonId, studentId, studentName, studentEmail, answers, emotion }) =>
+  submitLessonQuiz: ({ lessonId, studentId, studentName, studentEmail, answers, emotion, durationSeconds }) =>
     adaptiveApi.post(`/lessons/${lessonId}/quiz/submit`, {
       student_id: studentId,
       student_name: studentName,
       student_email: studentEmail,
       answers,
       emotion,
+      duration_seconds: durationSeconds,
     }),
+
+  // Resource recommendations derived from the student's most recent quiz's
+  // still-weak LOs (analytics-service lookup + semantic_recommender) - for
+  // the dashboard's "Recommended for You" panel, without requiring a fresh
+  // quiz submission first.
+  getStudentRecommendations: (studentId) => adaptiveApi.get(`/students/${studentId}/recommendations`),
 };

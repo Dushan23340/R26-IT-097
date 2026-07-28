@@ -1,0 +1,37 @@
+{
+  "timestamp": "2026-07-28T10:53:53",
+  "host_cpu": "arm",
+  "host_platform": "macOS-15.6-arm64-arm-64bit",
+  "note": "Benchmarked on available dev hardware, not the proposal's i3/4GB CPU-only target - see script docstring.",
+  "targets": {
+    "fps": 15.0,
+    "latency_ms": 50.0
+  },
+  "in_process": {
+    "label": "IN-PROCESS (face detect + predict + track, no network)",
+    "n": 55,
+    "mean_ms": 30.12,
+    "median_ms": 30.27,
+    "p95_ms": 31.39,
+    "max_ms": 31.54,
+    "achievable_fps": 33.2,
+    "meets_fps_target": true,
+    "meets_latency_target": true,
+    "stage_breakdown_ms": {
+      "detect_ms": 1.09,
+      "predict_ms": 28.98,
+      "track_ms": 0.04
+    }
+  },
+  "live_http": {
+    "label": "LIVE HTTP (real POST /predict, as a browser actually experiences it)",
+    "n": 60,
+    "mean_ms": 29.66,
+    "median_ms": 32.25,
+    "p95_ms": 32.87,
+    "max_ms": 33.45,
+    "achievable_fps": 33.72,
+    "meets_fps_target": true,
+    "meets_latency_target": true
+  }
+}

@@ -1,9 +1,11 @@
 import { createContext, useContext, useState, useEffect } from "react";
+import { useRouter } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 const AuthContext = createContext(void 0);
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
+  const router = useRouter();
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
     if (storedUser) {
@@ -12,12 +14,11 @@ function AuthProvider({ children }) {
       } catch {
         localStorage.removeItem("user");
       }
-    } else {
-      // For testing: auto-login as teacher
-      const mockUser = { id: 1, email: "teacher@test.com", name: "Test Teacher", role: "teacher" };
-      setUser(mockUser);
-      localStorage.setItem("user", JSON.stringify(mockUser));
     }
+    // No stored user (including right after logout) -> stay logged out and
+    // show the real login/signup screen. This used to auto-login as a
+    // fake "Test Teacher" account, which meant logout could never actually
+    // stick past a page refresh.
     setIsLoading(false);
   }, []);
   const signup = async (email, password, name, role) => {
@@ -67,6 +68,10 @@ function AuthProvider({ children }) {
     setUser(null);
     localStorage.removeItem("user");
     localStorage.removeItem("token");
+    // Navigate here rather than relying on each page to notice user became
+    // null and redirect itself - not every route has that guard, so this
+    // is the one place that reliably gets you off a protected page.
+    router.navigate({ to: "/login" });
   };
   return <AuthContext.Provider value={{ user, isLoading, signup, login, verifyOtp, logout, resendOtp }}>
       {children}

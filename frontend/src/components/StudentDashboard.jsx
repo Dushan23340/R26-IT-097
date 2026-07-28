@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   Play,
@@ -19,13 +19,36 @@ import {
   Clock,
   Target,
   Award,
-  AlertCircle
+  AlertCircle,
+  MousePointerClick,
+  RefreshCw,
+  ExternalLink
 } from "lucide-react";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
+import { adaptiveApiService } from "@/lib/adaptiveApi";
+import { studentProfileApi } from "@/lib/studentProfileApi";
+import { emotionApi } from "@/lib/emotionApi";
 import EmotionDetector from "@/components/EmotionDetector";
+
+const SUBJECT_MASTERY_THRESHOLD = 75; // matches mastery.py's MASTERY_THRESHOLD
+
+const RESOURCE_TYPE_ICON = {
+  video: Play,
+  reading: BookOpen,
+  interactive: MousePointerClick,
+  quiz: FileText,
+};
+const RESOURCE_TYPE_ACTION = {
+  video: "Watch Now",
+  reading: "Read Article",
+  interactive: "Try It",
+  quiz: "Take Quiz",
+};
+
 function StudentDashboard() {
   const { user } = useAuth();
+  const studentId = String(user?.id ?? user?._id ?? user?.email ?? "anonymous");
   const [emotion, setEmotion] = useState("neutral");
   const [attention, setAttention] = useState(87);
   const [engagement, setEngagement] = useState(92);
@@ -33,6 +56,218 @@ function StudentDashboard() {
   const [currentLiveClass, setCurrentLiveClass] = useState(null);
   const [isMuted, setIsMuted] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
+
+  // Real lessons (adaptive-learning backend) and real weak-LO resource
+  // recommendations (analytics-service lookup + semantic_recommender) -
+  // replaces the previously hardcoded, non-functional placeholder arrays.
+  const [lessons, setLessons] = useState([]);
+  const [loadingLessons, setLoadingLessons] = useState(true);
+  const [recommendations, setRecommendations] = useState([]);
+  const [loadingRecommendations, setLoadingRecommendations] = useState(true);
+
+  // Real per-session LO history from analytics-service, used to derive
+  // Quick Stats and Your Progress below - replaces the previously
+  // hardcoded "12 quizzes / 78% / 5 day streak" and per-subject numbers.
+  const [history, setHistory] = useState(null);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+
+  useEffect(() => {
+    adaptiveApiService
+      .getLessons()
+      .then((res) => setLessons(res.data || []))
+      .catch(() => setLessons([]))
+      .finally(() => setLoadingLessons(false));
+
+    adaptiveApiService
+      .getStudentRecommendations(studentId)
+      .then((res) => setRecommendations(res.data?.recommendations || []))
+      .catch(() => setRecommendations([]))
+      .finally(() => setLoadingRecommendations(false));
+
+    studentProfileApi
+      .getStudentHistory(studentId)
+      .then((data) => setHistory(data))
+      .catch(() => setHistory(null))
+      .finally(() => setLoadingHistory(false));
+  }, [studentId]);
+
+  // Real "live class" equivalent: whatever the teacher has actually
+  // broadcast right now via the Teacher Console's game recommendation
+  // engine (GET /recommendation/active on emotion-backend) - replaces the
+  // previously hardcoded, permanently-"live" fake schedule. There's no
+  // real class-scheduling system in this platform, so "upcoming classes"
+  // has no honest data source and isn't shown.
+  const [activeBroadcast, setActiveBroadcast] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    function poll() {
+      emotionApi
+        .getActiveRecommendation()
+        .then((data) => {
+          if (!cancelled) setActiveBroadcast(data?.active_game ? data : null);
+        })
+        .catch(() => {
+          if (!cancelled) setActiveBroadcast(null);
+        });
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  // Real live-class broadcast (distinct from the game broadcast above) -
+  // the teacher's actual "Start Class" button on the Teacher Console,
+  // not a fake permanently-live schedule. Joining turns on real webcam
+  // emotion capture via the existing EmotionDetector flow below.
+  const [classSession, setClassSession] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    function poll() {
+      emotionApi
+        .getClassSessionState()
+        .then((data) => {
+          if (!cancelled) setClassSession(data?.is_live ? data : null);
+        })
+        .catch(() => {
+          if (!cancelled) setClassSession(null);
+        });
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  function handleJoinClassSession() {
+    if (!classSession) return;
+    emotionApi.joinClassSession(studentId, classSession.session_id, user?.name).catch(() => {
+      // best-effort - joining the UI still works even if the join call fails
+    });
+    setInLiveClass(true);
+    setCurrentLiveClass({ subject: classSession.subject, teacher: classSession.started_by });
+  }
+
+  // Real "Start Quiz" broadcast (Teacher Console Quick Actions) - same poll
+  // pattern as the live-class broadcast above. Dismissible per broadcast_id
+  // so it doesn't keep re-popping every 5s once the student has seen it.
+  const [quizBroadcast, setQuizBroadcast] = useState(null);
+  const [dismissedQuizBroadcastId, setDismissedQuizBroadcastId] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    function poll() {
+      emotionApi
+        .getQuizBroadcastState()
+        .then((data) => {
+          if (!cancelled) setQuizBroadcast(data?.is_active ? data : null);
+        })
+        .catch(() => {
+          if (!cancelled) setQuizBroadcast(null);
+        });
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+  const showQuizPrompt = quizBroadcast && quizBroadcast.broadcast_id !== dismissedQuizBroadcastId;
+
+  // Real "Send Message" broadcast (Teacher Console Quick Actions) - same
+  // poll + dismiss-by-broadcast_id pattern as the quiz broadcast above.
+  const [messageBroadcast, setMessageBroadcast] = useState(null);
+  const [dismissedMessageBroadcastId, setDismissedMessageBroadcastId] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    function poll() {
+      emotionApi
+        .getMessageBroadcastState()
+        .then((data) => {
+          if (!cancelled) setMessageBroadcast(data?.is_active ? data : null);
+        })
+        .catch(() => {
+          if (!cancelled) setMessageBroadcast(null);
+        });
+    }
+    poll();
+    const interval = setInterval(poll, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+  const showMessagePrompt = messageBroadcast && messageBroadcast.broadcast_id !== dismissedMessageBroadcastId;
+
+  const lessonSubjectById = useMemo(() => {
+    const map = {};
+    lessons.forEach((l) => {
+      map[l.lesson_id] = l.subject;
+    });
+    return map;
+  }, [lessons]);
+
+  // One row per session (averaging its LO-level scores), chronological -
+  // the same grouping profile.jsx uses for its trend chart.
+  const sessionAverages = useMemo(() => {
+    if (!history?.lo_history?.length) return [];
+    const bySession = new Map();
+    for (const row of history.lo_history) {
+      if (!bySession.has(row.session_id)) {
+        bySession.set(row.session_id, { session_id: row.session_id, lesson_id: row.lesson_id, start_time: row.start_time, scores: [] });
+      }
+      bySession.get(row.session_id).scores.push(Number(row.score));
+    }
+    return Array.from(bySession.values())
+      .map((s) => ({ ...s, avgScore: s.scores.reduce((a, b) => a + b, 0) / s.scores.length }))
+      .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+  }, [history]);
+
+  const quizzesCompleted = sessionAverages.length;
+  const avgScore = quizzesCompleted > 0
+    ? Math.round(sessionAverages.reduce((sum, s) => sum + s.avgScore, 0) / quizzesCompleted)
+    : null;
+
+  // Consecutive most-recent calendar days (local time) with at least one
+  // completed session, counting back from today.
+  const studyStreak = useMemo(() => {
+    if (sessionAverages.length === 0) return 0;
+    const activeDays = new Set(sessionAverages.map((s) => new Date(s.start_time).toDateString()));
+    let streak = 0;
+    const cursor = new Date();
+    while (activeDays.has(cursor.toDateString())) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    return streak;
+  }, [sessionAverages]);
+
+  // Per-subject average, grouped via each session's lesson -> subject
+  // (from the real lesson catalog, not a fixed subject list) - trend is
+  // simply latest-session vs earliest-session average for that subject.
+  const progressBySubject = useMemo(() => {
+    const bySubject = new Map();
+    for (const s of sessionAverages) {
+      const subject = lessonSubjectById[s.lesson_id] || s.lesson_id;
+      if (!bySubject.has(subject)) bySubject.set(subject, []);
+      bySubject.get(subject).push(s);
+    }
+    return Array.from(bySubject.entries())
+      .map(([subject, sessions]) => {
+        const score = Math.round(sessions.reduce((sum, s) => sum + s.avgScore, 0) / sessions.length);
+        let trend = "stable";
+        if (sessions.length >= 2) {
+          const delta = sessions[sessions.length - 1].avgScore - sessions[0].avgScore;
+          trend = delta > 5 ? "up" : delta < -5 ? "down" : "stable";
+        }
+        return { subject, score, trend, weak: score < SUBJECT_MASTERY_THRESHOLD };
+      })
+      .sort((a, b) => b.score - a.score);
+  }, [sessionAverages, lessonSubjectById]);
 
   const mapStudentStateToUiKey = (state) => {
     const s = (state || "").toLowerCase();
@@ -43,107 +278,6 @@ function StudentDashboard() {
     if (s.includes("angry")) return "angry";
     return "neutral";
   };
-  const overallProgress = 72;
-  const liveClasses = [
-    {
-      id: "1",
-      subject: "Mathematics - Algebra",
-      teacher: "Dr. Sarah Johnson",
-      time: "Live Now",
-      status: "live",
-      joinUrl: "https://zoom.us/j/123456789"
-    },
-    {
-      id: "2",
-      subject: "Physics - Mechanics",
-      teacher: "Prof. Michael Chen",
-      time: "2:00 PM Today",
-      status: "upcoming"
-    },
-    {
-      id: "3",
-      subject: "English - Grammar",
-      teacher: "Ms. Emily Davis",
-      time: "10:00 AM Tomorrow",
-      status: "upcoming"
-    }
-  ];
-  const quizzes = [
-    {
-      id: "1",
-      title: "Algebra Basics",
-      subject: "Mathematics",
-      difficulty: "Easy",
-      questions: 10,
-      duration: "15 min"
-    },
-    {
-      id: "2",
-      title: "Newton's Laws",
-      subject: "Physics",
-      difficulty: "Medium",
-      questions: 15,
-      duration: "20 min"
-    },
-    {
-      id: "3",
-      title: "Advanced Calculus",
-      subject: "Mathematics",
-      difficulty: "Hard",
-      questions: 20,
-      duration: "30 min"
-    }
-  ];
-  const recommendations = [
-    {
-      id: "1",
-      type: "video",
-      title: "Watch: Introduction to Algebra",
-      description: "10 min video to strengthen your basics",
-      action: "Watch Now",
-      duration: "10 min"
-    },
-    {
-      id: "2",
-      type: "quiz",
-      title: "Try: Quick Practice Quiz",
-      description: "5 questions to test your understanding",
-      action: "Start Quiz",
-      duration: "5 min"
-    },
-    {
-      id: "3",
-      type: "article",
-      title: "Read: Study Tips for Math",
-      description: "Improve your problem-solving skills",
-      action: "Read Article",
-      duration: "8 min"
-    },
-    {
-      id: "4",
-      type: "quiz",
-      title: "Play: Track & Field Analytics",
-      description: "Solve four circle-related lane stagger questions in an Olympic-style game.",
-      action: "Launch Game",
-      duration: "4 min",
-      to: "/track-field-analytics"
-    },
-    {
-      id: "5",
-      type: "quiz",
-      title: "Play: Uncharted Waters — The Pirate Navigator",
-      description: "Sail across four Pythagorean Theorem voyages to chart a course to the treasure.",
-      action: "Launch Game",
-      duration: "6 min",
-      to: "/pirate-navigator"
-    }
-  ];
-  const progressData = [
-    { subject: "Mathematics", score: 85, trend: "up", weak: false },
-    { subject: "Physics", score: 68, trend: "stable", weak: false },
-    { subject: "English", score: 72, trend: "up", weak: false },
-    { subject: "Chemistry", score: 45, trend: "down", weak: true }
-  ];
   const notifications = [
     {
       id: "1",
@@ -361,19 +495,23 @@ function StudentDashboard() {
             <div className="max-w-md">
               <div className="flex items-center justify-between text-sm mb-2">
                 <span className="text-muted-foreground">Overall Progress</span>
-                <span className="font-semibold">{overallProgress}%</span>
+                <span className="font-semibold">{loadingHistory || avgScore == null ? "–" : `${avgScore}%`}</span>
               </div>
               <div className="h-3 rounded-full bg-secondary overflow-hidden">
                 <div
     className="h-full rounded-full transition-all duration-500"
     style={{
-      width: `${overallProgress}%`,
+      width: `${avgScore ?? 0}%`,
       background: "var(--gradient-primary)"
     }}
   />
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                {overallProgress >= 70 ? "\u{1F389} Doing Well!" : "\u{1F4AA} Keep Practicing!"}
+                {avgScore == null
+                  ? "Take a lesson quiz to see your progress"
+                  : avgScore >= 70
+                  ? "\u{1F389} Doing Well!"
+                  : "\u{1F4AA} Keep Practicing!"}
               </p>
             </div>
           </div>
@@ -395,67 +533,147 @@ function StudentDashboard() {
         </div>
       </div>
 
+      {
+    /* Real live-class broadcast - the teacher's actual "Start Class" on
+       the Teacher Console, not a fake permanently-live schedule. */
+  }
+      {classSession && (
+        <div className="glass rounded-2xl p-6 border-2 border-primary/30 bg-primary/5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-3 w-3 rounded-full bg-destructive animate-pulse" />
+            <div>
+              <p className="text-sm font-medium text-destructive">LIVE NOW</p>
+              <h3 className="font-semibold text-lg">{classSession.subject}</h3>
+              <p className="text-sm text-muted-foreground">{classSession.started_by}</p>
+            </div>
+          </div>
+          <button
+            onClick={handleJoinClassSession}
+            className="px-6 py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:scale-105"
+            style={{
+              background: "var(--gradient-primary)",
+              color: "var(--primary-foreground)",
+              boxShadow: "var(--shadow-glow)"
+            }}
+          >
+            <Play className="h-4 w-4" />
+            Join Live Class
+          </button>
+        </div>
+      )}
+
+      {
+    /* Real "Start Quiz" broadcast from the Teacher Console's Quick
+       Actions - dismissible, re-appears if the teacher starts a new one. */
+  }
+      {showQuizPrompt && (
+        <div className="glass rounded-2xl p-6 border-2 border-primary/30 bg-primary/5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <FileText className="h-6 w-6 text-primary" />
+            <div>
+              <p className="text-sm font-medium text-primary">QUIZ STARTED</p>
+              <h3 className="font-semibold text-lg">{quizBroadcast.lesson_title}</h3>
+              <p className="text-sm text-muted-foreground">{quizBroadcast.started_by}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/lessons"
+              search={{ lesson_id: quizBroadcast.lesson_id }}
+              className="px-6 py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:scale-105"
+              style={{
+                background: "var(--gradient-primary)",
+                color: "var(--primary-foreground)",
+                boxShadow: "var(--shadow-glow)"
+              }}
+            >
+              <Play className="h-4 w-4" />
+              Take Quiz Now
+            </Link>
+            <button
+              onClick={() => setDismissedQuizBroadcastId(quizBroadcast.broadcast_id)}
+              className="p-2 rounded-lg hover:bg-secondary transition-colors"
+              aria-label="Dismiss"
+            >
+              <X className="h-4 w-4 text-muted-foreground" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {
+    /* Real "Send Message" broadcast from the Teacher Console's Quick
+       Actions - dismissible, re-appears if the teacher sends a new one. */
+  }
+      {showMessagePrompt && (
+        <div className="glass rounded-2xl p-6 border-2 border-primary/30 bg-primary/5 flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <Bell className="h-6 w-6 text-primary" />
+            <div>
+              <p className="text-sm font-medium text-primary">MESSAGE FROM {(messageBroadcast.sent_by || "TEACHER").toUpperCase()}</p>
+              <p className="text-base">{messageBroadcast.message}</p>
+            </div>
+          </div>
+          <button
+            onClick={() => setDismissedMessageBroadcastId(messageBroadcast.broadcast_id)}
+            className="p-2 rounded-lg hover:bg-secondary transition-colors"
+            aria-label="Dismiss"
+          >
+            <X className="h-4 w-4 text-muted-foreground" />
+          </button>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2 glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-bold flex items-center gap-2">
               <Video className="h-5 w-5 text-primary" />
-              Live Classes
+              Live Activity
             </h2>
           </div>
 
           {
-    /* Current Live Class */
+    /* Real teacher-broadcast game (GET /recommendation/active), not a
+       fake video-call schedule - there's no real class-scheduling system
+       to show an "upcoming classes" list from. */
   }
-          {liveClasses.filter((c) => c.status === "live").map((cls) => <div key={cls.id} className="mb-4 p-4 rounded-xl border-2 border-primary/30 bg-primary/5">
+          {activeBroadcast ? (
+            <div className="p-4 rounded-xl border-2 border-primary/30 bg-primary/5">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-3">
                   <div className="h-3 w-3 rounded-full bg-destructive animate-pulse" />
                   <span className="text-sm font-medium text-destructive">LIVE NOW</span>
                 </div>
-                <span className="text-xs text-muted-foreground">{cls.time}</span>
+                {activeBroadcast.updated_at && (
+                  <span className="text-xs text-muted-foreground">
+                    Started {new Date(activeBroadcast.updated_at).toLocaleTimeString()}
+                  </span>
+                )}
               </div>
-              <h3 className="font-semibold text-lg mb-1">{cls.subject}</h3>
-              <p className="text-sm text-muted-foreground mb-4">{cls.teacher}</p>
-              <button
-    onClick={() => {
-      setInLiveClass(true);
-      setCurrentLiveClass(cls);
-    }}
-    className="w-full sm:w-auto px-6 py-3 rounded-xl font-semibold text-sm flex items-center justify-center gap-2 transition-all hover:scale-105"
-    style={{
-      background: "var(--gradient-primary)",
-      color: "var(--primary-foreground)",
-      boxShadow: "var(--shadow-glow)"
-    }}
-  >
+              <h3 className="font-semibold text-lg mb-1">{activeBroadcast.label}</h3>
+              <p className="text-sm text-muted-foreground mb-4">
+                Your teacher started this activity for the class{activeBroadcast.badge ? ` · ${activeBroadcast.badge}` : ""}
+              </p>
+              <Link
+                to={activeBroadcast.route}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold text-sm transition-all hover:scale-105"
+                style={{
+                  background: "var(--gradient-primary)",
+                  color: "var(--primary-foreground)",
+                  boxShadow: "var(--shadow-glow)"
+                }}
+              >
                 <Play className="h-4 w-4" />
-                Join Live Class
-              </button>
-            </div>)}
-
-          {
-    /* Upcoming Classes */
-  }
-          <div>
-            <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
-              <Calendar className="h-4 w-4" />
-              Upcoming Classes
-            </h3>
-            <div className="space-y-2">
-              {liveClasses.filter((c) => c.status === "upcoming").map((cls) => <div key={cls.id} className="flex items-center justify-between p-3 rounded-lg border border-border/60 hover:border-primary/30 transition-colors">
-                  <div>
-                    <p className="font-medium text-sm">{cls.subject}</p>
-                    <p className="text-xs text-muted-foreground">{cls.teacher}</p>
-                  </div>
-                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                    <Clock className="h-3 w-3" />
-                    {cls.time}
-                  </div>
-                </div>)}
+                Join Now
+              </Link>
             </div>
-          </div>
+          ) : (
+            <div className="text-center py-8 text-sm text-muted-foreground">
+              <Video className="h-8 w-8 mx-auto mb-2 opacity-30" />
+              No live activity right now - your teacher will start one from the Teacher Console when needed.
+            </div>
+          )}
         </div>
 
         {
@@ -492,15 +710,17 @@ function StudentDashboard() {
             <div className="space-y-3">
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Quizzes Completed</span>
-                <span className="font-semibold">12</span>
+                <span className="font-semibold">{loadingHistory ? "–" : quizzesCompleted}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Avg. Score</span>
-                <span className="font-semibold">78%</span>
+                <span className="font-semibold">{loadingHistory || avgScore == null ? "–" : `${avgScore}%`}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-sm text-muted-foreground">Study Streak</span>
-                <span className="font-semibold">5 days 🔥</span>
+                <span className="font-semibold">
+                  {loadingHistory ? "–" : `${studyStreak} day${studyStreak === 1 ? "" : "s"}${studyStreak > 0 ? " 🔥" : ""}`}
+                </span>
               </div>
             </div>
           </div>
@@ -508,16 +728,26 @@ function StudentDashboard() {
       </div>
 
       {
-    /* 4. Progress Section */
+    /* 4. Progress Section - real per-subject averages from analytics-service
+       session history, grouped via each session's actual lesson subject. */
   }
       <div className="glass rounded-2xl p-6">
         <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
           <Award className="h-5 w-5 text-primary" />
           Your Progress
         </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {progressData.map((item) => <div
+
+        {loadingHistory ? (
+          <div className="py-8 flex justify-center text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+          </div>
+        ) : progressBySubject.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">
+            No quiz results yet - take a lesson quiz to see your progress by subject.
+          </p>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {progressBySubject.map((item) => <div
     key={item.subject}
     className={`p-4 rounded-xl border ${item.weak ? "border-destructive/30 bg-destructive/5" : "border-border/60"}`}
   >
@@ -526,9 +756,9 @@ function StudentDashboard() {
                 {item.trend === "up" && <TrendingUp className="h-4 w-4 text-emotion-happy" />}
                 {item.trend === "down" && <TrendingDown className="h-4 w-4 text-emotion-angry" />}
               </div>
-              
+
               <div className="text-2xl font-bold mb-2">{item.score}%</div>
-              
+
               <div className="h-2 rounded-full bg-secondary overflow-hidden mb-2">
                 <div
     className="h-full rounded-full transition-all"
@@ -538,87 +768,116 @@ function StudentDashboard() {
     }}
   />
               </div>
-              
+
               {item.weak && <p className="text-xs text-destructive font-medium">Needs Practice</p>}
             </div>)}
-        </div>
+          </div>
+        )}
       </div>
 
       {
-    /* 5. Recommendations */
+    /* 5. Recommendations - real resources for whichever LOs were still
+       weak in this student's most recent lesson quiz (semantic_recommender
+       via analytics-service), not a static placeholder list. */
   }
       <div className="glass rounded-2xl p-6">
         <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
           <BookOpen className="h-5 w-5 text-primary" />
           Recommended for You
         </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {recommendations.map((rec) => <div key={rec.id} className="p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-all hover:shadow-lg">
-              <div className="flex items-start justify-between mb-3">
-                <div
-    className="h-10 w-10 rounded-lg flex items-center justify-center"
-    style={{ background: "var(--gradient-primary)" }}
-  >
-                  {rec.type === "video" && <Play className="h-5 w-5 text-primary-foreground" />}
-                  {rec.type === "quiz" && <FileText className="h-5 w-5 text-primary-foreground" />}
-                  {rec.type === "article" && <BookOpen className="h-5 w-5 text-primary-foreground" />}
+
+        {loadingRecommendations ? (
+          <div className="py-8 flex justify-center text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+          </div>
+        ) : recommendations.length === 0 ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-muted-foreground mb-3">
+              No recommendations yet - take a lesson quiz and we'll suggest resources for anything you haven't mastered.
+            </p>
+            <Link
+              to="/lessons"
+              className="inline-block px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors"
+            >
+              Go to Adaptive Learning
+            </Link>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {recommendations.map((res) => {
+              const TypeIcon = RESOURCE_TYPE_ICON[res.type] || FileText;
+              return (
+                <div key={res.id} className="p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-all hover:shadow-lg">
+                  <div className="flex items-start justify-between mb-3">
+                    <div
+                      className="h-10 w-10 rounded-lg flex items-center justify-center"
+                      style={{ background: "var(--gradient-primary)" }}
+                    >
+                      <TypeIcon className="h-5 w-5 text-primary-foreground" />
+                    </div>
+                    <span className="text-xs text-muted-foreground capitalize">{res.difficulty}</span>
+                  </div>
+
+                  <h3 className="font-semibold mb-1">{res.title}</h3>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {res.lesson_title} &middot; {res.lo_level}
+                  </p>
+
+                  <a
+                    href={res.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors flex items-center justify-center gap-2"
+                  >
+                    {RESOURCE_TYPE_ACTION[res.type] || "Open"}
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
                 </div>
-                {rec.duration && <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {rec.duration}
-                  </span>}
-              </div>
-              
-              <h3 className="font-semibold mb-1">{rec.title}</h3>
-              <p className="text-sm text-muted-foreground mb-4">{rec.description}</p>
-              
-              <button className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors">
-                {rec.action}
-              </button>
-            </div>)}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {
-    /* 6. Quiz Section */
+    /* 6. Quiz Section - real lessons from the adaptive-learning backend */
   }
       <div className="glass rounded-2xl p-6">
         <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
           <FileText className="h-5 w-5 text-primary" />
           Available Quizzes
         </h2>
-        
-        <div className="space-y-3">
-          {quizzes.map((quiz) => <div key={quiz.id} className="flex items-center justify-between p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-all">
-              <div className="flex-1">
-                <h3 className="font-semibold mb-1">{quiz.title}</h3>
-                <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                  <span>{quiz.subject}</span>
-                  <span className="flex items-center gap-1">
-                    <FileText className="h-3 w-3" />
-                    {quiz.questions} questions
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {quiz.duration}
-                  </span>
+
+        {loadingLessons ? (
+          <div className="py-8 flex justify-center text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+          </div>
+        ) : lessons.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-8">No lessons available.</p>
+        ) : (
+          <div className="space-y-3">
+            {lessons.map((lesson) => <div key={lesson.lesson_id} className="flex items-center justify-between p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-all">
+                <div className="flex-1">
+                  <h3 className="font-semibold mb-1">{lesson.title}</h3>
+                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                    <span>{lesson.subject}</span>
+                    <span className="flex items-center gap-1">
+                      <FileText className="h-3 w-3" />
+                      {lesson.question_count} questions
+                    </span>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="flex items-center gap-4">
-                <span className={`px-3 py-1 rounded-full text-xs font-medium ${quiz.difficulty === "Easy" ? "bg-emotion-happy/10 text-emotion-happy" : quiz.difficulty === "Medium" ? "bg-emotion-confused/10 text-emotion-confused" : "bg-emotion-angry/10 text-emotion-angry"}`}>
-                  {quiz.difficulty}
-                </span>
-                <button
-    className="px-5 py-2 rounded-lg text-sm font-semibold text-primary-foreground transition-all hover:scale-105"
-    style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
-  >
+
+                <Link
+                  to="/lessons"
+                  className="px-5 py-2 rounded-lg text-sm font-semibold text-primary-foreground transition-all hover:scale-105"
+                  style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
+                >
                   Start Quiz
-                </button>
-              </div>
-            </div>)}
-        </div>
+                </Link>
+              </div>)}
+          </div>
+        )}
       </div>
     </div>;
 }

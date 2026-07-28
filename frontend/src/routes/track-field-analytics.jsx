@@ -42,7 +42,7 @@ function TrackFieldAnalyticsPage() {
             </p>
           </div>
           <div className="rounded-2xl border border-primary/20 bg-primary/10 px-5 py-4 text-center">
-            <div className="text-3xl font-bold text-primary">4</div>
+            <div className="text-3xl font-bold text-primary">{challenges.length}</div>
             <div className="text-xs uppercase tracking-[0.2em] text-muted-foreground">Questions</div>
           </div>
         </div>

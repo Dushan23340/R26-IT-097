@@ -3,9 +3,17 @@ from __future__ import annotations
 from collections import Counter
 from statistics import mean
 
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, request
 
 from services import fairness_service, profile_service, statistics_service
+
+# seed_synthetic_data.py generates demo/testing students with this prefix
+# (Faker-generated names/emails/histories) - real aggregate views (Teacher
+# Profile, Teacher Console, Admin dashboard) should reflect actual platform
+# usage by default, not be diluted by fake seed data. Pass
+# ?include_synthetic=true to see everything (e.g. verifying the seed
+# pipeline itself worked).
+SYNTHETIC_STUDENT_ID_PREFIX = "SYN_"
 
 bp = Blueprint("analytics", __name__)
 
@@ -48,6 +56,8 @@ def class_overview():
     """Single aggregate endpoint for the advisor dashboard - avoids N+1
     calls from the frontend for what is fundamentally one page."""
     students = profile_service.get_all_students()
+    if request.args.get("include_synthetic", "").lower() != "true":
+        students = [s for s in students if not s["student_id"].startswith(SYNTHETIC_STUDENT_ID_PREFIX)]
     all_history = {s["student_id"]: profile_service.get_student_lo_history(s["student_id"]) for s in students}
     baseline = statistics_service.compute_class_stability_baseline(all_history)
 

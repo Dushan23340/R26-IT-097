@@ -214,14 +214,6 @@ function DarkRoomEscapePage() {
             </div>
           )}
 
-          {roomBlackout && (
-            <div className="relative z-10 flex flex-col items-center justify-center h-[380px] text-center">
-              <Skull className="h-16 w-16 text-red-600 mb-4" />
-              <h2 className="text-2xl font-bold text-red-500">Caught in the Dark!</h2>
-              <p className="mt-2 text-slate-300">Try again to escape!</p>
-            </div>
-          )}
-
           {screen === "start" && !roomBlackout && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/70 backdrop-blur-sm z-20 rounded-3xl">
               <div className="max-w-sm text-center px-6">
@@ -287,7 +279,11 @@ function DarkRoomEscapePage() {
 
           {screen === "lost" && (
             <div className="absolute inset-0 flex items-center justify-center z-20">
-              <div className="max-w-sm text-center px-6">
+              <div className="max-w-sm text-center px-6 rounded-2xl bg-black/60 backdrop-blur-sm py-8">
+                <Skull className="mx-auto h-14 w-14 text-red-500" />
+                <h2 className="mt-4 text-heading-lg text-red-400 font-bold">Caught in the Dark!</h2>
+                <p className="mt-2 text-slate-300">Something in the shadows found you first.</p>
+                <p className="mt-1 text-sm text-slate-400">{correctCount} of {FURNITURE.length} scrolls solved.</p>
                 <div className="mt-6 flex flex-col gap-3">
                   <button type="button" onClick={startGame} className="btn btn-primary btn-lg">
                     <RotateCcw className="h-4 w-4" />

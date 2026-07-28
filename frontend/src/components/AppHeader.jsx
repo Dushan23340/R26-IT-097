@@ -1,10 +1,9 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { GraduationCap, Users, UserCircle, ShieldCheck, Sparkles, LogOut, LogIn, Brain, BookOpen } from "lucide-react";
+import { GraduationCap, Users, UserCircle, ShieldCheck, Sparkles, LogOut, LogIn, BookOpen } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 const allTabs = [
   { to: "/", label: "Dashboard", icon: GraduationCap, roles: ["student"] },
-  { to: "/lessons", label: "Lessons", icon: BookOpen, roles: ["student"] },
-  { to: "/adaptive", label: "Adaptive Learning", icon: Brain, roles: ["student", "teacher"] },
+  { to: "/lessons", label: "Adaptive Learning", icon: BookOpen, roles: ["student"] },
   { to: "/teacher", label: "Teacher Console", icon: Users, roles: ["teacher"] },
   { to: "/profile", label: "Profile", icon: UserCircle, roles: ["student", "teacher"] },
   { to: "/admin", label: "Admin", icon: ShieldCheck, roles: ["admin"] }

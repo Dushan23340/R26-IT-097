@@ -162,6 +162,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
         "HAPPY": [
             GameRecommendation(
                 game_id="gm_math_fraction_happy",
+                lesson_id="fractions-bodmas",
                 title="Fraction Room Rescue",
                 description="A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles - a fun challenge to ride the good mood.",
                 subject="Mathematics",
@@ -175,6 +176,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
         "NORMAL": [
             GameRecommendation(
                 game_id="gm_math_pirate_normal",
+                lesson_id="pythagorean-theorem",
                 title="Uncharted Waters: The Pirate Navigator",
                 description="Sail across four Pythagorean Theorem voyages to chart a course to the treasure - steady practice to keep a settled class engaged.",
                 subject="Mathematics",
@@ -186,6 +188,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
             ),
             GameRecommendation(
                 game_id="gm_math_equations_eco_01",
+                lesson_id="linear-equations",
                 title="Equations Eco: Forest Restoration",
                 description="A grade-9 linear equations game - solve for x at each polluted pond to clear the water and restore the forest.",
                 subject="Mathematics",
@@ -199,6 +202,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
         "CONFUSED": [
             GameRecommendation(
                 game_id="gm_math_fraction_confused",
+                lesson_id="fractions-bodmas",
                 title="Fraction Room Rescue",
                 description="A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles - step-by-step hints to rebuild understanding.",
                 subject="Mathematics",
@@ -210,6 +214,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
             ),
             GameRecommendation(
                 game_id="gm_math_dark_room_01",
+                lesson_id="algebraic-fractions",
                 title="Escape the Dark Room",
                 description="A grade-9 algebraic fractions escape room - inspect furniture for hidden question scrolls before the glowing eyes catch you.",
                 subject="Mathematics",
@@ -221,6 +226,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
             ),
             GameRecommendation(
                 game_id="gm_math_fish_tank_01",
+                lesson_id="volume-capacity",
                 title="Fish Tank Shop",
                 description="A grade-9 liquid volume and capacity simulation - calculate l x b x h, convert cm3 to litres, and sell customers the right aquarium.",
                 subject="Mathematics",
@@ -234,6 +240,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
         "BORED": [
             GameRecommendation(
                 game_id="gm_math_bored_03",
+                lesson_id="fractions-bodmas",
                 title="Fraction Room Rescue",
                 description="A grade-9 fraction escape room with hidden papers, brackets, and BODMAS puzzles.",
                 subject="Mathematics",
@@ -245,6 +252,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
             ),
             GameRecommendation(
                 game_id="gm_math_pattern_islands_01",
+                lesson_id="number-patterns",
                 title="Pattern Islands",
                 description="A grade-9 number patterns platformer - jump only on stepping stones that match each island's General Term Tn.",
                 subject="Mathematics",
@@ -258,6 +266,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
         "FRUSTRATED": [
             GameRecommendation(
                 game_id="gm_math_pirate_01",
+                lesson_id="pythagorean-theorem",
                 title="Uncharted Waters: The Pirate Navigator",
                 description="Sail across four Pythagorean Theorem voyages to chart a course to the treasure - a lighter, story-driven reset after a rough stretch.",
                 subject="Mathematics",
@@ -271,6 +280,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
         "ANGRY": [
             GameRecommendation(
                 game_id="gm_math_pirate_02",
+                lesson_id="pythagorean-theorem",
                 title="Uncharted Waters: The Pirate Navigator",
                 description="Sail across four Pythagorean Theorem voyages to chart a course to the treasure - a calmer, story-driven reset.",
                 subject="Mathematics",
@@ -885,6 +895,15 @@ def get_games_for(subject: str, emotion: str) -> List[GameRecommendation]:
 def list_subjects() -> List[str]:
     """Return all available subjects."""
     return list(GAME_CATALOG.keys())
+
+
+def get_games_for_lesson(subject: str, lesson_id: str) -> List[GameRecommendation]:
+    """Real games tagged to this specific lesson_id (see the Mathematics
+    entries above) - empty if this lesson has no lesson-specific game yet
+    (true today for every subject except Mathematics), so the caller can
+    fall back to the subject-level catalog instead of pretending relevance
+    that doesn't exist."""
+    return [g for g in get_all_games_for(subject) if g.lesson_id == lesson_id]
 
 
 def get_all_games_for(subject: str) -> List[GameRecommendation]:

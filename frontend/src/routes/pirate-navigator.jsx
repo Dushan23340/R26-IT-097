@@ -588,7 +588,7 @@ function PirateNavigatorPage() {
                     <RotateCcw className="h-4 w-4" />
                     Set Sail Again
                   </button>
-                  <Link to="/teacher" className="btn btn-secondary btn-lg">
+                  <Link to="/" className="btn btn-secondary btn-lg">
                     Back to Dashboard
                   </Link>
                 </div>
@@ -610,7 +610,7 @@ function PirateNavigatorPage() {
                     <RotateCcw className="h-4 w-4" />
                     Try Again
                   </button>
-                  <Link to="/teacher" className="btn btn-secondary btn-lg">
+                  <Link to="/" className="btn btn-secondary btn-lg">
                     Back to Dashboard
                   </Link>
                 </div>

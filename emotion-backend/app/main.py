@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routes import analytics, recommendations, emotions
+from app.routes import analytics, recommendations, emotions, class_session, quiz_broadcast, message_broadcast
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -43,6 +43,9 @@ app.include_router(emotions.router)
 app.include_router(emotions.event_router)
 app.include_router(analytics.router)
 app.include_router(recommendations.router)
+app.include_router(class_session.router)
+app.include_router(quiz_broadcast.router)
+app.include_router(message_broadcast.router)
 
 
 @app.get("/")
@@ -72,7 +75,18 @@ async def root():
             "recommendation_effectiveness": {"method": "GET", "path": "/recommendation/effectiveness"},
             "recommendation_variation_window": {"method": "GET", "path": "/recommendation/variation-window"},
             "recommendation_pending": {"method": "GET", "path": "/recommendation/pending"},
-            "recommendation_feedback": {"method": "POST", "path": "/recommendation/intervention/{id}/feedback"}
+            "recommendation_feedback": {"method": "POST", "path": "/recommendation/intervention/{id}/feedback"},
+            "class_session_state": {"method": "GET", "path": "/class-session/state"},
+            "class_session_start": {"method": "POST", "path": "/class-session/start", "body": {"subject": "Mathematics", "started_by": "Dr. Sarah Johnson"}},
+            "class_session_end": {"method": "POST", "path": "/class-session/end"},
+            "class_session_join": {"method": "POST", "path": "/class-session/join", "body": {"student_id": "s1", "session_id": "abc123", "student_name": "Jane Doe"}},
+            "class_session_students": {"method": "GET", "path": "/class-session/students"},
+            "quiz_broadcast_state": {"method": "GET", "path": "/quiz-broadcast/state"},
+            "quiz_broadcast_start": {"method": "POST", "path": "/quiz-broadcast/start", "body": {"lesson_id": "photosynthesis", "lesson_title": "Photosynthesis", "started_by": "Dr. Sarah Johnson"}},
+            "quiz_broadcast_end": {"method": "POST", "path": "/quiz-broadcast/end"},
+            "message_broadcast_state": {"method": "GET", "path": "/message-broadcast/state"},
+            "message_broadcast_send": {"method": "POST", "path": "/message-broadcast/send", "body": {"message": "Great work today!", "sent_by": "Dr. Sarah Johnson"}},
+            "message_broadcast_clear": {"method": "POST", "path": "/message-broadcast/clear"}
         }
     }
 

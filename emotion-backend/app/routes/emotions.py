@@ -6,6 +6,8 @@ from typing import List
 from app.models.schemas import EmotionEvent, EmotionEventInput, EmotionType
 from app.services.emotion_store import emotion_store
 from app.services.emotion_service import emotion_service
+from app.services.class_session import class_session_store
+from app.services import student_profile_bridge
 
 # Router for /emotions/* endpoints
 router = APIRouter(prefix="/emotions", tags=["emotions"])
@@ -25,6 +27,25 @@ async def ingest_emotion(event: EmotionEvent):
 
     emotion_store.add_event(event)
     dominant = emotion_store.get_dominant_emotion()
+
+    # Student Profile (analytics-service) bridging: only forwards if this
+    # student is actually part of the currently live class and the
+    # throttle interval has elapsed - a no-op no-error skip otherwise
+    # (e.g. no class is live, or this student hasn't joined one).
+    # event.emotion.value (not str(event.emotion)) - EmotionType is a
+    # `str, Enum` mixin, and on Python <3.11 str() on it returns
+    # "EmotionType.CONFUSED" rather than "CONFUSED", which would silently
+    # fail analytics-service's lowercase emotion_label CHECK constraint.
+    emotion_value = event.emotion.value
+    bridge_target = class_session_store.record_emotion_for_bridge(event.student_id, emotion_value)
+    if bridge_target:
+        analytics_session_id, real_student_id = bridge_target
+        # Real ID here, not event.student_id (already a pseudonym by this
+        # point) - analytics-service needs the real, cross-linkable
+        # identity; see class_session.py's module docstring.
+        student_profile_bridge.push_emotional_state_async(
+            analytics_session_id, real_student_id, emotion_value, event.confidence
+        )
 
     return {
         "success": True,

@@ -3,7 +3,7 @@ from typing import Dict, List, Optional
 import random
 
 from app.models.schemas import GameRecommendation, RecommendationResponse
-from app.services.game_catalog import get_all_games_for, get_games_for
+from app.services.game_catalog import get_all_games_for, get_games_for, get_games_for_lesson
 
 # Emotion->game mapping is intentionally OFF for now (explicit instruction:
 # "don't map games with emotions still... only do when teacher click
@@ -29,24 +29,42 @@ class RecommendationEngine:
     def generate_recommendation(
         self,
         dominant_emotion: str,
-        subject: str = "General"
+        subject: str = "General",
+        lesson_id: Optional[str] = None
     ) -> Dict:
         """
-        Generate a subject-aware game recommendation.
+        Generate a subject-aware game recommendation, optionally narrowed
+        to a specific real lesson.
 
         Args:
             dominant_emotion: The detected dominant emotion (e.g., "BORED")
             subject: The lesson subject (e.g., "Mathematics", "Science")
+            lesson_id: A real lesson id from adaptive-learning's
+                GET /api/lessons (e.g. "fractions-bodmas"). Only games
+                explicitly tagged to this lesson (game_catalog.py) are
+                used; if none are tagged yet, falls back to the normal
+                subject-wide pool and reports lesson_matched=False so the
+                caller can be honest about it rather than pretending
+                relevance.
 
         Returns:
             Dict with recommended game, alternatives, and metadata.
         """
         emotion = dominant_emotion.upper()
         subject = subject.strip() or "General"
+        lesson_id = (lesson_id or "").strip() or None
 
         # Step 1: All real games for the subject, ignoring emotion (see
         # module docstring note above - emotion mapping is off for now).
+        # If a lesson was picked, narrow to games tagged to it - if none
+        # are tagged, fall back to the full subject pool.
+        lesson_matched = False
         games = get_all_games_for(subject)
+        if lesson_id:
+            lesson_games = get_games_for_lesson(subject, lesson_id)
+            if lesson_games:
+                games = lesson_games
+                lesson_matched = True
 
         # Step 2: Filter out recently used game types within the window, so
         # repeated "Recommend" clicks cycle to a different game instead of
@@ -79,6 +97,8 @@ class RecommendationEngine:
             "timestamp": datetime.utcnow().isoformat(),
             "dominant_emotion": emotion,
             "subject": subject,
+            "lesson_id": lesson_id,
+            "lesson_matched": lesson_matched,
             "game_type": primary.game_type,
             "recommendation": primary,
             "alternatives": alternatives,

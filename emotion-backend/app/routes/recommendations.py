@@ -109,7 +109,8 @@ async def get_latest_recommendation():
 @router.get("/generate")
 async def generate_recommendation(
     emotion: Optional[str] = None,
-    subject: str = "General"
+    subject: str = "General",
+    lesson_id: Optional[str] = None
 ) -> Dict:
     """
     Generate a subject-aware game recommendation with variation tracking.
@@ -118,6 +119,10 @@ async def generate_recommendation(
     Args:
         emotion: Dominant emotion (auto-detected if not provided)
         subject: Subject area (e.g., "Mathematics", "Science")
+        lesson_id: Optional real lesson id (adaptive-learning's
+            GET /api/lessons) to prefer a game tagged to that lesson -
+            see recommendation_engine.generate_recommendation's docstring
+            for the fallback behavior when no game is tagged yet.
     """
     dominant = emotion.upper() if emotion else emotion_store.get_dominant_emotion()
 
@@ -128,7 +133,7 @@ async def generate_recommendation(
     }
 
     # Generate recommendation
-    result = recommendation_engine.generate_recommendation(dominant, subject)
+    result = recommendation_engine.generate_recommendation(dominant, subject, lesson_id)
 
     # Start intervention tracking
     intervention_id = intervention_tracker.start_intervention(

@@ -12,11 +12,13 @@ import {
   Scatter,
   ZAxis
 } from "recharts";
-import { Activity, TrendingUp, Calendar, RefreshCw, AlertTriangle, Sparkles } from "lucide-react";
+import { Activity, TrendingUp, Calendar, RefreshCw, AlertTriangle, Sparkles, Mail, ShieldCheck, Users, Scale, Gamepad2, Clock, Video } from "lucide-react";
 import { EmotionBadge } from "@/components/EmotionBadge";
 import { MasteryRing } from "@/components/MasteryRing";
 import { studentProfileApi } from "@/lib/studentProfileApi";
+import { emotionApi } from "@/lib/emotionApi";
 import { toEmotionKey } from "@/lib/emotions";
+import { useAuth } from "@/lib/auth";
 
 const Route = createFileRoute("/profile")({
   head: () => ({
@@ -89,9 +91,294 @@ function buildSessionRows(loHistory, emotionalStates) {
     });
 }
 
+// Quiz-taking (lessons.jsx) never turns on webcam emotion capture, so
+// emotional_states rows only ever exist for real "Join Live Class"
+// sessions (lesson_id="live-class" - see emotion-backend's
+// student_profile_bridge.create_session). Grouped separately from
+// buildSessionRows above, which is quiz-score-scoped and would otherwise
+// silently drop these (it only creates a row per lo_history entry).
+function buildLiveClassSessions(emotionalStates) {
+  const bySession = new Map();
+
+  for (const row of emotionalStates) {
+    if (row.lesson_id !== "live-class") continue;
+    const sid = row.session_id;
+    if (!bySession.has(sid)) {
+      bySession.set(sid, {
+        session_id: sid,
+        subject: row.lesson_title || "Live Class",
+        start_time: row.start_time,
+        emotionCounts: {},
+        readingCount: 0,
+      });
+    }
+    const bucket = bySession.get(sid);
+    bucket.emotionCounts[row.emotion_label] = (bucket.emotionCounts[row.emotion_label] || 0) + 1;
+    bucket.readingCount += 1;
+  }
+
+  return Array.from(bySession.values())
+    .sort((a, b) => new Date(b.start_time) - new Date(a.start_time))
+    .map((s) => {
+      const emotionEntries = Object.entries(s.emotionCounts);
+      const dominantEmotion = emotionEntries.sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
+      const negativeCount = emotionEntries
+        .filter(([label]) => NEGATIVE_EMOTIONS.has(label.toLowerCase()))
+        .reduce((sum, [, c]) => sum + c, 0);
+      const negativePct = s.readingCount > 0 ? Math.round((negativeCount / s.readingCount) * 100) : null;
+
+      return {
+        session_id: s.session_id,
+        subject: s.subject,
+        start_time: s.start_time,
+        dominantEmotion,
+        negativePct,
+        readingCount: s.readingCount,
+      };
+    });
+}
+
+// Route entry point - dispatches by role instead of unconditionally
+// showing the student-analytics tool (which used to render for teachers
+// too, defaulting to whichever student happened to be first in the list -
+// confusing when a teacher expects to see their own account here).
 function ProfileView() {
-  const [students, setStudents] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const { user } = useAuth();
+  if (user?.role === "teacher") {
+    return <TeacherProfileCard user={user} />;
+  }
+  return <StudentAnalyticsView />;
+}
+
+// Real, no relative-time library in this project - short and good enough
+// for an activity feed spanning minutes to a few days.
+function timeAgo(isoString) {
+  const diffMs = Date.now() - new Date(isoString).getTime();
+  const mins = Math.round(diffMs / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function TeacherProfileCard({ user }) {
+  const [overview, setOverview] = useState(null);
+  const [pendingCount, setPendingCount] = useState(null);
+  const [effectiveness, setEffectiveness] = useState(null);
+  const [history, setHistory] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+
+    Promise.all([
+      studentProfileApi.getClassOverview(),
+      studentProfileApi.getPendingRecommendations(),
+      emotionApi.getEffectiveness(),
+      emotionApi.getRecommendationHistory(10080), // last 7 days
+    ])
+      .then(([overviewData, pendingData, effData, historyData]) => {
+        if (cancelled) return;
+        setOverview(overviewData);
+        setPendingCount((pendingData?.recommendations || []).length);
+        setEffectiveness(effData);
+        setHistory((historyData?.history || []).slice(-8).reverse());
+      })
+      .catch((e) => {
+        if (!cancelled) setError(e.message || "Failed to load class analytics");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const fairness = overview?.fairness;
+  const strugglingAreas = (overview?.struggling_areas || []).slice().sort((a, b) => a.avg_score - b.avg_score);
+
+  return (
+    <div className="space-y-6 stagger-children">
+      <div className="glass rounded-2xl p-6 flex flex-wrap items-center gap-6">
+        <div
+          className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0"
+          style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
+        >
+          {(user?.name || "?").slice(0, 2).toUpperCase()}
+        </div>
+        <div className="flex-1 min-w-[200px]">
+          <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Teacher Profile</div>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold">{user?.name || "Teacher"}</h1>
+          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
+            <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> {user?.email}</span>
+            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Teacher</span>
+          </div>
+        </div>
+        <div className="flex gap-3 flex-wrap">
+          <Stat label="Students" value={overview ? String(overview.total_students) : "–"} tone="neutral" />
+          <Stat label="At-Risk" value={overview ? String(overview.at_risk_count) : "–"} tone={overview?.at_risk_count > 0 ? "warn" : "good"} />
+          <Stat label="Class Avg LO" value={overview?.avg_lo_score != null ? `${overview.avg_lo_score}%` : "–"} tone={overview?.avg_lo_score == null ? "neutral" : overview.avg_lo_score >= 75 ? "good" : overview.avg_lo_score >= 50 ? "warn" : "bad"} />
+          <Stat label="Pending Insights" value={pendingCount != null ? String(pendingCount) : "–"} tone={pendingCount > 0 ? "warn" : "neutral"} />
+        </div>
+      </div>
+
+      {error ? (
+        <div className="glass rounded-2xl p-4 border border-destructive/30 bg-destructive/5 text-sm text-destructive flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" /> {error} (is analytics-service running on port 5010?)
+        </div>
+      ) : null}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {
+    /* Where the class is struggling - real, previously-unsurfaced data
+       from analytics-service's class/overview (struggling_areas), broken
+       down by Bloom's-taxonomy LO level across every student. */
+  }
+        <div className="glass rounded-2xl p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <TrendingUp className="h-4 w-4 text-primary" /> Where Your Class Is Struggling
+          </div>
+          {loading ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+            </div>
+          ) : strugglingAreas.length > 0 ? (
+            <div className="space-y-3">
+              {strugglingAreas.map((area) => (
+                <div key={area.lo_level}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-medium capitalize">{area.lo_level}</span>
+                    <span className="text-muted-foreground">{area.avg_score}% avg · {area.count} responses</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="h-full"
+                      style={{
+                        width: `${area.avg_score}%`,
+                        background: area.avg_score < 60 ? "var(--emotion-confused)" : area.avg_score < 75 ? "var(--emotion-bored, #f59e0b)" : "var(--gradient-primary)",
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No quiz data recorded across the class yet.</p>
+          )}
+        </div>
+
+        {
+    /* Fairness/equity snapshot - real disparate-impact analysis already
+       computed by analytics-service but never shown anywhere in the UI
+       until now. */
+  }
+        <div className="glass rounded-2xl p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <Scale className="h-4 w-4 text-primary" /> Fairness & Equity Snapshot
+          </div>
+          {loading ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+            </div>
+          ) : fairness?.available ? (
+            <div>
+              <div className={`text-xs font-medium mb-3 ${fairness.fair ? "text-emotion-happy" : "text-emotion-confused"}`}>
+                {fairness.fair ? "No disparate impact detected across demographic groups." : `Flagged: ${fairness.flagged_groups.join(", ")}`}
+              </div>
+              <div className="space-y-2">
+                {Object.entries(fairness.proficiency_rates).map(([group, rate]) => (
+                  <div key={group} className="flex items-center justify-between text-xs">
+                    <span className="font-medium">{group}</span>
+                    <span className="text-muted-foreground">
+                      {Math.round(rate * 100)}% proficient · impact ratio {fairness.disparate_impact_ratios[group]}
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-3">
+                Acceptable range: {fairness.acceptable_range[0]}–{fairness.acceptable_range[1]} (4/5ths rule), mastery threshold {fairness.mastery_threshold}%.
+              </p>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">Not enough demographic data yet to compute fairness metrics.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {
+    /* Intervention effectiveness - condensed version of the same real
+       metric the Teacher Console tracks, for an at-a-glance summary here. */
+  }
+        <div className="glass rounded-2xl p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <Activity className="h-4 w-4 text-primary" /> Intervention Effectiveness
+          </div>
+          {effectiveness ? (
+            <div className="flex items-center gap-6">
+              <div className={`text-4xl font-display font-bold ${effectiveness.target_met ? "text-emotion-happy" : "text-emotion-confused"}`}>
+                {effectiveness.average_reduction_pct}%
+              </div>
+              <div className="text-xs text-muted-foreground">
+                <div>avg. negative-emotion reduction</div>
+                <div>target: {effectiveness.target_reduction_pct}% minimum</div>
+                <div className="mt-1">{effectiveness.completed_interventions}/{effectiveness.total_interventions} interventions completed</div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No interventions recorded yet.</p>
+          )}
+        </div>
+
+        {
+    /* Recent activity feed - real recommendation-engine history, not
+       shown as a timeline anywhere else in the UI. */
+  }
+        <div className="glass rounded-2xl p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <Gamepad2 className="h-4 w-4 text-primary" /> Recently Assigned Games
+          </div>
+          {history.length > 0 ? (
+            <div className="space-y-2">
+              {history.map((h, i) => (
+                <div key={i} className="flex items-center justify-between text-xs border-b border-border/40 pb-2 last:border-0 last:pb-0">
+                  <div>
+                    <span className="font-medium">{h.subject}</span>
+                    <span className="text-muted-foreground"> · {h.game_type} · triggered by {h.emotion}</span>
+                  </div>
+                  <span className="text-muted-foreground flex items-center gap-1 flex-shrink-0 ml-2">
+                    <Clock className="h-3 w-3" /> {timeAgo(h.timestamp)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No games assigned in the last 7 days.</p>
+          )}
+        </div>
+      </div>
+
+      <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+        <Users className="h-3.5 w-3.5" /> Looking for a specific student's learning analytics? Open Teacher Console to browse the class
+        and start a recommendation - individual student profiles are viewed from there.
+      </p>
+    </div>
+  );
+}
+
+function StudentAnalyticsView() {
+  const { user } = useAuth();
+  // Must match the student_id lessons.jsx/analytics_bridge.py use when
+  // pushing quiz results, or this page looks up the wrong (or no) record.
+  const selectedId = String(user?.id ?? user?._id ?? user?.email ?? "anonymous");
+
+  const [ownProfile, setOwnProfile] = useState(null);
   const [history, setHistory] = useState(null);
   const [trend, setTrend] = useState(null);
   const [stability, setStability] = useState(null);
@@ -101,23 +388,22 @@ function ProfileView() {
   const [analyzing, setAnalyzing] = useState(false);
   const [recommendations, setRecommendations] = useState([]);
 
+  // Grade/demographic display metadata only - this is NOT a student picker,
+  // it just looks up this student's own row for header display. A student
+  // who hasn't submitted a quiz yet won't have a row, which is fine.
   useEffect(() => {
     studentProfileApi
       .getStudents()
       .then((data) => {
-        const list = data.students || [];
-        setStudents(list);
-        if (list.length) setSelectedId(list[0].student_id);
-        else setLoading(false);
+        const own = (data.students || []).find((s) => s.student_id === selectedId);
+        setOwnProfile(own || null);
       })
-      .catch((e) => {
-        setError(e.message || "Failed to reach analytics-service");
-        setLoading(false);
+      .catch(() => {
+        // best-effort - header just falls back to the auth user's name
       });
-  }, []);
+  }, [selectedId]);
 
   useEffect(() => {
-    if (!selectedId) return;
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -154,6 +440,11 @@ function ProfileView() {
     return buildSessionRows(history.lo_history || [], history.emotional_states || []);
   }, [history]);
 
+  const liveClassSessions = useMemo(() => {
+    if (!history) return [];
+    return buildLiveClassSessions(history.emotional_states || []);
+  }, [history]);
+
   const scatterData = useMemo(
     () =>
       sessionRows
@@ -162,7 +453,6 @@ function ProfileView() {
     [sessionRows]
   );
 
-  const selectedStudent = students.find((s) => s.student_id === selectedId);
   const avgLo = sessionRows.length
     ? Math.round(sessionRows.reduce((sum, s) => sum + s.lo, 0) / sessionRows.length)
     : null;
@@ -188,34 +478,24 @@ function ProfileView() {
     }
   }
 
+  const displayName = ownProfile?.full_name || user?.name || selectedId;
+
   return <div className="space-y-6 stagger-children">
       {
-    /* Student selector + header */
+    /* Header - always this student's own profile, never a picker */
   }
       <div className="glass rounded-2xl p-6 flex flex-wrap items-center gap-6">
         <div
     className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0"
     style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
   >
-          {(selectedStudent?.full_name || selectedId || "?").slice(0, 2).toUpperCase()}
+          {displayName.slice(0, 2).toUpperCase()}
         </div>
         <div className="flex-1 min-w-[200px]">
           <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Student Profile</div>
-          {students.length > 0 ? (
-            <select
-              value={selectedId || ""}
-              onChange={(e) => setSelectedId(e.target.value)}
-              className="font-display text-2xl sm:text-3xl font-bold bg-transparent border-none outline-none cursor-pointer -ml-1"
-            >
-              {students.map((s) => (
-                <option key={s.student_id} value={s.student_id}>{s.full_name || s.student_id}</option>
-              ))}
-            </select>
-          ) : (
-            <h1 className="font-display text-2xl sm:text-3xl font-bold">{loading ? "Loading..." : "No students found"}</h1>
-          )}
+          <h1 className="font-display text-2xl sm:text-3xl font-bold">{displayName}</h1>
           <div className="text-sm text-muted-foreground mt-1">
-            {selectedStudent?.grade_level || ""} {selectedStudent?.demographic_group ? `· ${selectedStudent.demographic_group}` : ""} · ID {selectedId}
+            {ownProfile?.grade_level || ""} {ownProfile?.demographic_group ? `· ${ownProfile.demographic_group}` : ""}
           </div>
         </div>
         <div className="flex gap-3 flex-wrap">
@@ -224,6 +504,12 @@ function ProfileView() {
           <Stat label="Stability" value={stabilityPercent != null ? (stabilityPercent >= 70 ? "High" : stabilityPercent >= 40 ? "Medium" : "Low") : "–"} tone={stabilityPercent == null ? "neutral" : stabilityPercent >= 70 ? "good" : "warn"} />
         </div>
       </div>
+
+      {sessionRows.length === 0 && !loading && !error ? (
+        <div className="glass rounded-2xl p-4 border border-primary/20 bg-primary/5 text-sm text-muted-foreground">
+          No lesson data yet - take a quiz from Adaptive Learning and it'll show up here.
+        </div>
+      ) : null}
 
       {error ? (
         <div className="glass rounded-2xl p-4 border border-destructive/30 bg-destructive/5 text-sm text-destructive flex items-center gap-2">
@@ -335,11 +621,53 @@ function ProfileView() {
               </ScatterChart>
             </ResponsiveContainer>
           ) : (
-            <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-              {loading ? <RefreshCw className="h-5 w-5 animate-spin" /> : "No emotion data recorded for this student yet."}
+            <div className="h-full flex flex-col items-center justify-center text-sm text-muted-foreground text-center px-6">
+              {loading ? (
+                <RefreshCw className="h-5 w-5 animate-spin" />
+              ) : (
+                <>
+                  <span>No emotion data tied to a quiz session yet.</span>
+                  <span className="text-xs mt-1">Quiz-taking doesn't capture webcam emotion - see Live Class Emotion History below for real emotion data from joined classes.</span>
+                </>
+              )}
             </div>
           )}
         </div>
+      </div>
+
+      {
+    /* Live Class Emotion History - real emotion data from "Join Live
+       Class" sessions, kept separate from the quiz-score correlation
+       chart above since quiz-taking itself never captures emotion. */
+  }
+      <div className="glass rounded-2xl p-5">
+        <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+          <Video className="h-4 w-4 text-primary" /> Live Class Emotion History
+        </div>
+        {liveClassSessions.length > 0 ? (
+          <div className="space-y-2">
+            {liveClassSessions.map((s) => (
+              <div key={s.session_id} className="flex items-center justify-between p-3 rounded-lg border border-border/60 text-sm">
+                <div>
+                  <div className="font-medium">{s.subject}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {new Date(s.start_time).toLocaleString()} · {s.readingCount} reading{s.readingCount === 1 ? "" : "s"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  {toEmotionKey(s.dominantEmotion) ? <EmotionBadge emotion={toEmotionKey(s.dominantEmotion)} size="sm" /> : <span className="text-xs text-muted-foreground">–</span>}
+                  <span className="text-xs font-mono text-muted-foreground w-14 text-right">
+                    {s.negativePct != null ? `${s.negativePct}% neg` : "–"}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            No live-class sessions joined yet - emotion capture only runs while joined to a teacher's live class (webcam on).
+          </p>
+        )}
       </div>
 
       {
