@@ -111,7 +111,15 @@ def _make_val_ds(occluded: bool):
 
 
 print("Loading model/best_custom_cnn_v4.keras")
-model = load_model("model/best_custom_cnn_v4.keras")
+def _macro_f1_placeholder(y_true, y_pred):
+    # Only needed to satisfy deserialization of the compiled metric config
+    # saved with the model (see train_custom_cnn_v4.py) - not used for
+    # anything in this evaluation script (classification_report below
+    # computes real per-class metrics from raw predictions instead).
+    return 0.0
+
+
+model = load_model("model/best_custom_cnn_v4.keras", custom_objects={"macro_f1": _macro_f1_placeholder})
 y_true = val_labels
 
 for label, occluded in (("CLEAN", False), ("SYNTHETICALLY OCCLUDED (30% center blank)", True)):

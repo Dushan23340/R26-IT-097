@@ -24,6 +24,11 @@ GAME_LIBRARY: Dict[str, Dict[str, str]] = {
     "equations_eco": {"route": "/equations-eco", "label": "Equations Eco: Forest Restoration", "badge": "Game 5"},
     "fish_tank_shop": {"route": "/fish-tank-shop", "label": "Fish Tank Shop", "badge": "Game 6"},
     "pattern_islands": {"route": "/pattern-islands", "label": "Pattern Islands", "badge": "Game 7"},
+    "eco_blooms_land": {"route": "/eco-blooms-land-sale", "label": "Eco Blooms Land Sale", "badge": "Game 8"},
+    "magicians_triangle_house": {"route": "/magicians-triangle-house", "label": "The Magician's Triangle House", "badge": "Game 9"},
+    "alchemists_potion_lab": {"route": "/alchemists-potion-lab", "label": "The Alchemist's Potion Lab", "badge": "Game 10"},
+    "time_guardians_rounding_clock": {"route": "/time-guardians-rounding-clock", "label": "Time Guardians: Save the Rounding Clock", "badge": "Game 11"},
+    "laser_heist_parallel_museum": {"route": "/laser-heist-parallel-museum", "label": "Laser Heist: The Parallel Museum", "badge": "Game 12"},
 }
 
 

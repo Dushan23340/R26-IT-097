@@ -10,17 +10,22 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrackFieldAnalyticsRouteImport } from './routes/track-field-analytics'
+import { Route as TimeGuardiansRoundingClockRouteImport } from './routes/time-guardians-rounding-clock'
 import { Route as TeacherRouteImport } from './routes/teacher'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PirateNavigatorRouteImport } from './routes/pirate-navigator'
 import { Route as PatternIslandsRouteImport } from './routes/pattern-islands'
+import { Route as MagiciansTriangleHouseRouteImport } from './routes/magicians-triangle-house'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LessonsRouteImport } from './routes/lessons'
+import { Route as LaserHeistParallelMuseumRouteImport } from './routes/laser-heist-parallel-museum'
 import { Route as FractionRoomRouteImport } from './routes/fraction-room'
 import { Route as FishTankShopRouteImport } from './routes/fish-tank-shop'
 import { Route as EquationsEcoRouteImport } from './routes/equations-eco'
+import { Route as EcoBloomsLandSaleRouteImport } from './routes/eco-blooms-land-sale'
 import { Route as DarkRoomEscapeRouteImport } from './routes/dark-room-escape'
+import { Route as AlchemistsPotionLabRouteImport } from './routes/alchemists-potion-lab'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as AdaptiveRouteImport } from './routes/adaptive'
 import { Route as IndexRouteImport } from './routes/index'
@@ -30,6 +35,12 @@ const TrackFieldAnalyticsRoute = TrackFieldAnalyticsRouteImport.update({
   path: '/track-field-analytics',
   getParentRoute: () => rootRouteImport,
 })
+const TimeGuardiansRoundingClockRoute =
+  TimeGuardiansRoundingClockRouteImport.update({
+    id: '/time-guardians-rounding-clock',
+    path: '/time-guardians-rounding-clock',
+    getParentRoute: () => rootRouteImport,
+  })
 const TeacherRoute = TeacherRouteImport.update({
   id: '/teacher',
   path: '/teacher',
@@ -55,6 +66,11 @@ const PatternIslandsRoute = PatternIslandsRouteImport.update({
   path: '/pattern-islands',
   getParentRoute: () => rootRouteImport,
 })
+const MagiciansTriangleHouseRoute = MagiciansTriangleHouseRouteImport.update({
+  id: '/magicians-triangle-house',
+  path: '/magicians-triangle-house',
+  getParentRoute: () => rootRouteImport,
+})
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
   path: '/login',
@@ -65,6 +81,12 @@ const LessonsRoute = LessonsRouteImport.update({
   path: '/lessons',
   getParentRoute: () => rootRouteImport,
 })
+const LaserHeistParallelMuseumRoute =
+  LaserHeistParallelMuseumRouteImport.update({
+    id: '/laser-heist-parallel-museum',
+    path: '/laser-heist-parallel-museum',
+    getParentRoute: () => rootRouteImport,
+  })
 const FractionRoomRoute = FractionRoomRouteImport.update({
   id: '/fraction-room',
   path: '/fraction-room',
@@ -80,9 +102,19 @@ const EquationsEcoRoute = EquationsEcoRouteImport.update({
   path: '/equations-eco',
   getParentRoute: () => rootRouteImport,
 })
+const EcoBloomsLandSaleRoute = EcoBloomsLandSaleRouteImport.update({
+  id: '/eco-blooms-land-sale',
+  path: '/eco-blooms-land-sale',
+  getParentRoute: () => rootRouteImport,
+})
 const DarkRoomEscapeRoute = DarkRoomEscapeRouteImport.update({
   id: '/dark-room-escape',
   path: '/dark-room-escape',
+  getParentRoute: () => rootRouteImport,
+})
+const AlchemistsPotionLabRoute = AlchemistsPotionLabRouteImport.update({
+  id: '/alchemists-potion-lab',
+  path: '/alchemists-potion-lab',
   getParentRoute: () => rootRouteImport,
 })
 const AdminRoute = AdminRouteImport.update({
@@ -105,17 +137,22 @@ const rootRouteChildren = {
   IndexRoute: IndexRoute,
   AdaptiveRoute: AdaptiveRoute,
   AdminRoute: AdminRoute,
+  AlchemistsPotionLabRoute: AlchemistsPotionLabRoute,
   DarkRoomEscapeRoute: DarkRoomEscapeRoute,
+  EcoBloomsLandSaleRoute: EcoBloomsLandSaleRoute,
   EquationsEcoRoute: EquationsEcoRoute,
   FishTankShopRoute: FishTankShopRoute,
   FractionRoomRoute: FractionRoomRoute,
+  LaserHeistParallelMuseumRoute: LaserHeistParallelMuseumRoute,
   LessonsRoute: LessonsRoute,
   LoginRoute: LoginRoute,
+  MagiciansTriangleHouseRoute: MagiciansTriangleHouseRoute,
   PatternIslandsRoute: PatternIslandsRoute,
   PirateNavigatorRoute: PirateNavigatorRoute,
   ProfileRoute: ProfileRoute,
   SignupRoute: SignupRoute,
   TeacherRoute: TeacherRoute,
+  TimeGuardiansRoundingClockRoute: TimeGuardiansRoundingClockRoute,
   TrackFieldAnalyticsRoute: TrackFieldAnalyticsRoute,
 }
 export const routeTree = rootRouteImport._addFileChildren(rootRouteChildren)

@@ -18,25 +18,72 @@ of it - reuses the same cached dataset/facial_features_v3.npz, since
 blendshape extraction is independent of the image CNN's input size),
 Cutout occlusion augmentation, and eye/mouth region-weighting.
 
-This is NOT automatically swapped into production - train_fused_model_v3.py
-(currently serving via model/best_fused_model.h5) gets a head start from
-ImageNet pretraining that a from-scratch model can't match, so accuracy
-here is expected to be lower. Evaluate with evaluate_custom_cnn_v4.py
-against the same clean/occluded methodology as v3 before deciding whether
-to swap, keep both, or keep v3 as the served model and this as the
-proposal-faithful reference.
+PRODUCTION DECISION (final, after the tuning history below): v3
+(train_fused_model_v3.py, serving via model/best_fused_model.h5) stays
+the served model. Both models were evaluated on the identical seeded val
+split via evaluate_fused_model_v3.py / evaluate_custom_cnn_v4.py - v3
+wins every accuracy metric by a real margin (clean macro-F1 0.80 vs 0.73,
+occluded 0.76 vs 0.70, Frustrated F1 0.66 vs 0.56 clean / 0.67 vs 0.50
+occluded - v4's weakest class also degrades most under occlusion). v4 is
+faster (~41 vs ~24 FPS in-process) and ~11x smaller, but v3 already
+clears the proposal's >=15 FPS / <50ms targets with headroom, so that
+advantage doesn't change the outcome. v4 is kept as the proposal-faithful
+reference implementation (genuine custom depthwise-separable CNN, no
+pretrained backbone, 48x48 per 3.2) - documented and evaluated, not
+served.
+
+CLASS-IMBALANCE TUNING HISTORY (4 controlled runs, kept for the record):
+this dataset is ~50% Bored vs ~4% Frustrated. In order:
+  1. class_weight="balanced" + monitor="val_accuracy" for checkpoint/
+     early-stop selection - looked fine on paper but the checkpoint was
+     silently picking whichever epoch had the highest raw accuracy on a
+     similarly-imbalanced stratified val split, which rewards majority-
+     class performance regardless of how the loss was actually weighted.
+  2. Fixed by adding macro_f1 (mean of per-class F1) and monitoring that
+     instead - a model that nails Bored/Happy but misses Frustrated now
+     scores poorly, which is the point.
+  3. Two seeded (see determinism block below), controlled runs comparing
+     MINORITY_BOOST strengths (1.5/1.3 vs 1.1/1.05 on top of "balanced")
+     showed a real but small precision/recall trade-off, not a clear win
+     either way (macro-F1 0.73 vs 0.72) - 1.5/1.3 marginally best.
+  4. A seeded focal-loss run (make_focal_loss, gamma=2.0) using the same
+     boosted weights as alpha came out clearly worse (macro-F1 0.69,
+     Bored->Frustrated errors nearly doubled) - likely double-correcting
+     for imbalance on top of focal loss's own implicit rare-class
+     upweighting. Kept in the file (LOSS_FN=focal) for the record/
+     reproducibility, not used by default.
+  Converged on: categorical_crossentropy + class_weight (balanced +
+  MINORITY_BOOST 1.5/1.3), monitor="val_macro_f1". The remaining
+  Bored<->Frustrated confusion looks like genuine feature-level ambiguity
+  at 48x48 resolution rather than something a loss-function change can
+  fix - the proposal's own temporal features (duration, transition rate,
+  stability - see student_state.py) are the more promising direction for
+  disambiguating it, downstream of this CNN's scope.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
+# Must be set before `import tensorflow` - TF reads TF_DETERMINISTIC_OPS at
+# import/init time to decide whether to register deterministic GPU/CPU
+# kernel variants, so setting it any later (e.g. next to the other seeding
+# calls below) is too late to take effect. See SEED below for why this
+# determinism matters: comparing MINORITY_BOOST values across separate
+# runs was confounded by uncontrolled Cutout/Dropout/shuffle randomness.
+SEED = 42
+os.environ["PYTHONHASHSEED"] = str(SEED)
+os.environ["TF_DETERMINISTIC_OPS"] = "1"
+
 import matplotlib.pyplot as plt
 import numpy as np
+import seaborn as sns
 import tensorflow as tf
+from sklearn.metrics import classification_report, confusion_matrix
 from sklearn.model_selection import train_test_split
 from sklearn.utils.class_weight import compute_class_weight
 from tensorflow.keras.callbacks import EarlyStopping, ModelCheckpoint, ReduceLROnPlateau
@@ -70,10 +117,20 @@ IMG_SIZE = 48  # proposal 3.2: "resizing images to 48 x 48 pixels"
 BATCH_SIZE = 64  # larger batch is affordable now - far smaller images, no frozen backbone
 EPOCHS = 40  # from-scratch training needs more iterations than fine-tuning a pretrained head
 VAL_SPLIT = 0.2
-SEED = 42
 CUTOUT_PROB = 0.5
 CUTOUT_MIN_FRAC = 0.10
 CUTOUT_MAX_FRAC = 0.35
+
+# Determinism (cont. from the PYTHONHASHSEED/TF_DETERMINISTIC_OPS env vars
+# set before the TensorFlow import above): train_test_split's
+# random_state=SEED already makes the train/val split itself reproducible,
+# but everything downstream (Cutout's tf.random ops, Dropout, tf.data's
+# shuffle) was still uncontrolled - two runs with identical hyperparameters
+# could diverge from randomness alone, which is exactly what confounded
+# comparing MINORITY_BOOST values across separate runs.
+random.seed(SEED)
+np.random.seed(SEED)
+tf.random.set_seed(SEED)
 
 os.makedirs("model", exist_ok=True)
 
@@ -107,7 +164,28 @@ weights = compute_class_weight(
     y=label_indices[train_idx],
 )
 class_weights = dict(enumerate(weights))
-print(f"Class weights: {class_weights}")
+
+# "balanced" is inverse-frequency (n / (k * count)) - Bored alone is ~50%
+# of this dataset, Frustrated ~4%, a ~12.5x imbalance. Two seeded,
+# controlled runs (1.5/1.3 vs 1.1/1.05) confirmed this is a real but small
+# precision/recall trade-off, not a clear win either way (macro-F1 0.73 vs
+# 0.72) - 1.5/1.3 is the (marginal) winner and is the base this focal loss
+# experiment builds on. Overridable via env vars so other values can still
+# be tried under the same fixed seed without editing this file.
+MINORITY_BOOST = {
+    "Frustrated": float(os.environ.get("FRUSTRATED_BOOST", 1.5)),
+    "Angry": float(os.environ.get("ANGRY_BOOST", 1.3)),
+}
+for class_name, boost in MINORITY_BOOST.items():
+    idx = class_to_index[class_name]
+    class_weights[idx] *= boost
+print(f"MINORITY_BOOST: {MINORITY_BOOST}")
+
+# Appended to every output filename so two runs (e.g. comparing
+# MINORITY_BOOST values) don't clobber each other's model/plots/report.
+RUN_TAG = os.environ.get("RUN_TAG", "")
+
+print(f"Class weights (after minority boost): {class_weights}")
 
 
 # =====================================
@@ -229,6 +307,65 @@ def _ds_block(x, filters: int, stride: int, name: str):
     return x
 
 
+def macro_f1(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+    """Unweighted mean of per-class F1 - unlike accuracy, a model that nails
+    Bored/Happy (the majority classes) but misses every Frustrated/Angry
+    example scores poorly here, which is exactly the failure mode
+    val_accuracy-based checkpoint selection couldn't see on this
+    imbalanced, stratified validation split."""
+    y_pred_labels = tf.one_hot(tf.argmax(y_pred, axis=1), depth=tf.shape(y_true)[1])
+    y_true = tf.cast(y_true, tf.float32)
+    y_pred_labels = tf.cast(y_pred_labels, tf.float32)
+
+    tp = tf.reduce_sum(y_true * y_pred_labels, axis=0)
+    fp = tf.reduce_sum((1 - y_true) * y_pred_labels, axis=0)
+    fn = tf.reduce_sum(y_true * (1 - y_pred_labels), axis=0)
+
+    precision = tp / (tp + fp + tf.keras.backend.epsilon())
+    recall = tp / (tp + fn + tf.keras.backend.epsilon())
+    f1 = 2 * precision * recall / (precision + recall + tf.keras.backend.epsilon())
+    return tf.reduce_mean(f1)
+
+
+def make_focal_loss(gamma: float, alpha: np.ndarray):
+    """Categorical focal loss (Lin et al. 2017), alpha = per-class weight
+    array (index-aligned with `classes`, same boosted class_weights this
+    script already computes - see MINORITY_BOOST above).
+
+    EXPERIMENT RESULT (kept for the record, not used by default - see
+    LOSS_FN below): tried with this exact alpha (the same boosted
+    class_weights used for plain class-weighted CE) and gamma=2.0, seeded
+    for a controlled comparison against categorical_crossentropy +
+    class_weight. Result was clearly worse across the board (accuracy
+    0.75 vs 0.81, macro-F1 0.69 vs 0.73, Frustrated F1 0.48 vs 0.56,
+    Bored->Frustrated errors 526 vs 320) - likely because the full
+    inverse-frequency-boosted alpha double-corrects for imbalance on top
+    of the (1-p)^gamma term, which already implicitly upweights rare/hard
+    classes (the original paper uses a mild fixed alpha like 0.25 for
+    exactly this reason). A milder alpha might do better but wasn't
+    re-tried, given diminishing returns after 4 full training runs and
+    that the Bored<->Frustrated confusion looks like a genuine feature-
+    level ambiguity at 48x48 resolution (a loss-function change shifts
+    the decision boundary, it doesn't add information the model doesn't
+    have) - see student_state.py's temporal-feature disambiguation for
+    the more promising direction beyond this CNN's scope.
+
+    alpha is applied here in the loss directly, NOT also passed as
+    class_weight= to model.fit() - doing both would double-apply the
+    per-class weighting on top of each other."""
+    alpha_tensor = tf.constant(alpha, dtype=tf.float32)
+
+    def loss_fn(y_true: tf.Tensor, y_pred: tf.Tensor) -> tf.Tensor:
+        y_pred = tf.clip_by_value(y_pred, 1e-7, 1 - 1e-7)
+        y_true = tf.cast(y_true, tf.float32)
+        cross_entropy = -y_true * tf.math.log(y_pred)
+        modulating_factor = tf.pow(1.0 - y_pred, gamma)
+        weight = alpha_tensor * modulating_factor
+        return tf.reduce_sum(weight * cross_entropy, axis=1)
+
+    return loss_fn
+
+
 image_input = Input(shape=(IMG_SIZE, IMG_SIZE, 3), name="image_input")
 feature_input = Input(shape=(features.shape[1],), name="feature_input")
 
@@ -256,7 +393,26 @@ fused = Dropout(0.4)(fused)
 predictions = Dense(len(classes), activation="softmax")(fused)
 
 model = Model(inputs=[image_input, feature_input], outputs=predictions)
-model.compile(optimizer=Adam(learning_rate=0.001), loss="categorical_crossentropy", metrics=["accuracy"])
+
+# LOSS_FN=ce (default): categorical_crossentropy + class_weight=class_weights
+# in model.fit() below - the winning configuration across all 4 seeded
+# comparison runs (macro-F1 0.73, see MINORITY_BOOST above for the tuning
+# history). LOSS_FN=focal re-runs the rejected focal-loss experiment (see
+# make_focal_loss's docstring) for anyone who wants to reproduce it or try
+# a milder alpha.
+LOSS_FN = os.environ.get("LOSS_FN", "ce")
+if LOSS_FN == "focal":
+    FOCAL_GAMMA = float(os.environ.get("FOCAL_GAMMA", 2.0))
+    # alpha index-aligned with `classes` (class_to_index), pulled from the
+    # same boosted class_weights dict computed above rather than a
+    # separate array, so MINORITY_BOOST and focal loss's alpha agree.
+    focal_alpha = np.array([class_weights[i] for i in range(len(classes))], dtype="float32")
+    print(f"Focal loss: gamma={FOCAL_GAMMA}, alpha={dict(zip(classes, focal_alpha.tolist()))}")
+    loss = make_focal_loss(gamma=FOCAL_GAMMA, alpha=focal_alpha)
+else:
+    loss = "categorical_crossentropy"
+
+model.compile(optimizer=Adam(learning_rate=0.001), loss=loss, metrics=["accuracy", macro_f1])
 model.summary()
 
 image_branch_params = sum(
@@ -268,19 +424,23 @@ print(f"\nImage-branch trainable params: {image_branch_params:,} "
       "(compare to MobileNetV2's ~2.3M for the equivalent backbone alone)")
 
 checkpoint = ModelCheckpoint(
-    "model/best_custom_cnn_v4.keras", monitor="val_accuracy", save_best_only=True, mode="max", verbose=1
+    f"model/best_custom_cnn_v4{RUN_TAG}.keras", monitor="val_macro_f1", save_best_only=True, mode="max", verbose=1
 )
-early_stop = EarlyStopping(monitor="val_accuracy", patience=8, mode="max", restore_best_weights=True)
+early_stop = EarlyStopping(monitor="val_macro_f1", patience=8, mode="max", restore_best_weights=True)
 reduce_lr = ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=4, verbose=1, min_lr=1e-6)
 callbacks = [checkpoint, early_stop, reduce_lr]
 
 print("\n========== Training from scratch (no pretrained weights) ==========")
-history = model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS, class_weight=class_weights, callbacks=callbacks)
+# class_weight only under CE - under focal loss, alpha inside
+# make_focal_loss already applies the same boosted class_weights, so
+# passing both would multiply them together.
+fit_kwargs = {} if LOSS_FN == "focal" else {"class_weight": class_weights}
+history = model.fit(train_ds, validation_data=val_ds, epochs=EPOCHS, callbacks=callbacks, **fit_kwargs)
 
-model.save("model/custom_cnn_v4_final.keras")
-model.save("model/best_custom_cnn_v4.h5")
+model.save(f"model/custom_cnn_v4_final{RUN_TAG}.keras")
+model.save(f"model/best_custom_cnn_v4{RUN_TAG}.h5")
 
-with open("model/custom_cnn_class_indices_v4.json", "w", encoding="utf-8") as f:
+with open(f"model/custom_cnn_class_indices_v4{RUN_TAG}.json", "w", encoding="utf-8") as f:
     json.dump({str(v): k for k, v in class_to_index.items()}, f, indent=2)
 
 print("\nFinal custom CNN model saved!")
@@ -290,18 +450,46 @@ plt.plot(history.history["accuracy"], label="Training Accuracy")
 plt.plot(history.history["val_accuracy"], label="Validation Accuracy")
 plt.xlabel("Epoch")
 plt.ylabel("Accuracy")
-plt.title("Custom Depthwise-Separable CNN Training Accuracy (v4)")
+plt.title(f"Custom Depthwise-Separable CNN Training Accuracy (v4{RUN_TAG})")
 plt.legend()
-plt.savefig("model/custom_cnn_training_accuracy_v4.png")
+plt.savefig(f"model/custom_cnn_training_accuracy_v4{RUN_TAG}.png")
 
 plt.figure(figsize=(10, 5))
 plt.plot(history.history["loss"], label="Training Loss")
 plt.plot(history.history["val_loss"], label="Validation Loss")
 plt.xlabel("Epoch")
 plt.ylabel("Loss")
-plt.title("Custom Depthwise-Separable CNN Training Loss (v4)")
+plt.title(f"Custom Depthwise-Separable CNN Training Loss (v4{RUN_TAG})")
 plt.legend()
-plt.savefig("model/custom_cnn_training_loss_v4.png")
+plt.savefig(f"model/custom_cnn_training_loss_v4{RUN_TAG}.png")
 
 print("Training graphs saved!")
-print("Best model saved as: model/best_custom_cnn_v4.keras / model/best_custom_cnn_v4.h5")
+print(f"Best model saved as: model/best_custom_cnn_v4{RUN_TAG}.keras / model/best_custom_cnn_v4{RUN_TAG}.h5")
+
+# =====================================
+# Per-class breakdown on the held-out val set, using the best (restored)
+# weights - printed here directly so a separate evaluate_*.py run isn't
+# needed just to see which classes the val_macro_f1 checkpoint actually
+# picked a strong model for.
+# =====================================
+
+val_predictions = model.predict(val_ds, verbose=0)
+val_pred_labels = np.argmax(val_predictions, axis=1)
+val_true_labels = label_indices[val_idx]
+
+print("\n========== Per-class classification report (val set, best checkpoint) ==========")
+print(classification_report(val_true_labels, val_pred_labels, target_names=classes))
+
+cm = confusion_matrix(val_true_labels, val_pred_labels)
+print("\nConfusion matrix (rows=actual, cols=predicted):")
+print("classes:", classes)
+print(cm)
+
+plt.figure(figsize=(8, 8))
+sns.heatmap(cm, annot=True, fmt="d", xticklabels=classes, yticklabels=classes)
+plt.xlabel("Predicted")
+plt.ylabel("Actual")
+plt.title(f"Custom Depthwise-Separable CNN Confusion Matrix (v4{RUN_TAG})")
+plt.tight_layout()
+plt.savefig(f"model/custom_cnn_confusion_matrix_v4{RUN_TAG}.png")
+print(f"Saved confusion matrix to model/custom_cnn_confusion_matrix_v4{RUN_TAG}.png")

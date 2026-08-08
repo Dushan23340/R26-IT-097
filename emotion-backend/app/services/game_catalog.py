@@ -198,6 +198,30 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 estimated_duration_minutes=7,
                 engagement_score=8.9
             ),
+            GameRecommendation(
+                game_id="gm_math_eco_blooms_normal",
+                lesson_id="area-of-shapes",
+                title="Eco Blooms Land Sale",
+                description="A grade-9 area simulation - customers request a plot by area (sqm); calculate square, rectangle, and triangle areas to find and sell the matching land.",
+                subject="Mathematics",
+                game_type="simulation game",
+                difficulty="Medium",
+                target_emotion="NORMAL",
+                estimated_duration_minutes=7,
+                engagement_score=8.8
+            ),
+            GameRecommendation(
+                game_id="gm_math_time_guardians_normal",
+                lesson_id="rounding-off",
+                title="Time Guardians: Save the Rounding Clock",
+                description="A grade-9 rounding game - round to the nearest 10/100, decimal places, and significant figures within 30 seconds to purify time crystals.",
+                subject="Mathematics",
+                game_type="arcade game",
+                difficulty="Medium",
+                target_emotion="NORMAL",
+                estimated_duration_minutes=6,
+                engagement_score=9.0
+            ),
         ],
         "CONFUSED": [
             GameRecommendation(
@@ -236,6 +260,18 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 estimated_duration_minutes=7,
                 engagement_score=8.7
             ),
+            GameRecommendation(
+                game_id="gm_math_magician_confused",
+                lesson_id="triangle-angle-theorems",
+                title="The Magician's Triangle House",
+                description="A grade-9 triangle angle theorems escape game - use the Angle Sum and Exterior Angle theorems, with hints, to free trapped friends.",
+                subject="Mathematics",
+                game_type="escape room game",
+                difficulty="Medium",
+                target_emotion="CONFUSED",
+                estimated_duration_minutes=8,
+                engagement_score=9.0
+            ),
         ],
         "BORED": [
             GameRecommendation(
@@ -262,6 +298,30 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 estimated_duration_minutes=8,
                 engagement_score=9.2
             ),
+            GameRecommendation(
+                game_id="gm_math_eco_blooms_bored",
+                lesson_id="area-of-shapes",
+                title="Eco Blooms Land Sale",
+                description="A grade-9 area simulation with voiced customers - calculate square, rectangle, and triangle areas to sell the matching land plot.",
+                subject="Mathematics",
+                game_type="simulation game",
+                difficulty="Medium",
+                target_emotion="BORED",
+                estimated_duration_minutes=7,
+                engagement_score=9.1
+            ),
+            GameRecommendation(
+                game_id="gm_math_alchemist_bored",
+                lesson_id="algebraic-expressions",
+                title="The Alchemist's Potion Lab",
+                description="A grade-9 algebraic expressions game - simplify, add, multiply, factorize, and substitute to free trapped magical ingredients.",
+                subject="Mathematics",
+                game_type="escape room game",
+                difficulty="Medium",
+                target_emotion="BORED",
+                estimated_duration_minutes=8,
+                engagement_score=9.3
+            ),
         ],
         "FRUSTRATED": [
             GameRecommendation(
@@ -275,6 +335,18 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 target_emotion="FRUSTRATED",
                 estimated_duration_minutes=6,
                 engagement_score=9.3
+            ),
+            GameRecommendation(
+                game_id="gm_math_laser_heist_frustrated",
+                lesson_id="parallel-line-angles",
+                title="Laser Heist: The Parallel Museum",
+                description="A grade-9 parallel-line angle game - use corresponding, alternate, co-interior, and vertically opposite angle properties to disable laser grids.",
+                subject="Mathematics",
+                game_type="spy heist game",
+                difficulty="Medium",
+                target_emotion="FRUSTRATED",
+                estimated_duration_minutes=7,
+                engagement_score=9.2
             ),
         ],
         "ANGRY": [

@@ -460,6 +460,12 @@ function TeacherDashboard() {
     gm_math_equations_eco_01: { route: "/equations-eco", gameKey: "equations_eco" },
     gm_math_fish_tank_01: { route: "/fish-tank-shop", gameKey: "fish_tank_shop" },
     gm_math_pattern_islands_01: { route: "/pattern-islands", gameKey: "pattern_islands" },
+    gm_math_eco_blooms_normal: { route: "/eco-blooms-land-sale", gameKey: "eco_blooms_land" },
+    gm_math_eco_blooms_bored: { route: "/eco-blooms-land-sale", gameKey: "eco_blooms_land" },
+    gm_math_magician_confused: { route: "/magicians-triangle-house", gameKey: "magicians_triangle_house" },
+    gm_math_alchemist_bored: { route: "/alchemists-potion-lab", gameKey: "alchemists_potion_lab" },
+    gm_math_time_guardians_normal: { route: "/time-guardians-rounding-clock", gameKey: "time_guardians_rounding_clock" },
+    gm_math_laser_heist_frustrated: { route: "/laser-heist-parallel-museum", gameKey: "laser_heist_parallel_museum" },
   };
 
   function handleOpenGame(gameId) {
@@ -480,6 +486,11 @@ function TeacherDashboard() {
     { gameKey: "equations_eco", title: "Equations Eco: Forest Restoration", description: "Solve equations to restore a forest ecosystem." },
     { gameKey: "fish_tank_shop", title: "Fish Tank Shop", description: "Run a shop using math for pricing and stock." },
     { gameKey: "pattern_islands", title: "Pattern Islands", description: "Identify and extend patterns across islands." },
+    { gameKey: "eco_blooms_land", title: "Eco Blooms Land Sale", description: "Calculate square/rectangle/triangle areas to sell customers the matching land plot." },
+    { gameKey: "magicians_triangle_house", title: "The Magician's Triangle House", description: "Use triangle angle theorems to free trapped friends from the magic house." },
+    { gameKey: "alchemists_potion_lab", title: "The Alchemist's Potion Lab", description: "Simplify, add, multiply, factorize, and substitute algebraic expressions to free trapped ingredients." },
+    { gameKey: "time_guardians_rounding_clock", title: "Time Guardians: Save the Rounding Clock", description: "Round to the nearest 10/100, decimal places, and significant figures to purify time crystals." },
+    { gameKey: "laser_heist_parallel_museum", title: "Laser Heist: The Parallel Museum", description: "Use corresponding, alternate, co-interior, and vertically opposite angle properties to disable laser grids." },
   ];
 
   async function handleAssignActivity(game) {
