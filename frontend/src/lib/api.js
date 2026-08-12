@@ -77,6 +77,7 @@ async function request(endpoint, options = {}) {
   }
   return data;
 }
+
 const api = {
   get: (endpoint) => request(endpoint, { method: "GET" }),
   post: (endpoint, body) => request(endpoint, {
@@ -91,6 +92,7 @@ const api = {
 };
 
 const analyticsApi = {
+  // ── Core Analytics ──────────────────────────────────────────────
   getHealth: () => analyticsRequest("/health", { method: "GET" }),
   getStudents: () => analyticsRequest("/students", { method: "GET" }),
   getStudentProfile: (studentId) =>
@@ -105,6 +107,54 @@ const analyticsApi = {
     analyticsRequest(`/student/${studentId}/engagement`, { method: "GET" }),
   getStudentComplete: (studentId) =>
     analyticsRequest(`/student/${studentId}/complete`, { method: "GET" }),
+
+  // ── ERSE — Suggestion Engine ─────────────────────────────────────
+  // Generate a new suggestion for a student (save=true persists to DB)
+  generateSuggestion: (studentId, save = true) =>
+    analyticsRequest(`/student/${studentId}/suggestions?save=${save}`, {
+      method: "GET",
+    }),
+
+  // Get suggestion history for a student
+  getSuggestionHistory: (studentId, { status, limit = 20 } = {}) => {
+    const params = new URLSearchParams({ limit });
+    if (status) params.set("status", status);
+    return analyticsRequest(
+      `/student/${studentId}/suggestions/history?${params}`,
+      { method: "GET" }
+    );
+  },
+
+  // Teacher review action: approve, modify, or dismiss
+  reviewSuggestion: (studentId, suggestionId, { action, teacherNotes, modifiedSuggestion, reviewedBy } = {}) =>
+    analyticsRequest(
+      `/student/${studentId}/suggestions/${suggestionId}/review`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          action,
+          teacher_notes: teacherNotes,
+          modified_suggestion: modifiedSuggestion,
+          reviewed_by: reviewedBy,
+        }),
+      }
+    ),
+
+  // Get outcome tracking summary for a suggestion
+  getSuggestionOutcome: (studentId, suggestionId) =>
+    analyticsRequest(
+      `/student/${studentId}/suggestions/${suggestionId}/outcome`,
+      { method: "GET" }
+    ),
+
+  // Get all pending suggestions across all students (teacher dashboard feed)
+  getPendingSuggestions: ({ urgency, limit = 50 } = {}) => {
+    const params = new URLSearchParams({ limit });
+    if (urgency) params.set("urgency", urgency);
+    return analyticsRequest(`/suggestions/pending?${params}`, {
+      method: "GET",
+    });
+  },
 };
 
 export {
