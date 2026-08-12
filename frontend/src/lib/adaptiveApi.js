@@ -45,13 +45,17 @@ export const adaptiveApiService = {
   getTimeEstimate: (results, studentId = "anonymous") =>
     adaptiveApi.post("/time-estimate", { results, student_id: studentId }),
 
-  // Real lesson content (lessons.py) + weighted mastery scoring (mastery.py)
-  // + Sentence-BERT recommendations (semantic_recommender.py) - distinct
-  // from the simulated flow above, and the only path that pushes real
-  // data into analytics-service.
+  // Real lesson content (lessons.py) + good/average/weak mastery-tier
+  // scoring (mastery.py) + Sentence-BERT recommendations
+  // (semantic_recommender.py) - distinct from the simulated flow above, and
+  // the only path that pushes real data into analytics-service.
+  //
+  // quizSet: 1 for a student's first attempt at a lesson, 2 for every
+  // retake thereafter (a different set of questions per LO so answers
+  // can't just be remembered from the first attempt).
   getLessons: () => adaptiveApi.get("/lessons"),
-  getLessonQuiz: (lessonId) => adaptiveApi.get(`/lessons/${lessonId}/quiz`),
-  submitLessonQuiz: ({ lessonId, studentId, studentName, studentEmail, answers, emotion, durationSeconds }) =>
+  getLessonQuiz: (lessonId, quizSet = 1) => adaptiveApi.get(`/lessons/${lessonId}/quiz?set=${quizSet}`),
+  submitLessonQuiz: ({ lessonId, studentId, studentName, studentEmail, answers, emotion, durationSeconds, quizSet = 1 }) =>
     adaptiveApi.post(`/lessons/${lessonId}/quiz/submit`, {
       student_id: studentId,
       student_name: studentName,
@@ -59,6 +63,7 @@ export const adaptiveApiService = {
       answers,
       emotion,
       duration_seconds: durationSeconds,
+      quiz_set: quizSet,
     }),
 
   // Resource recommendations derived from the student's most recent quiz's

@@ -466,6 +466,8 @@ function TeacherDashboard() {
     gm_math_alchemist_bored: { route: "/alchemists-potion-lab", gameKey: "alchemists_potion_lab" },
     gm_math_time_guardians_normal: { route: "/time-guardians-rounding-clock", gameKey: "time_guardians_rounding_clock" },
     gm_math_laser_heist_frustrated: { route: "/laser-heist-parallel-museum", gameKey: "laser_heist_parallel_museum" },
+    gm_math_fraction_chef_happy: { route: "/fraction-chef-recipe-rescue", gameKey: "fraction_chef_recipe_rescue" },
+    gm_math_fraction_chef_angry: { route: "/fraction-chef-recipe-rescue", gameKey: "fraction_chef_recipe_rescue" },
   };
 
   function handleOpenGame(gameId) {
@@ -491,6 +493,7 @@ function TeacherDashboard() {
     { gameKey: "alchemists_potion_lab", title: "The Alchemist's Potion Lab", description: "Simplify, add, multiply, factorize, and substitute algebraic expressions to free trapped ingredients." },
     { gameKey: "time_guardians_rounding_clock", title: "Time Guardians: Save the Rounding Clock", description: "Round to the nearest 10/100, decimal places, and significant figures to purify time crystals." },
     { gameKey: "laser_heist_parallel_museum", title: "Laser Heist: The Parallel Museum", description: "Use corresponding, alternate, co-interior, and vertically opposite angle properties to disable laser grids." },
+    { gameKey: "fraction_chef_recipe_rescue", title: "Fraction Chef: The Recipe Rescue", description: "Simplify, add, subtract, multiply, divide, and compare fractions across 5 magical ovens to recover the Master Recipe Scrolls." },
   ];
 
   async function handleAssignActivity(game) {

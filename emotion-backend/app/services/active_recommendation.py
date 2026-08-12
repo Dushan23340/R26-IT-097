@@ -29,6 +29,7 @@ GAME_LIBRARY: Dict[str, Dict[str, str]] = {
     "alchemists_potion_lab": {"route": "/alchemists-potion-lab", "label": "The Alchemist's Potion Lab", "badge": "Game 10"},
     "time_guardians_rounding_clock": {"route": "/time-guardians-rounding-clock", "label": "Time Guardians: Save the Rounding Clock", "badge": "Game 11"},
     "laser_heist_parallel_museum": {"route": "/laser-heist-parallel-museum", "label": "Laser Heist: The Parallel Museum", "badge": "Game 12"},
+    "fraction_chef_recipe_rescue": {"route": "/fraction-chef-recipe-rescue", "label": "Fraction Chef: The Recipe Rescue", "badge": "Game 13"},
 }
 
 
