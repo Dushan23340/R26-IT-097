@@ -43,6 +43,18 @@ def student_history(student_id: str):
     }), 200
 
 
+@bp.route("/students/<student_id>/analytics/latest-class-emotion", methods=["GET"])
+def latest_class_dominant_emotion(student_id: str):
+    """The dominant emotion during this student's most recent live-class
+    session - used by adaptive-learning/backend's quiz-submission flow to
+    bias resource recommendations, instead of the instantaneous live
+    tracker value it used previously."""
+    result = profile_service.get_latest_class_dominant_emotion(student_id)
+    if not result:
+        return jsonify({"student_id": student_id, "dominant_emotion": None, "sample_count": 0}), 200
+    return jsonify({"student_id": student_id, **result}), 200
+
+
 @bp.route("/sessions", methods=["POST"])
 def create_session():
     data = request.get_json(force=True) or {}

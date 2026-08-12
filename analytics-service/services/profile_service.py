@@ -188,6 +188,42 @@ def get_student_emotional_states(student_id: str) -> list[dict[str, Any]]:
         return [dict(zip(cols, row)) for row in cur.fetchall()]
 
 
+def get_latest_class_dominant_emotion(student_id: str) -> Optional[dict[str, Any]]:
+    """The single most-frequent emotion_label during this student's most
+    recent LIVE CLASS session (lesson_id='live-class', per
+    student_profile_bridge.create_session) - not their lifetime history
+    (unlike routes/analytics.py's class_overview(), which is unscoped by
+    session) and not their instantaneous live-tracker state (unlike
+    analytics_bridge.get_live_emotion() in adaptive-learning/backend, which
+    reads emotion-service's ~12s rolling smoothed value directly)."""
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT es.emotion_label
+            FROM emotional_states es
+            JOIN learning_sessions ls ON ls.session_id = es.session_id
+            WHERE ls.student_id = %s AND ls.lesson_id = 'live-class'
+              AND ls.session_id = (
+                  SELECT session_id FROM learning_sessions
+                  WHERE student_id = %s AND lesson_id = 'live-class'
+                  ORDER BY start_time DESC LIMIT 1
+              )
+            """,
+            (student_id, student_id),
+        )
+        labels = [row[0] for row in cur.fetchall()]
+
+    if not labels:
+        return None
+
+    counts: dict[str, int] = {}
+    for label in labels:
+        counts[label] = counts.get(label, 0) + 1
+    dominant = max(counts, key=counts.get)
+
+    return {"dominant_emotion": dominant, "sample_count": len(labels)}
+
+
 def get_student_engagement(student_id: str) -> list[dict[str, Any]]:
     with get_cursor() as cur:
         cur.execute(

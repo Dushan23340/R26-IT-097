@@ -46,7 +46,9 @@ def _get(path: str) -> dict | None:
         return None
 
 
-MASTERY_THRESHOLD = 75.0  # matches mastery.py's MASTERY_THRESHOLD
+MASTERY_THRESHOLD = 75.0  # mastery.py no longer uses a numeric threshold (raw-count
+# good/average/weak tiers instead), but 75% still cleanly separates "good" (100%,
+# i.e. 3/3 correct) from "average"/"weak" (<=66.7%) for this function's purpose
 
 
 # Only these map to an EMOTION_BIAS entry in semantic_recommender.py -
@@ -79,6 +81,21 @@ def get_live_emotion(student_id: str) -> str | None:
             current = str(student.get("currentEmotion") or "").strip().lower()
             return _TRACKER_STATE_TO_BIAS_KEY.get(current)
     return None
+
+
+def get_class_dominant_emotion(student_id: str) -> str | None:
+    """Synchronous, best-effort lookup of the emotion that occurred most
+    often during this student's most recent LIVE CLASS session (not their
+    instantaneous state - see get_live_emotion above, which this
+    supersedes as the primary emotion signal for quiz recommendations,
+    falling back to get_live_emotion only if this student has never been
+    in a tracked live class). analytics-service's emotional_states.emotion_label
+    is lowercase-DB-enforced already, but this normalizes defensively since
+    that isn't a contract this file controls."""
+    result = _get(f"/students/{student_id}/analytics/latest-class-emotion")
+    if not result or not result.get("dominant_emotion"):
+        return None
+    return str(result["dominant_emotion"]).strip().lower()
 
 
 def get_latest_weak_los(student_id: str) -> dict | None:

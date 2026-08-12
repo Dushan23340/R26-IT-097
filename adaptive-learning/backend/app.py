@@ -32,7 +32,7 @@ from recommendation import (
 from lessons import list_lessons, get_lesson, get_quiz_for_lesson
 from mastery import score_submission
 from semantic_recommender import recommend_resources
-from analytics_bridge import push_quiz_result_async, get_latest_weak_los, get_live_emotion
+from analytics_bridge import push_quiz_result_async, get_latest_weak_los, get_live_emotion, get_class_dominant_emotion
 
 # ───────────────────────────────────────────────
 # Flask App Setup
@@ -299,7 +299,8 @@ def get_lessons():
 
 @app.route("/api/lessons/<lesson_id>/quiz", methods=["GET"])
 def get_lesson_quiz(lesson_id):
-    quiz = get_quiz_for_lesson(lesson_id)
+    quiz_set = request.args.get("set", default=1, type=int)
+    quiz = get_quiz_for_lesson(lesson_id, quiz_set=quiz_set)
     if not quiz:
         return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
     return jsonify({"success": True, "data": quiz})
@@ -308,12 +309,13 @@ def get_lesson_quiz(lesson_id):
 @app.route("/api/lessons/<lesson_id>/quiz/submit", methods=["POST"])
 def submit_lesson_quiz(lesson_id):
     """
-    Score a real quiz submission with the weighted percentile mastery
-    model, generate emotion-aware Sentence-BERT recommendations for weak
-    LOs, and push the result to analytics-service (best-effort).
+    Score a real quiz submission with the good/average/weak mastery-tier
+    model (mastery.py), generate emotion+mastery-aware Sentence-BERT
+    recommendations for average/weak LOs, and push the result to
+    analytics-service (best-effort).
 
     Body: { "student_id": "...", "student_name": "...", "student_email": "...",
-            "answers": {question_id: selected_option},
+            "answers": {question_id: free-text answer}, "quiz_set": 1 (optional),
             "emotion": "confused" (optional) }
     """
     if not get_lesson(lesson_id):
@@ -325,24 +327,24 @@ def submit_lesson_quiz(lesson_id):
     student_email = data.get("student_email", "")
     answers = data.get("answers", {})
     emotion = data.get("emotion")
+    quiz_set = data.get("quiz_set", 1)
     duration_seconds = data.get("duration_seconds")
 
     if not isinstance(answers, dict):
-        return jsonify({"success": False, "error": "answers must be a dict {question_id: selected_option}"}), 400
+        return jsonify({"success": False, "error": "answers must be a dict {question_id: free-text answer}"}), 400
 
-    # No frontend page currently sends "emotion" explicitly (lessons.jsx has
-    # no webcam), so this was always None in practice, making
-    # EMOTION_BIAS dead code. Best-effort fall back to whatever
-    # emotion-service's live tracker last saw for this student (e.g. they
-    # were recently in a live class) - still None, same as before, if
-    # they've never been tracked.
+    # No frontend page sends "emotion" explicitly. Best-effort: prefer the
+    # emotion that was dominant during this student's most recent live
+    # class (a real session-level summary), falling back to their
+    # instantaneous live-tracker state if they've never been in a tracked
+    # live class, then None if neither is available.
     if not emotion and student_id != "anonymous":
-        emotion = get_live_emotion(student_id)
+        emotion = get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
 
-    result = score_submission(lesson_id, answers)
+    result = score_submission(lesson_id, answers, quiz_set=quiz_set)
 
     recommendations = {
-        lo: recommend_resources(lesson_id, lo, emotion=emotion, top_k=3)
+        lo: recommend_resources(lesson_id, lo, emotion=emotion, mastery_tier=result["lo_scores"][lo]["mastery_tier"], top_k=3)
         for lo in result["weak_los"]
     }
 
@@ -350,7 +352,7 @@ def submit_lesson_quiz(lesson_id):
         lesson = get_lesson(lesson_id)
         push_quiz_result_async(
             student_id, lesson_id, lesson["title"], result, student_name, student_email,
-            answered_count=len(answers), total_questions=len(lesson["questions"]),
+            answered_count=len(answers), total_questions=sum(len(v["items"]) for v in result["lo_scores"].values()),
             duration_seconds=duration_seconds,
         )
 

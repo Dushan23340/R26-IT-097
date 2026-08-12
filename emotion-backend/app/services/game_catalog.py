@@ -172,6 +172,18 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 estimated_duration_minutes=5,
                 engagement_score=9.4
             ),
+            GameRecommendation(
+                game_id="gm_math_fraction_chef_happy",
+                lesson_id="fraction-operations",
+                title="Fraction Chef: The Recipe Rescue",
+                description="A grade-9 fraction game - simplify, add, subtract, multiply, divide, and compare fractions across 5 magical ovens to recover the Master Recipe Scrolls.",
+                subject="Mathematics",
+                game_type="cooking simulation game",
+                difficulty="Medium",
+                target_emotion="HAPPY",
+                estimated_duration_minutes=7,
+                engagement_score=9.3
+            ),
         ],
         "NORMAL": [
             GameRecommendation(
@@ -361,6 +373,18 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 target_emotion="ANGRY",
                 estimated_duration_minutes=6,
                 engagement_score=8.9
+            ),
+            GameRecommendation(
+                game_id="gm_math_fraction_chef_angry",
+                lesson_id="fraction-operations",
+                title="Fraction Chef: The Recipe Rescue",
+                description="A grade-9 fraction game - simplify, add, subtract, multiply, divide, and compare fractions across 5 magical ovens - a calmer, structured reset with hints available.",
+                subject="Mathematics",
+                game_type="cooking simulation game",
+                difficulty="Medium",
+                target_emotion="ANGRY",
+                estimated_duration_minutes=7,
+                engagement_score=8.6
             ),
         ],
     },

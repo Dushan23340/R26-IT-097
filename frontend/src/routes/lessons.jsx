@@ -18,6 +18,7 @@ import {
   TrendingUp,
   Lock,
 } from "lucide-react";
+import { toast } from "sonner";
 import { adaptiveApiService } from "@/lib/adaptiveApi";
 import { useAuth } from "@/lib/auth";
 
@@ -153,13 +154,16 @@ function LessonsPage() {
     saveProgress(studentId, { screen, quiz, answers, result, previousResult, completedResourceIds });
   }, [hydrated, studentId, screen, quiz, answers, result, previousResult, completedResourceIds]);
 
-  async function startLesson(lessonId) {
+  // quizSet 1 = first attempt at this lesson; 2 = every retake thereafter
+  // (retakeLesson always requests 2 - a different set of questions per LO
+  // so answers can't just be remembered from the first attempt).
+  async function startLesson(lessonId, quizSet = 1) {
     setError(null);
     setLoadingQuiz(true);
     setAnswers({});
     setResult(null);
     try {
-      const res = await adaptiveApiService.getLessonQuiz(lessonId);
+      const res = await adaptiveApiService.getLessonQuiz(lessonId, quizSet);
       setQuiz(res.data);
       setScreen("quiz");
       quizStartedAtRef.current = Date.now();
@@ -187,6 +191,37 @@ function LessonsPage() {
     setAnswers((prev) => ({ ...prev, [questionId]: option }));
   }
 
+  // Compares this attempt's LO tiers against previousResult (only set on a
+  // retake) and surfaces a motivational/nudge toast - the LO Mastery
+  // trend chart on the profile page already reflects both attempts as
+  // separate points automatically (every submission pushes to
+  // analytics-service regardless), this is just the in-the-moment nudge.
+  function announceRetakeProgress(newResult) {
+    if (!previousResult) return;
+    const tierRank = { weak: 0, average: 1, good: 2 };
+    const improvedLOs = [];
+    const notImprovedLOs = [];
+    for (const lo of previousResult.weak_los || []) {
+      const before = previousResult.lo_scores[lo]?.mastery_tier;
+      const after = newResult.lo_scores[lo]?.mastery_tier;
+      if (before == null || after == null) continue;
+      if (tierRank[after] > tierRank[before]) improvedLOs.push(lo);
+      else notImprovedLOs.push(lo);
+    }
+    if (improvedLOs.length > 0) {
+      toast.success(
+        `Nice work! ${improvedLOs.map((lo) => LO_LABELS[lo] || lo).join(", ")} improved since your last attempt.`
+      );
+    }
+    if (notImprovedLOs.length > 0) {
+      toast.warning(
+        `${notImprovedLOs.map((lo) => LO_LABELS[lo] || lo).join(", ")} ${
+          notImprovedLOs.length === 1 ? "still needs" : "still need"
+        } more work - check the recommended resources below.`
+      );
+    }
+  }
+
   async function submitQuiz() {
     if (!quiz) return;
     setSubmitting(true);
@@ -202,7 +237,9 @@ function LessonsPage() {
         studentEmail: user?.email ?? "",
         answers,
         durationSeconds,
+        quizSet: quiz.quiz_set ?? 1,
       });
+      announceRetakeProgress(res.data);
       setResult(res.data);
       setScreen("results");
     } catch (e) {
@@ -231,15 +268,18 @@ function LessonsPage() {
     });
   }
 
-  // Retakes the SAME lesson so the results screen can compare this
-  // attempt's LO scores against the one just finished.
+  // Retakes the SAME lesson (quiz set 2 - different questions per LO) so
+  // the results screen can compare this attempt's LO scores against the
+  // one just finished.
   async function retakeLesson() {
     setPreviousResult(result);
     setCompletedResourceIds(new Set());
-    await startLesson(quiz.lesson_id);
+    await startLesson(quiz.lesson_id, 2);
   }
 
-  const answeredCount = quiz ? quiz.questions.filter((q) => answers[q.id] != null).length : 0;
+  const answeredCount = quiz
+    ? quiz.questions.filter((q) => answers[q.id] != null && String(answers[q.id]).trim() !== "").length
+    : 0;
 
   const allResourceIds = result
     ? (result.weak_los || []).flatMap((lo) => (result.recommendations[lo] || []).map((r) => r.id))
@@ -256,7 +296,7 @@ function LessonsPage() {
         </div>
         <h1 className="font-display text-2xl sm:text-3xl font-bold">Adaptive Learning</h1>
         <p className="text-sm text-muted-foreground mt-1">
-          Real questions, weighted mastery scoring across Bloom's Taxonomy levels, and semantic
+          Real questions, good/average/weak mastery scoring across Bloom's Taxonomy levels, and semantic
           resource recommendations for anything you haven't mastered yet.
         </p>
       </div>
@@ -319,22 +359,33 @@ function LessonsPage() {
                   <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{q.difficulty}</span>
                 </div>
                 <p className="text-sm font-medium mb-3">{q.question}</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {q.options.map((opt) => (
-                    <button
-                      key={opt}
-                      type="button"
-                      onClick={() => selectAnswer(q.id, opt)}
-                      className={`text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
-                        answers[q.id] === opt
-                          ? "border-primary bg-primary/10 text-primary font-medium"
-                          : "border-border/60 hover:border-primary/40"
-                      }`}
-                    >
-                      {opt}
-                    </button>
-                  ))}
-                </div>
+                {q.options ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {q.options.map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        onClick={() => selectAnswer(q.id, opt)}
+                        className={`text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
+                          answers[q.id] === opt
+                            ? "border-primary bg-primary/10 text-primary font-medium"
+                            : "border-border/60 hover:border-primary/40"
+                        }`}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={answers[q.id] || ""}
+                    onChange={(e) => selectAnswer(q.id, e.target.value)}
+                    placeholder="Type your answer..."
+                    className="input-field w-full"
+                    autoComplete="off"
+                  />
+                )}
               </div>
             ))}
           </div>
@@ -370,7 +421,9 @@ function LessonsPage() {
                   {result.overall_percentile_mastery}% overall mastery
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  Weighted correctness x difficulty x cognitive level, per the LO Achievement component
+                  {result.lo_scores[Object.keys(result.lo_scores)[0]]?.total_count === 3
+                    ? "3 questions per Learning Outcome - all 3 correct is Good, 2 is Average, 0-1 is Weak"
+                    : "Percentage of questions answered correctly per Learning Outcome"}
                 </p>
               </div>
             </div>
@@ -380,16 +433,24 @@ function LessonsPage() {
                 <div
                   key={lo}
                   className={`p-3 rounded-xl border text-center ${
-                    data.mastered ? "border-emotion-happy/40 bg-emotion-happy/5" : "border-amber/40 bg-amber/5"
+                    data.mastery_tier === "good"
+                      ? "border-emotion-happy/40 bg-emotion-happy/5"
+                      : data.mastery_tier === "average"
+                      ? "border-amber/40 bg-amber/5"
+                      : "border-error/40 bg-error/5"
                   }`}
                 >
                   <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{LO_LABELS[lo] || lo}</div>
-                  <div className="font-display text-lg font-bold mt-1">{data.percentile_mastery_score}%</div>
+                  <div className="font-display text-lg font-bold mt-1">
+                    {data.correct_count}/{data.total_count}
+                  </div>
                   <div className="flex items-center justify-center gap-1 mt-1 text-[10px]">
-                    {data.mastered ? (
-                      <><CheckCircle2 className="h-3 w-3 text-emotion-happy" /> Mastered</>
+                    {data.mastery_tier === "good" ? (
+                      <><CheckCircle2 className="h-3 w-3 text-emotion-happy" /> Good</>
+                    ) : data.mastery_tier === "average" ? (
+                      <><AlertTriangle className="h-3 w-3 text-amber" /> Average</>
                     ) : (
-                      <><XCircle className="h-3 w-3 text-amber" /> Below 75%</>
+                      <><XCircle className="h-3 w-3 text-error" /> Weak</>
                     )}
                   </div>
                 </div>
