@@ -37,5 +37,20 @@ cur.execute("""
 for r in cur.fetchall():
     print(r)
 
+print("\n=== student_profiles COLUMNS ===")
+cur.execute("""
+    SELECT column_name, data_type
+    FROM information_schema.columns
+    WHERE table_name = 'student_profiles'
+    ORDER BY ordinal_position
+""")
+for r in cur.fetchall():
+    print(r)
+
+print("\n=== SAMPLE student_profiles ROW ===")
+cur.execute("SELECT * FROM student_profiles LIMIT 1")
+for r in cur.fetchall():
+    print(r)
+
 cur.close()
 conn.close()
