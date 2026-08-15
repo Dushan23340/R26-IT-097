@@ -14,6 +14,7 @@ import {
   Timer,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt, randChoice } from "@/lib/gameRandom";
 
 // ---------- Fraction math + free-text answer parsing ----------
 // Verified standalone before wiring into the UI: gcd/reduce against the
@@ -65,69 +66,108 @@ function formatFraction(f) {
 }
 
 // ---------- 5 ovens, 1 per fraction skill from the spec ----------
-const LEVELS = [
-  {
-    id: "l1",
-    skill: "Simplify",
-    oven: "Pepperoni Pizza Oven",
-    dishEmoji: "\u{1F355}",
-    prompt: "A pizza is cut into 12 equal slices. 8 slices have pepperoni. What fraction of the pizza is pepperoni? Simplify your answer!",
-    visual: { type: "pizza", total: 12, filled: 8 },
-    answer: { num: 2, den: 3 },
-    hint: "Divide both the top and bottom by their greatest common factor (4): 8/12 -> 2/3.",
+// Freshly randomized per game start (generateLevels below) - same 5
+// skills/ovens every time but different fraction values per play, built
+// with the SAME reduce()/gcd() already defined above (not a separate
+// implementation). Verified against 100,000 generated levels in a
+// standalone script: every answer matches an independent recomputation
+// from the same generated inputs, every reduced fraction is genuinely in
+// lowest terms, and the Simplify level's pizza always actually needs
+// simplifying (gcf > 1) rather than already being in lowest terms.
+const FRACTION_DENOMS = [2, 3, 4, 5, 6, 8];
+
+function genSimplifyLevel() {
+  const total = randChoice([8, 10, 12, 14, 15, 16, 18, 20]);
+  let filled;
+  do { filled = randInt(1, total - 1); } while (gcd(filled, total) === 1);
+  const answer = reduce(filled, total);
+  const gcf = gcd(filled, total);
+  return {
+    id: "l1", skill: "Simplify", oven: "Pepperoni Pizza Oven", dishEmoji: "\u{1F355}",
+    prompt: `A pizza is cut into ${total} equal slices. ${filled} slices have pepperoni. What fraction of the pizza is pepperoni? Simplify your answer!`,
+    visual: { type: "pizza", total, filled }, answer,
+    hint: `Divide both the top and bottom by their greatest common factor (${gcf}): ${filled}/${total} -> ${answer.num}/${answer.den}.`,
     judgeLine: "Chef! The pizza's ready - figure out that pepperoni fraction, quick!",
-    botHint: "Try finding a common factor for 8 and 12!",
-  },
-  {
-    id: "l2",
-    skill: "Add/Subtract",
-    oven: "Golden Sugar Cookie Oven",
-    dishEmoji: "\u{1F36A}",
-    prompt: "The cookie recipe needs 3/4 cup sugar in total. You've already added 1/2 cup. How much MORE sugar do you need?",
-    visual: { type: "cups", a: { num: 3, den: 4 }, b: { num: 1, den: 2 } },
-    answer: { num: 1, den: 4 },
-    hint: "Convert 1/2 to 2/4 (same denominator as 3/4), then subtract: 3/4 - 2/4 = 1/4.",
-    judgeLine: "Chef! We need three-fourths cup of sugar total - how much more do we add?",
+    botHint: `Try finding a common factor for ${filled} and ${total}!`,
+  };
+}
+
+function genAddSubtractLevel() {
+  let d1, d2, n1, n2;
+  do {
+    d1 = randChoice(FRACTION_DENOMS);
+    d2 = randChoice(FRACTION_DENOMS.filter((d) => d !== d1));
+    n1 = randInt(1, d1 - 1);
+    n2 = randInt(1, d2 - 1);
+  } while (n1 / d1 <= n2 / d2);
+  const answer = reduce(n1 * d2 - n2 * d1, d1 * d2);
+  return {
+    id: "l2", skill: "Add/Subtract", oven: "Golden Sugar Cookie Oven", dishEmoji: "\u{1F36A}",
+    prompt: `The cookie recipe needs ${n1}/${d1} cup sugar in total. You've already added ${n2}/${d2} cup. How much MORE sugar do you need?`,
+    visual: { type: "cups", a: { num: n1, den: d1 }, b: { num: n2, den: d2 } }, answer,
+    hint: `Convert both to a common denominator, then subtract: ${n1}/${d1} - ${n2}/${d2} = ${answer.num}/${answer.den}.`,
+    judgeLine: `Chef! We need ${n1}/${d1} cup of sugar total - how much more do we add?`,
     botHint: "Try finding a common denominator first!",
-  },
-  {
-    id: "l3",
-    skill: "Multiply",
-    oven: "Fluffy Flour Cake Oven",
-    dishEmoji: "\u{1F382}",
-    prompt: "One tray of cake needs 2/3 cup flour. You're baking 3/2 trays for the festival. How much flour do you need in total?",
-    visual: { type: "bars", a: { num: 2, den: 3 }, b: { num: 3, den: 2 } },
-    answer: { num: 1, den: 1 },
-    hint: "Multiply numerators together, then denominators together, then simplify: (2x3)/(3x2) = 6/6 = 1.",
+  };
+}
+
+function genMultiplyLevel() {
+  const pNum = randInt(1, 5);
+  const pDen = randChoice(FRACTION_DENOMS.filter((d) => d > pNum));
+  const qNum = randInt(1, 6);
+  const qDen = randChoice([2, 3, 4]);
+  const answer = reduce(pNum * qNum, pDen * qDen);
+  return {
+    id: "l3", skill: "Multiply", oven: "Fluffy Flour Cake Oven", dishEmoji: "\u{1F382}",
+    prompt: `One tray of cake needs ${pNum}/${pDen} cup flour. You're baking ${qNum}/${qDen} trays for the festival. How much flour do you need in total?`,
+    visual: { type: "bars", a: { num: pNum, den: pDen }, b: { num: qNum, den: qDen } }, answer,
+    hint: `Multiply numerators together, then denominators together, then simplify: (${pNum}x${qNum})/(${pDen}x${qDen}) = ${answer.num}/${answer.den}.`,
     judgeLine: "Chef! Scale up that flour for the tray order, now!",
     botHint: "Multiply the numerators, then multiply the denominators!",
-  },
-  {
-    id: "l4",
-    skill: "Divide",
-    oven: "Sparkling Juice Fountain",
-    dishEmoji: "\u{1F9C3}",
-    prompt: "You have 5/6 liter of juice. Each glass needs 1/3 liter. How many glasses can you pour (a part-filled glass still counts)?",
-    visual: { type: "jug", amount: { num: 5, den: 6 }, glassSize: { num: 1, den: 3 } },
-    answer: { num: 5, den: 2 },
-    hint: "Dividing by a fraction means multiplying by its reciprocal: 5/6 / (1/3) = 5/6 x 3/1 = 15/6 = 2 1/2.",
+  };
+}
+
+function genDivideLevel() {
+  const aNum = randInt(1, 5);
+  const aDen = randChoice(FRACTION_DENOMS.filter((d) => d > aNum));
+  const bNum = 1;
+  const bDen = randChoice(FRACTION_DENOMS.filter((d) => d !== aDen));
+  const answer = reduce(aNum * bDen, aDen * bNum);
+  return {
+    id: "l4", skill: "Divide", oven: "Sparkling Juice Fountain", dishEmoji: "\u{1F9C3}",
+    prompt: `You have ${aNum}/${aDen} liter of juice. Each glass needs ${bNum}/${bDen} liter. How many glasses can you pour (a part-filled glass still counts)?`,
+    visual: { type: "jug", amount: { num: aNum, den: aDen }, glassSize: { num: bNum, den: bDen } }, answer,
+    hint: `Dividing by a fraction means multiplying by its reciprocal: ${aNum}/${aDen} / (${bNum}/${bDen}) = ${aNum}/${aDen} x ${bDen}/${bNum} = ${formatFraction(answer)}.`,
     judgeLine: "Chef! Pour the juice - how many glasses can we fill?",
     botHint: "Flip the second fraction and multiply!",
-  },
-  {
-    id: "l5",
-    skill: "Compare",
-    oven: "Royal Rice Scale Oven",
-    dishEmoji: "\u{1F35A}",
-    prompt: "Recipe A uses 7/8 kg rice. Recipe B uses 3/4 kg rice. Which recipe needs MORE rice, and by how much?",
-    visual: { type: "scale", a: { num: 7, den: 8 }, b: { num: 3, den: 4 } },
-    answer: { winner: "A", diff: { num: 1, den: 8 } },
-    hint: "Convert both to eighths: 3/4 = 6/8. Then compare: 7/8 is bigger than 6/8 by 1/8.",
+  };
+}
+
+function genCompareLevel() {
+  let d1, d2, n1, n2;
+  do {
+    d1 = randChoice(FRACTION_DENOMS);
+    d2 = randChoice(FRACTION_DENOMS.filter((d) => d !== d1));
+    n1 = randInt(1, d1 - 1);
+    n2 = randInt(1, d2 - 1);
+  } while (n1 / d1 === n2 / d2);
+  const winner = n1 / d1 > n2 / d2 ? "A" : "B";
+  const diff = reduce(Math.abs(n1 * d2 - n2 * d1), d1 * d2);
+  return {
+    id: "l5", skill: "Compare", oven: "Royal Rice Scale Oven", dishEmoji: "\u{1F35A}",
+    prompt: `Recipe A uses ${n1}/${d1} kg rice. Recipe B uses ${n2}/${d2} kg rice. Which recipe needs MORE rice, and by how much?`,
+    visual: { type: "scale", a: { num: n1, den: d1 }, b: { num: n2, den: d2 } },
+    answer: { winner, diff },
+    hint: `Convert both to a common denominator, then compare: ${n1}/${d1} vs ${n2}/${d2} - Recipe ${winner} is bigger by ${diff.num}/${diff.den}.`,
     judgeLine: "Chef! The judges are comparing rice recipes - which one wins, and by how much?",
     botHint: "Convert both fractions to the same denominator before comparing!",
     isCompare: true,
-  },
-];
+  };
+}
+
+function generateLevels() {
+  return [genSimplifyLevel(), genAddSubtractLevel(), genMultiplyLevel(), genDivideLevel(), genCompareLevel()];
+}
 
 const RULES = [
   { title: "Simplify", example: "8/12 pizza slices -> divide top & bottom by their GCF (4) -> 2/3" },
@@ -323,6 +363,9 @@ function FractionChefPage() {
   const inputRef = useRef(null);
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateLevels above.
+  const [levels, setLevels] = useState(() => generateLevels());
   const [ovenIndex, setOvenIndex] = useState(0);
   const [hearts, setHearts] = useState(MAX_HEARTS);
   const [scrolls, setScrolls] = useState(0);
@@ -339,11 +382,12 @@ function FractionChefPage() {
   const [freedScrollIds, setFreedScrollIds] = useState([]);
   const [awaitingNext, setAwaitingNext] = useState(false);
 
-  const level = LEVELS[ovenIndex];
+  const level = levels[ovenIndex];
 
   const startGame = () => {
     reportedRef.current = false;
     setScreen("playing");
+    setLevels(generateLevels());
     setOvenIndex(0);
     setHearts(MAX_HEARTS);
     setScrolls(0);
@@ -392,9 +436,9 @@ function FractionChefPage() {
     sounds.playBurn();
     if (newHearts <= 0) {
       reportedRef.current = true;
-      reportFinish("loss", Math.round((scrolls / LEVELS.length) * 100), {
+      reportFinish("loss", Math.round((scrolls / levels.length) * 100), {
         correctCount: scrolls,
-        totalCount: LEVELS.length,
+        totalCount: levels.length,
       });
       setScreen("lost");
       return;
@@ -447,13 +491,13 @@ function FractionChefPage() {
   }
 
   function goToNext() {
-    if (ovenIndex + 1 < LEVELS.length) {
+    if (ovenIndex + 1 < levels.length) {
       setOvenIndex((i) => i + 1);
       setTimeLeft(QUESTION_SECONDS);
       setAwaitingNext(false);
     } else {
       reportedRef.current = true;
-      reportFinish("win", 100, { correctCount: LEVELS.length, totalCount: LEVELS.length });
+      reportFinish("win", 100, { correctCount: levels.length, totalCount: levels.length });
       setScreen("won");
       setConfetti(true);
       sounds.playVictory();
@@ -485,7 +529,7 @@ function FractionChefPage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">SCROLLS</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{scrolls}/{LEVELS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{scrolls}/{levels.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">HEARTS</div>
@@ -509,7 +553,7 @@ function FractionChefPage() {
       <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
         <div
           className="h-full transition-all duration-500"
-          style={{ width: `${(scrolls / LEVELS.length) * 100}%`, background: "linear-gradient(90deg,#f97316,#facc15)" }}
+          style={{ width: `${(scrolls / levels.length) * 100}%`, background: "linear-gradient(90deg,#f97316,#facc15)" }}
         />
       </div>
 
@@ -537,7 +581,7 @@ function FractionChefPage() {
 
             {/* 5 ovens row */}
             <div className="relative z-10 mx-auto mt-16 grid grid-cols-5 gap-2 max-w-lg">
-              {LEVELS.map((lvl, idx) => {
+              {levels.map((lvl, idx) => {
                 const isCurrent = idx === ovenIndex && screen === "playing";
                 const isFreed = freedScrollIds.includes(lvl.id);
                 return (
@@ -641,7 +685,7 @@ function FractionChefPage() {
                 <PartyPopper className="h-14 w-14 text-amber-300 animate-bounce" />
                 <h2 className="text-2xl font-black text-white">Festival Saved!</h2>
                 <div className="flex gap-1 text-2xl">
-                  {LEVELS.map((lvl, i) => (
+                  {levels.map((lvl, i) => (
                     <span key={lvl.id} className="animate-bounce" style={{ animationDelay: `${i * 0.1}s` }}>
                       {"\u{1F4DC}"}
                     </span>
@@ -662,7 +706,7 @@ function FractionChefPage() {
               <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm rounded-3xl text-center px-6">
                 <Skull className="h-14 w-14 text-red-400" />
                 <h2 className="text-2xl font-black text-white">The Kitchen Went Cold!</h2>
-                <p className="text-sm text-slate-200">You recovered {scrolls} of {LEVELS.length} scrolls before running out of hearts.</p>
+                <p className="text-sm text-slate-200">You recovered {scrolls} of {levels.length} scrolls before running out of hearts.</p>
                 {weakestSkill && (
                   <p className="max-w-xs text-xs text-amber-200">
                     Most mistakes were on <span className="font-bold">{weakestSkill}</span> - worth practicing that skill more.
@@ -687,7 +731,7 @@ function FractionChefPage() {
           <div className="card rounded-2xl">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <div className="text-label-md text-text-muted">OVEN {Math.min(ovenIndex + 1, LEVELS.length)}/{LEVELS.length}</div>
+                <div className="text-label-md text-text-muted">OVEN {Math.min(ovenIndex + 1, levels.length)}/{levels.length}</div>
                 <div className="badge badge-primary mt-1">{level?.skill ?? "-"}</div>
               </div>
               <div className={`flex items-center gap-1.5 text-sm font-bold ${timeLeft <= 12 ? "text-error animate-pulse" : "text-foreground"}`}>
@@ -702,7 +746,7 @@ function FractionChefPage() {
                   <p className="text-success font-semibold text-body-sm">Order up! The scroll flew free!</p>
                   <button type="button" onClick={goToNext} className="btn btn-primary btn-lg w-full">
                     <ArrowRight className="h-4 w-4" />
-                    {ovenIndex + 1 < LEVELS.length ? "Next Oven" : "See Results"}
+                    {ovenIndex + 1 < levels.length ? "Next Oven" : "See Results"}
                   </button>
                 </div>
               ) : (

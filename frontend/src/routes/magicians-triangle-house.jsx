@@ -14,6 +14,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt, randChoice } from "@/lib/gameRandom";
 
 // Grade-9 triangle angle theorems:
 //   Theorem 1: interior angles of a triangle sum to 180 degrees.
@@ -23,43 +24,67 @@ import { useGameSession } from "@/hooks/useGameSession";
 // geometrically accurate triangle diagram (see computeTriangle below) -
 // the diagram isn't just decorative, the angles shown genuinely match the
 // stated numbers.
-const QUESTIONS = [
-  {
-    id: "q1",
+//
+// Freshly randomized per game start (generateQuestions below) - same 3
+// templates (angle-sum x2, exterior-angle x2, isosceles x1) every time so
+// the UI's fixed theorem badges/labels stay meaningful, but different
+// angle values per play so concurrent students get different puzzles.
+// Verified against 20,000 generated sets (100,000 questions) in a
+// standalone script - every angle stays in a valid, non-degenerate range,
+// the angle-sum/exterior-angle theorem identities hold exactly, and the
+// value hidden behind "unknown" always matches the stated answer.
+function genAngleSum() {
+  let angleA, angleB, angleC;
+  do {
+    angleA = randInt(20, 110, 5);
+    angleB = randInt(20, 110, 5);
+    angleC = 180 - angleA - angleB;
+  } while (angleC < 30 || angleC > 120);
+  return {
+    id: `sum-${angleA}-${angleB}`,
     theorem: 1,
-    prompt: "Two interior angles of a triangle are 60 degrees and 70 degrees. What is the third angle?",
-    answer: 50,
-    layout: { angleA: 60, angleB: 70, unknown: "C", exterior: null },
-  },
-  {
-    id: "q2",
+    prompt: `Two interior angles of a triangle are ${angleA} degrees and ${angleB} degrees. What is the third angle?`,
+    answer: angleC,
+    layout: { angleA, angleB, unknown: "C", exterior: null },
+  };
+}
+
+function genIsosceles() {
+  const b = randInt(30, 80, 5);
+  const vertex = 180 - 2 * b;
+  return {
+    id: `iso-${b}`,
     theorem: 1,
-    prompt: "One angle of a triangle is 90 degrees. The third angle is 45 degrees. What is the other angle, x?",
-    answer: 45,
-    layout: { angleA: 90, angleB: 45, unknown: "B", exterior: null },
-  },
-  {
-    id: "q3",
+    prompt: `An isosceles triangle has two equal base angles of ${b} degrees each. What is the vertex angle?`,
+    answer: vertex,
+    layout: { angleA: b, angleB: b, unknown: "C", exterior: null },
+  };
+}
+
+function genExterior() {
+  let r1, ext, r2;
+  do {
+    r1 = randInt(20, 100, 5);
+    ext = randInt(100, 160, 5);
+    r2 = ext - r1;
+  } while (r2 < 20 || r2 > 120);
+  const unknownSlot = randChoice(["A", "B"]);
+  const layout =
+    unknownSlot === "A"
+      ? { angleA: r2, angleB: r1, unknown: "A", exterior: { atVertex: "C", value: ext } }
+      : { angleA: r1, angleB: r2, unknown: "B", exterior: { atVertex: "C", value: ext } };
+  return {
+    id: `ext-${r1}-${ext}`,
     theorem: 2,
-    prompt: "An exterior angle of a triangle is 120 degrees. One remote interior angle is 50 degrees. What is the other one, x?",
-    answer: 70,
-    layout: { angleA: 50, angleB: 70, unknown: "B", exterior: { atVertex: "C", value: 120 } },
-  },
-  {
-    id: "q4",
-    theorem: 2,
-    prompt: "An exterior angle of a triangle is 100 degrees. One remote interior angle is 40 degrees. What is the other one, x?",
-    answer: 60,
-    layout: { angleA: 60, angleB: 40, unknown: "A", exterior: { atVertex: "C", value: 100 } },
-  },
-  {
-    id: "q5",
-    theorem: 1,
-    prompt: "An isosceles triangle has two equal base angles of 65 degrees each. What is the vertex angle?",
-    answer: 50,
-    layout: { angleA: 65, angleB: 65, unknown: "C", exterior: null },
-  },
-];
+    prompt: `An exterior angle of a triangle is ${ext} degrees. One remote interior angle is ${r1} degrees. What is the other one, x?`,
+    answer: r2,
+    layout,
+  };
+}
+
+function generateQuestions() {
+  return [genAngleSum(), genAngleSum(), genExterior(), genExterior(), genIsosceles()];
+}
 
 const QUESTION_SECONDS = 120;
 const HINT_COST_SECONDS = 10;
@@ -251,6 +276,9 @@ function MagiciansTriangleHousePage() {
   const inputRef = useRef(null);
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateQuestions above.
+  const [questions, setQuestions] = useState(() => generateQuestions());
   const [questionIndex, setQuestionIndex] = useState(0);
   const [hearts, setHearts] = useState(MAX_HEARTS);
   const [rescued, setRescued] = useState(0);
@@ -266,12 +294,13 @@ function MagiciansTriangleHousePage() {
   const [freedKidIds, setFreedKidIds] = useState([]);
   const [awaitingNext, setAwaitingNext] = useState(false);
 
-  const question = QUESTIONS[questionIndex];
+  const question = questions[questionIndex];
   const trappedKids = KIDS.filter((k) => !freedKidIds.includes(k.id));
 
   const startGame = () => {
     reportedRef.current = false;
     setScreen("playing");
+    setQuestions(generateQuestions());
     setQuestionIndex(0);
     setHearts(MAX_HEARTS);
     setRescued(0);
@@ -316,9 +345,9 @@ function MagiciansTriangleHousePage() {
     setHearts(newHearts);
     if (newHearts <= 0) {
       reportedRef.current = true;
-      reportFinish("loss", Math.round((rescued / QUESTIONS.length) * 100), {
+      reportFinish("loss", Math.round((rescued / questions.length) * 100), {
         correctCount: rescued,
-        totalCount: QUESTIONS.length,
+        totalCount: questions.length,
       });
       setScreen("lost");
       return;
@@ -363,13 +392,13 @@ function MagiciansTriangleHousePage() {
   }
 
   function goToNext() {
-    if (questionIndex + 1 < QUESTIONS.length) {
+    if (questionIndex + 1 < questions.length) {
       setQuestionIndex((i) => i + 1);
       setTimeLeft(QUESTION_SECONDS);
       setAwaitingNext(false);
     } else {
       reportedRef.current = true;
-      reportFinish("win", 100, { correctCount: QUESTIONS.length, totalCount: QUESTIONS.length });
+      reportFinish("win", 100, { correctCount: questions.length, totalCount: questions.length });
       setScreen("won");
       setConfetti(true);
       sounds.playVictory();
@@ -404,7 +433,7 @@ function MagiciansTriangleHousePage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">SAVED</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{rescued}/{QUESTIONS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{rescued}/{questions.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">HEARTS</div>
@@ -428,7 +457,7 @@ function MagiciansTriangleHousePage() {
       <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
         <div
           className="h-full transition-all duration-500"
-          style={{ width: `${(rescued / QUESTIONS.length) * 100}%`, background: "var(--gradient-primary)" }}
+          style={{ width: `${(rescued / questions.length) * 100}%`, background: "var(--gradient-primary)" }}
         />
       </div>
 
@@ -562,7 +591,7 @@ function MagiciansTriangleHousePage() {
               <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm rounded-3xl text-center px-6">
                 <Skull className="h-14 w-14 text-red-400" />
                 <h2 className="text-2xl font-black text-white">Out of Hearts!</h2>
-                <p className="text-sm text-slate-200">You freed {rescued} of {QUESTIONS.length} friends before running out of hearts.</p>
+                <p className="text-sm text-slate-200">You freed {rescued} of {questions.length} friends before running out of hearts.</p>
                 {weakestTheorem && (
                   <p className="max-w-xs text-xs text-amber-200">
                     Most mistakes were on <span className="font-bold">Theorem {weakestTheorem}</span> (
@@ -588,7 +617,7 @@ function MagiciansTriangleHousePage() {
           <div className="card rounded-2xl">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <div className="text-label-md text-text-muted">PUZZLE {Math.min(questionIndex + 1, QUESTIONS.length)}/{QUESTIONS.length}</div>
+                <div className="text-label-md text-text-muted">PUZZLE {Math.min(questionIndex + 1, questions.length)}/{questions.length}</div>
                 <div className="badge badge-primary mt-1">Theorem {question?.theorem ?? "-"}</div>
               </div>
               <div className={`flex items-center gap-1.5 text-sm font-bold ${timeLeft <= 30 ? "text-error animate-pulse" : "text-foreground"}`}>
@@ -603,7 +632,7 @@ function MagiciansTriangleHousePage() {
                   <p className="text-success font-semibold text-body-sm">Door opened! A friend is free!</p>
                   <button type="button" onClick={goToNext} className="btn btn-primary btn-lg w-full">
                     <ArrowRight className="h-4 w-4" />
-                    {questionIndex + 1 < QUESTIONS.length ? "Next Puzzle" : "See Results"}
+                    {questionIndex + 1 < questions.length ? "Next Puzzle" : "See Results"}
                   </button>
                 </div>
               ) : (

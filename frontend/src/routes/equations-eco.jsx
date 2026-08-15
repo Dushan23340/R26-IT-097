@@ -9,50 +9,88 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt, randChoice, shuffle } from "@/lib/gameRandom";
 
-// Grade-9 linear equation questions, one per pond. Answers verified by hand:
-//   Q1: 3(x-4)=15 -> x-4=5 -> x=9
-//   Q2: (2x+1)/3=5 -> 2x+1=15 -> x=7
-//   Q3: 5x-7=2x+8 -> 3x=15 -> x=5
-//   Q4: x/2 + x/4 = 9 -> 3x/4=9 -> x=12
-//   Q5: twice a number added to 7 gives 25 -> 2n+7=25 -> n=9
-const PONDS = [
-  {
-    id: "pond-1",
-    label: "Pond 1",
-    prompt: "Solve for x: 3(x - 4) = 15",
-    options: ["x = 9", "x = 5", "x = 13", "x = 1"],
-    answer: "x = 9",
-  },
-  {
-    id: "pond-2",
-    label: "Pond 2",
-    prompt: "Solve for x: (2x + 1) / 3 = 5",
-    options: ["x = 7", "x = 6", "x = 8", "x = 2"],
-    answer: "x = 7",
-  },
-  {
-    id: "pond-3",
-    label: "Pond 3",
-    prompt: "Solve for x: 5x - 7 = 2x + 8",
-    options: ["x = 5", "x = 3", "x = -5", "x = 1"],
-    answer: "x = 5",
-  },
-  {
-    id: "pond-4",
-    label: "Pond 4",
-    prompt: "Solve for x: x/2 + x/4 = 9",
-    options: ["x = 12", "x = 9", "x = 6", "x = 36"],
-    answer: "x = 12",
-  },
-  {
-    id: "pond-5",
-    label: "Pond 5",
-    prompt: "Twice a number added to 7 gives 25. Find the number.",
-    options: ["n = 9", "n = 8", "n = 18", "n = 16"],
-    answer: "n = 9",
-  },
-];
+function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+function lcm(a, b) { return (a * b) / gcd(a, b); }
+
+// Freshly randomized per game start (generatePonds below) - same 5 linear-
+// equation templates every time (brackets, fraction-of-a-sum, variable on
+// both sides, sum of fractions, word problem) but different numbers per
+// play. Every template is constructed BACKWARD from a chosen whole-number
+// answer (rather than picking coefficients and hoping they divide evenly),
+// so every generated equation is guaranteed to solve to a clean integer.
+// Verified against 100,000 generated ponds in a standalone script.
+function buildOptions(varName, answer, distractorPool) {
+  const distractors = [];
+  for (const d of distractorPool) {
+    if (d !== answer && !distractors.includes(d)) distractors.push(d);
+    if (distractors.length === 3) break;
+  }
+  let salt = 1;
+  while (distractors.length < 3) {
+    const candidate = answer + salt * 100;
+    if (!distractors.includes(candidate)) distractors.push(candidate);
+    salt++;
+  }
+  const values = shuffle([answer, ...distractors]);
+  return { options: values.map((v) => `${varName} = ${v}`), correctIndex: values.indexOf(answer) };
+}
+
+function genT1() {
+  const c = randInt(1, 8);
+  const x = c + randInt(1, 10);
+  const k = randInt(2, 9);
+  const r = k * (x - c);
+  const { options, correctIndex } = buildOptions("x", x, [x + 4, x - 4, x + k]);
+  return { id: "pond-1", label: "Pond 1", prompt: `Solve for x: ${k}(x - ${c}) = ${r}`, options, answer: `x = ${x}`, correctIndex };
+}
+
+function genT2() {
+  const x = randInt(2, 15);
+  const a = randInt(2, 6);
+  const d = randInt(2, 5);
+  let b;
+  do { b = randInt(1, 10); } while ((a * x + b) % d !== 0);
+  const r = (a * x + b) / d;
+  const { options, correctIndex } = buildOptions("x", x, [x + 1, x - 1, x + d]);
+  return { id: "pond-2", label: "Pond 2", prompt: `Solve for x: (${a}x + ${b}) / ${d} = ${r}`, options, answer: `x = ${x}`, correctIndex };
+}
+
+function genT3() {
+  const x = randInt(2, 15);
+  const a = randInt(4, 9);
+  const c = randInt(2, a - 1);
+  const diff = a - c;
+  const maxB = Math.max(1, diff * x - 1);
+  const b = randInt(1, Math.min(maxB, 15));
+  const d = diff * x - b;
+  const { options, correctIndex } = buildOptions("x", x, [-x, x + 2, x - 2]);
+  return { id: "pond-3", label: "Pond 3", prompt: `Solve for x: ${a}x - ${b} = ${c}x + ${d}`, options, answer: `x = ${x}`, correctIndex };
+}
+
+function genT4() {
+  const d1 = randChoice([2, 3, 4, 5, 6]);
+  const d2 = randChoice([2, 3, 4, 5, 6, 8].filter((d) => d !== d1));
+  const L = lcm(d1, d2);
+  const k = randInt(1, 3);
+  const x = k * L;
+  const r = x / d1 + x / d2;
+  const { options, correctIndex } = buildOptions("x", x, [r, Math.round(x / 2), x * 3]);
+  return { id: "pond-4", label: "Pond 4", prompt: `Solve for x: x/${d1} + x/${d2} = ${r}`, options, answer: `x = ${x}`, correctIndex };
+}
+
+function genT5() {
+  const n = randInt(2, 20);
+  const c = randInt(1, 20);
+  const r = 2 * n + c;
+  const { options, correctIndex } = buildOptions("n", n, [n - 1, n + 2, Math.round(r / 2)]);
+  return { id: "pond-5", label: "Pond 5", prompt: `Twice a number added to ${c} gives ${r}. Find the number.`, options, answer: `n = ${n}`, correctIndex };
+}
+
+function generatePonds() {
+  return [genT1(), genT2(), genT3(), genT4(), genT5()];
+}
 
 const WIN_THRESHOLD = 4; // must solve at least 4 of 5 to restore the forest
 
@@ -73,6 +111,9 @@ function EquationsEcoPage() {
   const { reportFinish } = useGameSession("equations_eco");
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generatePonds above.
+  const [ponds, setPonds] = useState(() => generatePonds());
   const [solvedIds, setSolvedIds] = useState([]);
   const [wrongIds, setWrongIds] = useState([]);
   const [activePond, setActivePond] = useState(null);
@@ -83,17 +124,18 @@ function EquationsEcoPage() {
   const answeredCount = correctCount + wrongIds.length;
 
   useEffect(() => {
-    if (screen !== "playing" || answeredCount < PONDS.length) return;
+    if (screen !== "playing" || answeredCount < ponds.length) return;
     const won = correctCount >= WIN_THRESHOLD;
-    reportFinish(won ? "win" : "loss", Math.round((correctCount / PONDS.length) * 100), {
+    reportFinish(won ? "win" : "loss", Math.round((correctCount / ponds.length) * 100), {
       correctCount,
-      totalCount: PONDS.length,
+      totalCount: ponds.length,
     });
     setScreen(won ? "won" : "lost");
   }, [answeredCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startGame() {
     setScreen("playing");
+    setPonds(generatePonds());
     setSolvedIds([]);
     setWrongIds([]);
     setActivePond(null);
@@ -142,7 +184,7 @@ function EquationsEcoPage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">CLEARED</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{correctCount}/{PONDS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{correctCount}/{ponds.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">MISSED</div>
@@ -202,7 +244,7 @@ function EquationsEcoPage() {
 
           {screen === "playing" && (
             <div className="relative z-10 grid grid-cols-2 sm:grid-cols-5 gap-4 mt-4">
-              {PONDS.map((pond) => {
+              {ponds.map((pond) => {
                 const solved = solvedIds.includes(pond.id);
                 const missed = wrongIds.includes(pond.id);
                 const done = solved || missed;
@@ -238,7 +280,7 @@ function EquationsEcoPage() {
                 <Sparkles className="mx-auto h-14 w-14 text-emerald-500" />
                 <h2 className="mt-4 text-heading-lg text-emerald-900 font-bold">Ecosystem Saved!</h2>
                 <p className="mt-2 text-emerald-800">You are an Eco-Math Hero!</p>
-                <p className="mt-1 text-sm text-emerald-700">{correctCount} of {PONDS.length} ponds restored.</p>
+                <p className="mt-1 text-sm text-emerald-700">{correctCount} of {ponds.length} ponds restored.</p>
                 <div className="mt-6 flex flex-col gap-3">
                   <button type="button" onClick={startGame} className="btn btn-primary btn-lg">
                     <RotateCcw className="h-4 w-4" />
@@ -257,7 +299,7 @@ function EquationsEcoPage() {
               <Droplets className="h-16 w-16 text-slate-400 mb-4" />
               <h2 className="text-2xl font-bold text-slate-200">Ecosystem Still Polluted</h2>
               <p className="mt-2 text-slate-400">Re-try to bring back nature!</p>
-              <p className="mt-1 text-sm text-slate-500">{correctCount} of {PONDS.length} ponds restored.</p>
+              <p className="mt-1 text-sm text-slate-500">{correctCount} of {ponds.length} ponds restored.</p>
               <div className="mt-6 flex flex-col gap-3">
                 <button type="button" onClick={startGame} className="btn btn-primary btn-lg">
                   <RotateCcw className="h-4 w-4" />

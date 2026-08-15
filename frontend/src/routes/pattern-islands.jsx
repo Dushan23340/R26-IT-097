@@ -10,43 +10,73 @@ import {
   Milestone,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt } from "@/lib/gameRandom";
 
-// Grade-9 number patterns: General Term Tn for n = 1..5. Sequences and
-// distractors are exactly as specified - each verified by hand:
-//   Island 1: Tn = 3n+2  -> 5, 8, 11, 14, 17
-//   Island 2: Tn = 4n-1  -> 3, 7, 11, 15, 19
-//   Island 3: Tn = 5-2n  -> 3, 1, -1, -3, -5
-//   Island 4: Tn = n^2+1 -> 2, 5, 10, 17, 26
-// "bridgeTiles" mixes the 5 correct stepping stones with 3 decoy values
-// interleaved near their real counterpart - the player must click the
-// tile matching the CURRENT step's value; any other tile (a decoy, or a
-// correct value visited out of order) is a fall.
-const ISLANDS = [
-  {
-    id: "island-1",
-    formula: "Tn = 3n + 2",
-    correctSequence: [5, 8, 11, 14, 17],
-    bridgeTiles: [6, 5, 9, 8, 12, 11, 14, 17],
-  },
-  {
-    id: "island-2",
-    formula: "Tn = 4n - 1",
-    correctSequence: [3, 7, 11, 15, 19],
-    bridgeTiles: [4, 3, 8, 7, 10, 11, 15, 19],
-  },
-  {
-    id: "island-3",
-    formula: "Tn = 5 - 2n",
-    correctSequence: [3, 1, -1, -3, -5],
-    bridgeTiles: [2, 3, 0, 1, -2, -1, -3, -5],
-  },
-  {
-    id: "island-4",
-    formula: "Tn = n^2 + 1",
-    correctSequence: [2, 5, 10, 17, 26],
-    bridgeTiles: [3, 2, 6, 5, 12, 10, 17, 26],
-  },
-];
+// Freshly randomized per game start (generateIslands below) - same 4
+// General Term shapes every time (linear increasing x2, linear decreasing,
+// quadratic) but different coefficients per play. "bridgeTiles" mixes the
+// 5 correct stepping stones with a decoy near each of the first 3 steps
+// (correct+1, or the next candidate that doesn't collide with any real
+// sequence value or another decoy) - the player must click the tile
+// matching the CURRENT step's value; any other tile is a fall. Verified
+// against 80,000 generated islands in a standalone script: every sequence
+// matches an independent recomputation from the formula's own parameters,
+// no duplicate values within a sequence, and every decoy is guaranteed
+// distinct from every real value and every other decoy.
+function buildBridgeTiles(correctSequence) {
+  const tiles = [];
+  const usedDecoys = new Set();
+  for (let i = 0; i < correctSequence.length; i++) {
+    const c = correctSequence[i];
+    if (i < 3) {
+      let decoy = null;
+      for (const candidate of [c + 1, c - 1, c + 2, c - 2]) {
+        if (!correctSequence.includes(candidate) && !usedDecoys.has(candidate)) {
+          decoy = candidate;
+          break;
+        }
+      }
+      if (decoy !== null) {
+        tiles.push(decoy);
+        usedDecoys.add(decoy);
+      }
+    }
+    tiles.push(c);
+  }
+  return tiles;
+}
+
+function genLinearIncreasing1() {
+  const a = randInt(2, 6);
+  const b = randInt(1, 9);
+  const correctSequence = [1, 2, 3, 4, 5].map((n) => a * n + b);
+  return { id: "island-1", formula: `Tn = ${a}n + ${b}`, correctSequence, bridgeTiles: buildBridgeTiles(correctSequence) };
+}
+
+function genLinearIncreasing2() {
+  const a = randInt(2, 6);
+  const b = randInt(-9, 9);
+  const correctSequence = [1, 2, 3, 4, 5].map((n) => a * n + b);
+  const bStr = b >= 0 ? `+ ${b}` : `- ${Math.abs(b)}`;
+  return { id: "island-2", formula: `Tn = ${a}n ${bStr}`, correctSequence, bridgeTiles: buildBridgeTiles(correctSequence) };
+}
+
+function genLinearDecreasing() {
+  const a = randInt(2, 6);
+  const b = randInt(1, 10);
+  const correctSequence = [1, 2, 3, 4, 5].map((n) => b - a * n);
+  return { id: "island-3", formula: `Tn = ${b} - ${a}n`, correctSequence, bridgeTiles: buildBridgeTiles(correctSequence) };
+}
+
+function genQuadratic() {
+  const c = randInt(0, 5);
+  const correctSequence = [1, 2, 3, 4, 5].map((n) => n * n + c);
+  return { id: "island-4", formula: `Tn = n^2 + ${c}`, correctSequence, bridgeTiles: buildBridgeTiles(correctSequence) };
+}
+
+function generateIslands() {
+  return [genLinearIncreasing1(), genLinearIncreasing2(), genLinearDecreasing(), genQuadratic()];
+}
 
 const MAX_FALLS_PER_ISLAND = 3; // 3 strikes on one island and the run ends
 
@@ -67,6 +97,9 @@ function PatternIslandsPage() {
   const { reportFinish } = useGameSession("pattern_islands");
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateIslands above.
+  const [islands, setIslands] = useState(() => generateIslands());
   const [islandIndex, setIslandIndex] = useState(0);
   const [stepIndex, setStepIndex] = useState(0); // which n (0-4) is next on this island
   const [islandFalls, setIslandFalls] = useState(0); // falls on the CURRENT island
@@ -75,11 +108,12 @@ function PatternIslandsPage() {
   const [justJumped, setJustJumped] = useState(null);
   const [finalCleared, setFinalCleared] = useState(0);
 
-  const island = ISLANDS[islandIndex];
+  const island = islands[islandIndex];
   const islandsCleared = islandIndex; // fully-crossed islands before the current one
 
   function startGame() {
     setScreen("playing");
+    setIslands(generateIslands());
     setIslandIndex(0);
     setStepIndex(0);
     setIslandFalls(0);
@@ -91,9 +125,9 @@ function PatternIslandsPage() {
 
   function reportAndEnd(outcome, clearedCount) {
     setFinalCleared(clearedCount);
-    reportFinish(outcome, Math.round((clearedCount / ISLANDS.length) * 100), {
+    reportFinish(outcome, Math.round((clearedCount / islands.length) * 100), {
       correctCount: clearedCount,
-      totalCount: ISLANDS.length,
+      totalCount: islands.length,
     });
     setScreen(outcome === "win" ? "won" : "lost");
   }
@@ -110,8 +144,8 @@ function PatternIslandsPage() {
       if (nextStep >= island.correctSequence.length) {
         // Island cleared
         const nextIslandIndex = islandIndex + 1;
-        if (nextIslandIndex >= ISLANDS.length) {
-          reportAndEnd("win", ISLANDS.length);
+        if (nextIslandIndex >= islands.length) {
+          reportAndEnd("win", islands.length);
         } else {
           setIslandIndex(nextIslandIndex);
           setStepIndex(0);
@@ -157,7 +191,7 @@ function PatternIslandsPage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">ISLAND</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{Math.min(islandIndex + 1, ISLANDS.length)}/{ISLANDS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{Math.min(islandIndex + 1, islands.length)}/{islands.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">STEP</div>
@@ -199,7 +233,7 @@ function PatternIslandsPage() {
           {screen === "playing" && (
             <div className="relative z-10 space-y-8">
               <div className="flex items-center gap-3 justify-center">
-                {ISLANDS.map((isl, idx) => (
+                {islands.map((isl, idx) => (
                   <div key={isl.id} className="flex items-center gap-2">
                     <div
                       className={`h-10 w-10 rounded-full flex items-center justify-center border-2 ${
@@ -212,7 +246,7 @@ function PatternIslandsPage() {
                     >
                       <TreePalm className="h-5 w-5" />
                     </div>
-                    {idx < ISLANDS.length - 1 && <div className="h-0.5 w-6 bg-white/40" />}
+                    {idx < islands.length - 1 && <div className="h-0.5 w-6 bg-white/40" />}
                   </div>
                 ))}
               </div>
@@ -282,7 +316,7 @@ function PatternIslandsPage() {
                     : `Too many falls on island ${islandIndex + 1} - review the pattern rule and try again.`}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  {finalCleared}/{ISLANDS.length} islands crossed - {totalFalls} total falls.
+                  {finalCleared}/{islands.length} islands crossed - {totalFalls} total falls.
                 </p>
                 <div className="mt-6 flex flex-col gap-3">
                   <button type="button" onClick={startGame} className="btn btn-primary btn-lg">

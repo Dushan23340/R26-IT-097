@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Live Emotion Detection Viewer</title>
+<style>
+  body {
+    background: #14161a;
+    color: #e6e8eb;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  h1 {
+    font-size: 18px;
+    font-weight: 600;
+    margin: 0 0 4px;
+  }
+  .sub {
+    color: #8a8f98;
+    font-size: 13px;
+    margin: 0 0 20px;
+  }
+  .sub input {
+    background: #1e2126;
+    border: 1px solid #33373f;
+    color: #e6e8eb;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-family: ui-monospace, monospace;
+    font-size: 12px;
+    width: 220px;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 16px;
+  }
+  .card {
+    background: #1a1d22;
+    border: 1px solid #2a2e35;
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  .card img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    display: block;
+    background: #000;
+  }
+  .card .placeholder {
+    width: 100%;
+    aspect-ratio: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #55595f;
+    font-size: 13px;
+  }
+  .card .body {
+    padding: 10px 12px;
+  }
+  .row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    margin-bottom: 4px;
+  }
+  .label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #8a8f98;
+  }
+  .value {
+    font-family: ui-monospace, monospace;
+    font-size: 13px;
+  }
+  .value.ok { color: #6fcf97; }
+  .value.bad { color: #eb5757; }
+  .ts {
+    font-size: 11px;
+    color: #55595f;
+    margin-top: 6px;
+    font-family: ui-monospace, monospace;
+  }
+  .empty {
+    color: #55595f;
+    font-size: 13px;
+    padding: 40px 0;
+    text-align: center;
+  }
+  .stale {
+    opacity: 0.4;
+  }
+</style>
+</head>
+<body>
+  <h1>Live Emotion Detection Viewer</h1>
+  <p class="sub">
+    emotion-service base URL:
+    <input id="baseUrl" value="http://127.0.0.1:5002" />
+    &nbsp;&middot;&nbsp; polling every 1s &middot; frames older than 8s are dimmed
+  </p>
+  <div id="grid" class="grid">
+    <div class="empty">Waiting for the first frame&hellip;</div>
+  </div>
+
+<script>
+  const grid = document.getElementById("grid");
+  const baseUrlInput = document.getElementById("baseUrl");
+
+  function fmtAge(iso) {
+    const ageMs = Date.now() - new Date(iso + "Z").getTime();
+    return (ageMs / 1000).toFixed(1) + "s ago";
+  }
+
+  function render(students) {
+    const ids = Object.keys(students);
+    if (ids.length === 0) {
+      grid.innerHTML = '<div class="empty">No frames processed yet - start a real session.</div>';
+      return;
+    }
+    grid.innerHTML = "";
+    for (const id of ids) {
+      const s = students[id];
+      const ageMs = Date.now() - new Date(s.timestamp + "Z").getTime();
+      const card = document.createElement("div");
+      card.className = "card" + (ageMs > 8000 ? " stale" : "");
+
+      const img = s.image_b64
+        ? `<img src="data:image/jpeg;base64,${s.image_b64}" />`
+        : `<div class="placeholder">no image</div>`;
+
+      const faceOk = s.faceDetected === true;
+      const rows = [];
+      rows.push(["Student", id]);
+      rows.push([
+        "Face",
+        faceOk ? "Detected" : (s.invalidReason || "Not detected"),
+        faceOk ? "ok" : "bad",
+      ]);
+      if (faceOk) {
+        rows.push(["Raw label", `${s.rawEmotion} (${s.confidence})`]);
+        rows.push(["Student state", s.studentState || "-"]);
+        rows.push(["Smoothed", s.smoothedState || "-"]);
+      }
+
+      card.innerHTML = `
+        ${img}
+        <div class="body">
+          ${rows.map(([label, value, cls]) => `
+            <div class="row">
+              <span class="label">${label}</span>
+              <span class="value ${cls || ""}">${value}</span>
+            </div>
+          `).join("")}
+          <div class="ts">${fmtAge(s.timestamp)}</div>
+        </div>
+      `;
+      grid.appendChild(card);
+    }
+  }
+
+  async function poll() {
+    try {
+      const res = await fetch(`${baseUrlInput.value.replace(/\/$/, "")}/live`);
+      const data = await res.json();
+      render(data.students || {});
+    } catch (e) {
+      grid.innerHTML = `<div class="empty">Can't reach ${baseUrlInput.value} - is emotion-service running?</div>`;
+    }
+  }
+
+  poll();
+  setInterval(poll, 1000);
+</script>
+</body>
+</html>

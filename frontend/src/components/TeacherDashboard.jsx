@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
 import {
@@ -35,6 +35,17 @@ import {
   ShieldAlert
 } from "lucide-react";
 import { EMOTIONS, toEmotionKey } from "@/lib/emotions";
+
+// Distinct roster-card indicators for a rejected (invalid) frame - see
+// flask_api.py's REASON_LABELS / student_state.py's FaceValidityError.
+// Deliberately separate from EMOTIONS: these aren't emotions, they're reasons
+// no emotion could be read this frame, and showing the last valid emoji here
+// would misrepresent what the camera currently sees.
+const INVALID_REASON_DISPLAY = {
+  no_face_detected: { emoji: "\u{1F4F7}", label: "No Face Detected", color: "var(--muted-foreground)" },
+  no_landmarks: { emoji: "\u{1F648}", label: "Face Occluded", color: "var(--muted-foreground)" },
+  looking_away: { emoji: "\u{1F440}", label: "Looking Away", color: "var(--muted-foreground)" },
+};
 import { useAuth } from "@/lib/auth";
 import { emotionApi } from "@/lib/emotionApi";
 import { adaptiveApiService } from "@/lib/adaptiveApi";
@@ -64,6 +75,11 @@ function TeacherDashboard() {
   // fetching lessons twice).
   const [allLessons, setAllLessons] = useState([]);
   const [selectedLessonId, setSelectedLessonId] = useState("");
+  // Alert ids already surfaced as a toast this session - so a still-active
+  // alert (e.g. pattern.detected staying true across many 5s polls) fires
+  // once, not on every poll. Cleared per-id once that alert stops being
+  // active, so it can toast again if the same condition recurs later.
+  const seenAlertIds = useRef(new Set());
 
   useEffect(() => {
     adaptiveApiService
@@ -721,6 +737,10 @@ function TeacherDashboard() {
       emotion: live ? toEmotionKey(live.currentEmotion) : null,
       status: lastSeenSecondsAgo < 15 ? "active" : "inactive",
       engagementScore: live?.engagementIndicators?.engagementScore ?? null,
+      // faceDetected defaults true when there's no live entry yet at all
+      // (distinct "waiting for camera" case, not an invalid-frame case).
+      faceDetected: live ? live.faceDetected !== false : true,
+      invalidReason: live?.invalidReason ?? null,
     };
   });
   // Real, derived attention-drop alerts (replaces the old hardcoded mock
@@ -783,6 +803,41 @@ function TeacherDashboard() {
       time: "Analytics",
     });
   }
+
+  // Proactive notification for attention drops - previously alerts only
+  // ever showed up as a passive red dot on the bell icon, so a teacher
+  // mid-lesson could easily miss that the class had gone quiet. Fires a
+  // toast the moment a NEW alert appears (tracked by id in seenAlertIds,
+  // not on every 5s poll while it's still active), so it interrupts once
+  // per real event rather than nagging repeatedly for the same condition.
+  const alertIdsKey = alerts.map((alert) => alert.id).sort().join(",");
+  useEffect(() => {
+    for (const alert of alerts) {
+      if (seenAlertIds.current.has(alert.id)) continue;
+      seenAlertIds.current.add(alert.id);
+
+      if (alert.id === "pattern") {
+        toast.warning(alert.message, {
+          duration: 10000,
+          action: {
+            label: "Recommend a game",
+            onClick: () => handleGenerateRecommendation(),
+          },
+        });
+      } else if (alert.type === "danger") {
+        toast.warning(alert.message, { duration: 8000 });
+      }
+      // info/warning-only alerts besides "pattern" stay in the bell panel
+      // only - not every one needs to interrupt the lesson with a toast.
+    }
+
+    const activeIds = new Set(alerts.map((alert) => alert.id));
+    for (const id of Array.from(seenAlertIds.current)) {
+      if (!activeIds.has(id)) seenAlertIds.current.delete(id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [alertIdsKey]);
+
   const smartSuggestions = [
     {
       id: "1",
@@ -1185,7 +1240,14 @@ function TeacherDashboard() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3">
             {students.map((student) => {
-    const e = EMOTIONS[student.emotion] || { emoji: "\u{1F4F7}", label: "Waiting for camera", color: "var(--muted-foreground)" };
+    // A rejected frame (occluded/turned away) still carries a stale
+    // `student.emotion` from the last valid read - showing that emoji would
+    // misrepresent what the camera is currently seeing, so it's overridden
+    // with a distinct indicator whenever the backend flagged this frame invalid.
+    const invalidDisplay = !student.faceDetected
+      ? INVALID_REASON_DISPLAY[student.invalidReason] || INVALID_REASON_DISPLAY.no_face_detected
+      : null;
+    const e = invalidDisplay || EMOTIONS[student.emotion] || { emoji: "\u{1F4F7}", label: "Waiting for camera", color: "var(--muted-foreground)" };
     return <div
       key={student.id}
       className={`p-3 rounded-xl border transition-all hover:scale-105 ${student.status === "inactive" ? "opacity-50" : ""}`}

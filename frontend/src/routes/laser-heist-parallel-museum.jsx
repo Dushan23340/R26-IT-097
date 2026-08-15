@@ -14,6 +14,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt, randChoice } from "@/lib/gameRandom";
 
 // Grade-9 parallel-line angle properties. Every diagram is driven by ONE
 // "controlling angle" A: with two true parallel lines cut by a
@@ -21,60 +22,89 @@ import { useGameSession } from "@/hooks/useGameSession";
 // repeating in a fixed pattern across the 8 angles formed - a real
 // trigonometric identity, verified with concrete coordinates before this
 // was written (see the geometry note in computeParallelDiagram below).
-// Each room's `given`/`unknown` positions and `controllingAngle` were
-// derived and checked against that verified map, not guessed.
-const ROOMS = [
-  {
-    id: "r1",
-    concept: "Corresponding Angles",
-    prompt: "The two red laser lines are parallel. The marked angle is 65 degrees. Find the corresponding angle on the lower laser line.",
-    answer: 65,
-    controllingAngle: 115,
-    given: { vertex: "P", position: "right_up", value: 65 },
-    unknown: { vertex: "Q", position: "right_up" },
+//
+// Freshly randomized per game start (generateRooms below) - same 5
+// concepts every time (corresponding, alternate, co-interior, straight
+// line, corresponding again) but a different controllingAngle and
+// given/unknown position pairing per play. angleAt(position, CA) encodes
+// the fixed position -> value pattern (right_down/left_up = CA,
+// left_down/right_up = 180-CA) - independently verified against the
+// ACTUAL computeParallelDiagram geometry (angle-between on the true
+// boundary rays, not just the bisector shortcut) for every controlling
+// angle 10-170 and both vertices before being trusted here, then all
+// 100,000 generated rooms were checked against that same ground truth.
+function angleAt(position, controllingAngle) {
+  return position === "right_down" || position === "left_up" ? controllingAngle : 180 - controllingAngle;
+}
+
+function genCorresponding() {
+  const controllingAngle = randInt(20, 160);
+  const position = randChoice(["right_down", "left_down", "left_up", "right_up"]);
+  const value = angleAt(position, controllingAngle);
+  return {
+    id: "r1", concept: "Corresponding Angles", controllingAngle,
+    prompt: `The two red laser lines are parallel. The marked angle is ${value} degrees. Find the corresponding angle on the lower laser line.`,
+    given: { vertex: "P", position, value }, unknown: { vertex: "Q", position }, answer: value,
     hint: "Corresponding angles are in the same position at each intersection - they are always equal when the lines are parallel.",
-  },
-  {
-    id: "r2",
-    concept: "Alternate Angles",
-    prompt: "The two laser lines are parallel. The marked angle is 110 degrees. Find the alternate interior angle on the other side of the transversal.",
-    answer: 110,
-    controllingAngle: 110,
-    given: { vertex: "P", position: "right_down", value: 110 },
-    unknown: { vertex: "Q", position: "left_up" },
+  };
+}
+
+function genAlternate() {
+  const controllingAngle = randInt(20, 160);
+  const [givenPos, unknownPos] = randChoice([["right_down", "left_up"], ["left_down", "right_up"]]);
+  const value = angleAt(givenPos, controllingAngle);
+  const answer = angleAt(unknownPos, controllingAngle);
+  return {
+    id: "r2", concept: "Alternate Angles", controllingAngle,
+    prompt: `The two laser lines are parallel. The marked angle is ${value} degrees. Find the alternate interior angle on the other side of the transversal.`,
+    given: { vertex: "P", position: givenPos, value }, unknown: { vertex: "Q", position: unknownPos }, answer,
     hint: "Alternate angles sit between the parallel lines, on opposite sides of the transversal (a Z-shape) - they are always equal.",
-  },
-  {
-    id: "r3",
-    concept: "Co-Interior Angles",
-    prompt: "The two laser lines are parallel. The marked angle is 72 degrees. Find the co-interior angle on the same side of the transversal.",
-    answer: 108,
-    controllingAngle: 72,
-    given: { vertex: "P", position: "right_down", value: 72 },
-    unknown: { vertex: "Q", position: "right_up" },
+  };
+}
+
+function genCoInterior() {
+  const controllingAngle = randInt(20, 160);
+  const [givenPos, unknownPos] = randChoice([["right_down", "right_up"], ["left_down", "left_up"]]);
+  const value = angleAt(givenPos, controllingAngle);
+  const answer = angleAt(unknownPos, controllingAngle);
+  return {
+    id: "r3", concept: "Co-Interior Angles", controllingAngle,
+    prompt: `The two laser lines are parallel. The marked angle is ${value} degrees. Find the co-interior angle on the same side of the transversal.`,
+    given: { vertex: "P", position: givenPos, value }, unknown: { vertex: "Q", position: unknownPos }, answer,
     hint: "Co-interior angles sit between the parallel lines, on the same side of the transversal (a C-shape) - they always add up to 180 degrees.",
-  },
-  {
-    id: "r4",
-    concept: "Straight Line",
-    prompt: "The transversal crosses the upper laser line. One angle is 134 degrees. Find the other angle on that same straight line.",
-    answer: 46,
-    controllingAngle: 134,
-    given: { vertex: "P", position: "right_down", value: 134 },
-    unknown: { vertex: "P", position: "left_down" },
+  };
+}
+
+function genStraightLine() {
+  const controllingAngle = randInt(20, 160);
+  const vertex = randChoice(["P", "Q"]);
+  const [givenPos, unknownPos] = randChoice([["right_down", "left_down"], ["right_up", "left_up"]]);
+  const value = angleAt(givenPos, controllingAngle);
+  const answer = angleAt(unknownPos, controllingAngle);
+  const lineLabel = vertex === "P" ? "upper" : "lower";
+  return {
+    id: "r4", concept: "Straight Line", controllingAngle,
+    prompt: `The transversal crosses the ${lineLabel} laser line. One angle is ${value} degrees. Find the other angle on that same straight line.`,
+    given: { vertex, position: givenPos, value }, unknown: { vertex, position: unknownPos }, answer,
     hint: "Angles on a straight line always add up to 180 degrees.",
-  },
-  {
-    id: "r5",
-    concept: "Vertically Opposite + Corresponding",
-    prompt: "At the lower intersection, a vertically opposite angle measures 55 degrees. Find the corresponding angle on the upper laser line.",
-    answer: 55,
-    controllingAngle: 55,
-    given: { vertex: "Q", position: "left_up", value: 55 },
-    unknown: { vertex: "P", position: "left_up" },
+  };
+}
+
+function genVerticalCorresponding() {
+  const controllingAngle = randInt(20, 160);
+  const position = randChoice(["right_down", "left_down", "left_up", "right_up"]);
+  const value = angleAt(position, controllingAngle);
+  return {
+    id: "r5", concept: "Vertically Opposite + Corresponding", controllingAngle,
+    prompt: `At the lower intersection, an angle measures ${value} degrees. Find the corresponding angle on the upper laser line.`,
+    given: { vertex: "Q", position, value }, unknown: { vertex: "P", position }, answer: value,
     hint: "First recall vertically opposite angles are equal, then use that corresponding angles across parallel lines are also equal.",
-  },
-];
+  };
+}
+
+function generateRooms() {
+  return [genCorresponding(), genAlternate(), genCoInterior(), genStraightLine(), genVerticalCorresponding()];
+}
 
 const ROOM_SECONDS = 40;
 const HINT_COST_SECONDS = 10;
@@ -263,6 +293,9 @@ function LaserHeistPage() {
   const inputRef = useRef(null);
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateRooms above.
+  const [rooms, setRooms] = useState(() => generateRooms());
   const [roomIndex, setRoomIndex] = useState(0);
   const [shields, setShields] = useState(MAX_SHIELDS);
   const [recovered, setRecovered] = useState(0);
@@ -278,11 +311,12 @@ function LaserHeistPage() {
   const [awaitingNext, setAwaitingNext] = useState(false);
   const [alarmFlash, setAlarmFlash] = useState(false);
 
-  const room = ROOMS[roomIndex];
+  const room = rooms[roomIndex];
 
   const startGame = () => {
     reportedRef.current = false;
     setScreen("playing");
+    setRooms(generateRooms());
     setRoomIndex(0);
     setShields(MAX_SHIELDS);
     setRecovered(0);
@@ -325,9 +359,9 @@ function LaserHeistPage() {
     window.setTimeout(() => setAlarmFlash(false), 400);
     if (newShields <= 0) {
       reportedRef.current = true;
-      reportFinish("loss", Math.round((recovered / ROOMS.length) * 100), {
+      reportFinish("loss", Math.round((recovered / rooms.length) * 100), {
         correctCount: recovered,
-        totalCount: ROOMS.length,
+        totalCount: rooms.length,
       });
       setScreen("lost");
       return;
@@ -366,13 +400,13 @@ function LaserHeistPage() {
   }
 
   function goToNext() {
-    if (roomIndex + 1 < ROOMS.length) {
+    if (roomIndex + 1 < rooms.length) {
       setRoomIndex((i) => i + 1);
       setTimeLeft(ROOM_SECONDS);
       setAwaitingNext(false);
     } else {
       reportedRef.current = true;
-      reportFinish("win", 100, { correctCount: ROOMS.length, totalCount: ROOMS.length });
+      reportFinish("win", 100, { correctCount: rooms.length, totalCount: rooms.length });
       setScreen("won");
       setConfetti(true);
       sounds.playVictory();
@@ -403,7 +437,7 @@ function LaserHeistPage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">RECOVERED</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{recovered}/{ROOMS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{recovered}/{rooms.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">SHIELDS</div>
@@ -427,7 +461,7 @@ function LaserHeistPage() {
       <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
         <div
           className="h-full transition-all duration-500"
-          style={{ width: `${(recovered / ROOMS.length) * 100}%`, background: "linear-gradient(90deg,#f87171,#34d399)" }}
+          style={{ width: `${(recovered / rooms.length) * 100}%`, background: "linear-gradient(90deg,#f87171,#34d399)" }}
         />
       </div>
 
@@ -438,7 +472,7 @@ function LaserHeistPage() {
 
             {/* Museum map - 5 rooms, lights up as gems are recovered */}
             <div className="relative z-10 mx-auto flex justify-center gap-2 mb-4">
-              {ROOMS.map((r, idx) => {
+              {rooms.map((r, idx) => {
                 const isDone = idx < roomIndex || (idx === roomIndex && laserState === "off");
                 const isCurrent = idx === roomIndex && screen === "playing";
                 return (
@@ -525,7 +559,7 @@ function LaserHeistPage() {
                 <PartyPopper className="h-14 w-14 text-amber-300 animate-bounce" />
                 <h2 className="text-2xl font-black text-white">Heist Stopped! Museum Safe!</h2>
                 <div className="flex gap-1 text-2xl">
-                  {ROOMS.map((r, i) => (
+                  {rooms.map((r, i) => (
                     <span key={r.id} className="animate-bounce" style={{ animationDelay: `${i * 0.1}s` }}>{"\u{1F48E}"}</span>
                   ))}
                 </div>
@@ -541,7 +575,7 @@ function LaserHeistPage() {
               <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm rounded-3xl text-center px-6">
                 <Skull className="h-14 w-14 text-red-400" />
                 <h2 className="text-2xl font-black text-white">Alarm Triggered!</h2>
-                <p className="text-sm text-slate-200">You recovered {recovered} of {ROOMS.length} gems before running out of shields.</p>
+                <p className="text-sm text-slate-200">You recovered {recovered} of {rooms.length} gems before running out of shields.</p>
                 {weakestConcept && (
                   <p className="max-w-xs text-xs text-amber-200">
                     Most mistakes were on <span className="font-bold">{weakestConcept}</span> - worth practicing that one more.
@@ -566,7 +600,7 @@ function LaserHeistPage() {
           <div className="card rounded-2xl">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <div className="text-label-md text-text-muted">ROOM {Math.min(roomIndex + 1, ROOMS.length)}/{ROOMS.length}</div>
+                <div className="text-label-md text-text-muted">ROOM {Math.min(roomIndex + 1, rooms.length)}/{rooms.length}</div>
                 <div className="badge badge-primary mt-1">{room?.concept ?? "-"}</div>
               </div>
               <div className={`flex items-center gap-1.5 text-sm font-bold ${timeLeft <= 12 ? "text-error animate-pulse" : "text-foreground"}`}>
@@ -581,7 +615,7 @@ function LaserHeistPage() {
                   <p className="text-success font-semibold text-body-sm">Laser disabled! Gem recovered!</p>
                   <button type="button" onClick={goToNext} className="btn btn-primary btn-lg w-full">
                     <ArrowRight className="h-4 w-4" />
-                    {roomIndex + 1 < ROOMS.length ? "Next Room" : "See Results"}
+                    {roomIndex + 1 < rooms.length ? "Next Room" : "See Results"}
                   </button>
                 </div>
               ) : (

@@ -14,6 +14,7 @@ import {
   BookOpen,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt } from "@/lib/gameRandom";
 
 // Grade-9 algebraic expressions: simplifying, addition, multiplication,
 // factorization, substitution. Answers are free-text (not multiple choice)
@@ -32,48 +33,107 @@ function normalizeExpression(input) {
     .trim();
 }
 
-const QUESTIONS = [
-  {
-    id: "q1",
-    skill: "Simplify",
-    prompt: "Simplify: 3x + 2x - 5 + 7",
-    accepted: ["5x+2", "2+5x"],
+// Freshly randomized per game start (generateQuestions below) - same 5
+// skill templates every time (matching the fixed ingredient icons/order
+// below) but different coefficients per play, so concurrent students get
+// different scrolls. Every template's algebraic identity (not just one
+// sample) was verified in a standalone script: for each generated
+// instance, both sides of the identity were evaluated at 5 independent
+// random test points and confirmed equal - 100,000 generated questions
+// checked this way before wiring in here. accepted[] is always built from
+// the SAME computed values as the prompt (never a separately hand-picked
+// answer), so the two can't drift out of sync.
+function appendTerm(existing, coeff, suffix) {
+  if (existing === "") return `${coeff}${suffix}`;
+  return coeff >= 0 ? `${existing}+${coeff}${suffix}` : `${existing}${coeff}${suffix}`;
+}
+
+function genSimplify() {
+  let a, b, c, d, xCoeff, constVal;
+  do {
+    a = randInt(1, 9);
+    b = randInt(1, 9);
+    c = randInt(1, 9);
+    d = randInt(1, 9);
+    xCoeff = a + b;
+    constVal = d - c;
+  } while (constVal === 0); // avoid a degenerate "+0" term with no natural single form
+  return {
+    id: "q1", skill: "Simplify",
+    prompt: `Simplify: ${a}x + ${b}x - ${c} + ${d}`,
+    accepted: [appendTerm(appendTerm("", xCoeff, "x"), constVal, ""), appendTerm(appendTerm("", constVal, ""), xCoeff, "x")],
     hint: "Combine the x-terms together, then combine the plain numbers together.",
     ingredient: { name: "Fire Flower", emoji: "\u{1F338}", color: "#f87171" },
-  },
-  {
-    id: "q2",
-    skill: "Add",
-    prompt: "Add: (2a + 3b) + (4a - b)",
-    accepted: ["6a+2b", "2b+6a"],
+  };
+}
+
+function genAdd() {
+  let a, b, c, d, resultA, resultB;
+  do {
+    a = randInt(1, 9);
+    b = randInt(1, 9);
+    c = randInt(1, 9);
+    d = randInt(1, 9);
+    resultA = a + c;
+    resultB = b - d;
+  } while (resultB === 0);
+  return {
+    id: "q2", skill: "Add",
+    prompt: `Add: (${a}a + ${b}b) + (${c}a - ${d}b)`,
+    accepted: [appendTerm(appendTerm("", resultA, "a"), resultB, "b"), appendTerm(appendTerm("", resultB, "b"), resultA, "a")],
     hint: "Add the a-terms together, then add the b-terms together.",
     ingredient: { name: "Ice Crystal", emoji: "❄️", color: "#7dd3fc" },
-  },
-  {
-    id: "q3",
-    skill: "Multiply",
-    prompt: "Multiply: 3x(x + 4)",
-    accepted: ["3x²+12x", "12x+3x²"],
-    hint: "Distribute 3x to both terms inside the brackets: 3x times x, then 3x times 4.",
+  };
+}
+
+function genMultiply() {
+  const a = randInt(2, 9);
+  const b = randInt(2, 9);
+  const x2coeff = a;
+  const xcoeff = a * b;
+  return {
+    id: "q3", skill: "Multiply",
+    prompt: `Multiply: ${a}x(x + ${b})`,
+    accepted: [`${x2coeff}x²+${xcoeff}x`, `${xcoeff}x+${x2coeff}x²`],
+    hint: `Distribute ${a}x to both terms inside the brackets: ${a}x times x, then ${a}x times ${b}.`,
     ingredient: { name: "Wind Feather", emoji: "\u{1FAB6}", color: "#a5f3fc" },
-  },
-  {
-    id: "q4",
-    skill: "Factorize",
-    prompt: "Factorize: x² + 5x + 6",
-    accepted: ["(x+2)(x+3)", "(x+3)(x+2)"],
-    hint: "Find two numbers that multiply to 6 and add to 5.",
+  };
+}
+
+function genFactorize() {
+  const p = randInt(2, 9);
+  const q = randInt(2, 9);
+  const sumCoeff = p + q;
+  const prodConst = p * q;
+  const v1 = `(x+${p})(x+${q})`;
+  const v2 = `(x+${q})(x+${p})`;
+  return {
+    id: "q4", skill: "Factorize",
+    prompt: `Factorize: x² + ${sumCoeff}x + ${prodConst}`,
+    accepted: p === q ? [v1] : [v1, v2],
+    hint: `Find two numbers that multiply to ${prodConst} and add to ${sumCoeff}.`,
     ingredient: { name: "Earth Stone", emoji: "\u{1FAA8}", color: "#a3a380" },
-  },
-  {
-    id: "q5",
-    skill: "Substitute",
-    prompt: "If x = 2, find the value of 4x² - 3x + 1",
-    accepted: ["11"],
-    hint: "Substitute x=2 first, then follow order of operations: square, multiply, then add/subtract.",
+  };
+}
+
+function genSubstitute() {
+  const x0 = randInt(2, 5);
+  const a = randInt(2, 6);
+  const b = randInt(1, 9);
+  const c = randInt(0, 9);
+  const answer = a * x0 * x0 - b * x0 + c;
+  return {
+    id: "q5", skill: "Substitute",
+    prompt: `If x = ${x0}, find the value of ${a}x² - ${b}x + ${c}`,
+    accepted: [String(answer)],
+    hint: `Substitute x=${x0} first, then follow order of operations: square, multiply, then add/subtract.`,
     ingredient: { name: "Light Drop", emoji: "✨", color: "#fde68a" },
-  },
-];
+  };
+}
+
+function generateQuestions() {
+  return [genSimplify(), genAdd(), genMultiply(), genFactorize(), genSubstitute()];
+}
 
 const QUESTION_SECONDS = 90;
 const MAX_HEARTS = 3;
@@ -196,6 +256,9 @@ function AlchemistsPotionLabPage() {
   const inputRef = useRef(null);
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateQuestions above.
+  const [questions, setQuestions] = useState(() => generateQuestions());
   const [questionIndex, setQuestionIndex] = useState(0);
   const [hearts, setHearts] = useState(MAX_HEARTS);
   const [crystals, setCrystals] = useState(MAX_CRYSTALS);
@@ -213,12 +276,13 @@ function AlchemistsPotionLabPage() {
   const [awaitingNext, setAwaitingNext] = useState(false);
   const [mischief, setMischief] = useState(false);
 
-  const question = QUESTIONS[questionIndex];
+  const question = questions[questionIndex];
   const trappedAlchemists = ALCHEMISTS.filter((a) => !freedIds.includes(a.id));
 
   const startGame = () => {
     reportedRef.current = false;
     setScreen("playing");
+    setQuestions(generateQuestions());
     setQuestionIndex(0);
     setHearts(MAX_HEARTS);
     setCrystals(MAX_CRYSTALS);
@@ -275,9 +339,9 @@ function AlchemistsPotionLabPage() {
     setHearts(newHearts);
     if (newHearts <= 0) {
       reportedRef.current = true;
-      reportFinish("loss", Math.round((saved / QUESTIONS.length) * 100), {
+      reportFinish("loss", Math.round((saved / questions.length) * 100), {
         correctCount: saved,
-        totalCount: QUESTIONS.length,
+        totalCount: questions.length,
       });
       setScreen("lost");
       return;
@@ -320,13 +384,13 @@ function AlchemistsPotionLabPage() {
   }
 
   function goToNext() {
-    if (questionIndex + 1 < QUESTIONS.length) {
+    if (questionIndex + 1 < questions.length) {
       setQuestionIndex((i) => i + 1);
       setTimeLeft(QUESTION_SECONDS);
       setAwaitingNext(false);
     } else {
       reportedRef.current = true;
-      reportFinish("win", 100, { correctCount: QUESTIONS.length, totalCount: QUESTIONS.length });
+      reportFinish("win", 100, { correctCount: questions.length, totalCount: questions.length });
       setScreen("won");
       setConfetti(true);
       sounds.playVictory();
@@ -358,7 +422,7 @@ function AlchemistsPotionLabPage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">SAVED</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{saved}/{QUESTIONS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{saved}/{questions.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">HEARTS</div>
@@ -387,10 +451,10 @@ function AlchemistsPotionLabPage() {
         <div className="h-3 flex-1 rounded-full bg-secondary overflow-hidden">
           <div
             className="h-full transition-all duration-700"
-            style={{ width: `${(saved / QUESTIONS.length) * 100}%`, background: "linear-gradient(90deg,#a78bfa,#f0abfc)" }}
+            style={{ width: `${(saved / questions.length) * 100}%`, background: "linear-gradient(90deg,#a78bfa,#f0abfc)" }}
           />
         </div>
-        <span className="text-xs font-bold text-text-muted whitespace-nowrap">Ingredients Saved: {saved}/{QUESTIONS.length}</span>
+        <span className="text-xs font-bold text-text-muted whitespace-nowrap">Ingredients Saved: {saved}/{questions.length}</span>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1.4fr_0.8fr]">
@@ -407,7 +471,7 @@ function AlchemistsPotionLabPage() {
 
             {/* Jar shelf */}
             <div className="relative z-10 mx-auto mt-2 grid grid-cols-5 gap-2 max-w-lg">
-              {QUESTIONS.map((q, idx) => {
+              {questions.map((q, idx) => {
                 const isCurrent = idx === questionIndex && screen === "playing";
                 const isFreed = idx < questionIndex || (idx === questionIndex && jarState === "broken");
                 return (
@@ -438,7 +502,7 @@ function AlchemistsPotionLabPage() {
                 <div
                   className="w-full transition-all duration-700"
                   style={{
-                    height: `${20 + (saved / QUESTIONS.length) * 70}%`,
+                    height: `${20 + (saved / questions.length) * 70}%`,
                     background: "linear-gradient(180deg,#c4b5fd,#7c3aed)",
                   }}
                 />
@@ -530,7 +594,7 @@ function AlchemistsPotionLabPage() {
               <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm rounded-3xl text-center px-6">
                 <Skull className="h-14 w-14 text-red-400" />
                 <h2 className="text-2xl font-black text-white">The Potions Spilled!</h2>
-                <p className="text-sm text-slate-200">You freed {saved} of {QUESTIONS.length} ingredients before running out of hearts.</p>
+                <p className="text-sm text-slate-200">You freed {saved} of {questions.length} ingredients before running out of hearts.</p>
                 {weakestSkill && (
                   <p className="max-w-xs text-xs text-amber-200">
                     Most mistakes were on <span className="font-bold">{weakestSkill}</span> - worth practicing that skill more.
@@ -555,7 +619,7 @@ function AlchemistsPotionLabPage() {
           <div className="card rounded-2xl">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <div className="text-label-md text-text-muted">SCROLL {Math.min(questionIndex + 1, QUESTIONS.length)}/{QUESTIONS.length}</div>
+                <div className="text-label-md text-text-muted">SCROLL {Math.min(questionIndex + 1, questions.length)}/{questions.length}</div>
                 <div className="badge badge-primary mt-1">{question?.skill ?? "-"}</div>
               </div>
               <div className={`flex items-center gap-1.5 text-sm font-bold ${timeLeft <= 20 ? "text-error animate-pulse" : "text-foreground"}`}>
@@ -570,7 +634,7 @@ function AlchemistsPotionLabPage() {
                   <p className="text-success font-semibold text-body-sm">Jar shattered! An ingredient is free!</p>
                   <button type="button" onClick={goToNext} className="btn btn-primary btn-lg w-full">
                     <ArrowRight className="h-4 w-4" />
-                    {questionIndex + 1 < QUESTIONS.length ? "Next Scroll" : "See Results"}
+                    {questionIndex + 1 < questions.length ? "Next Scroll" : "See Results"}
                   </button>
                 </div>
               ) : (

@@ -25,11 +25,15 @@ class RealtimePipelineTests(unittest.TestCase):
         self.assertEqual(state, "Bored")
 
     def test_happy_with_moderate_confidence_maps_to_engaged(self):
-        state = map_raw_to_student_state("Happy", confidence=0.47, previous_state="Bored")
+        # Threshold raised 0.45 -> 0.65 (see student_state.py) - a real
+        # session showed low-confidence Happy/Angry blips instantly
+        # flipping state and resetting the Bored duration streak.
+        state = map_raw_to_student_state("Happy", confidence=0.7, previous_state="Bored")
         self.assertEqual(state, "Engaged")
 
     def test_angry_maps_to_frustrated(self):
-        state = map_raw_to_student_state("Angry", confidence=0.6, previous_state="Neutral")
+        # Threshold raised 0.5 -> 0.7 - see comment above.
+        state = map_raw_to_student_state("Angry", confidence=0.75, previous_state="Neutral")
         self.assertEqual(state, "Frustrated")
 
     def test_sustained_flat_expression_becomes_bored(self):

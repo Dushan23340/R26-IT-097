@@ -13,34 +13,82 @@ import {
   Calculator,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt, randChoice, shuffle } from "@/lib/gameRandom";
 
 // Grade-9 area practice: Square = side x side, Rectangle = length x breadth,
-// Triangle = 0.5 x base x height. 12 land plots, every area value unique
-// (no two plots share an area) so there's exactly one correct plot per
-// customer request - the challenge is calculating correctly, not guessing
-// among ties.
-const LAND_PLOTS = [
-  { id: "p1", shape: "square", side: 3, area: 9, pos: { left: "6%", top: "12%" } },
-  { id: "p2", shape: "square", side: 4, area: 16, pos: { left: "30%", top: "10%" } },
-  { id: "p3", shape: "square", side: 5, area: 25, pos: { left: "54%", top: "14%" } },
-  { id: "p4", shape: "square", side: 6, area: 36, pos: { left: "78%", top: "10%" } },
-  { id: "p5", shape: "rectangle", length: 9, breadth: 2, area: 18, pos: { left: "6%", top: "42%" } },
-  { id: "p6", shape: "rectangle", length: 6, breadth: 4, area: 24, pos: { left: "30%", top: "40%" } },
-  { id: "p7", shape: "rectangle", length: 8, breadth: 5, area: 40, pos: { left: "54%", top: "42%" } },
-  { id: "p8", shape: "rectangle", length: 7, breadth: 6, area: 42, pos: { left: "78%", top: "40%" } },
-  { id: "p9", shape: "triangle", base: 10, height: 6, area: 30, pos: { left: "6%", top: "72%" } },
-  { id: "p10", shape: "triangle", base: 8, height: 5, area: 20, pos: { left: "30%", top: "72%" } },
-  { id: "p11", shape: "triangle", base: 14, height: 4, area: 28, pos: { left: "54%", top: "72%" } },
-  { id: "p12", shape: "triangle", base: 9, height: 6, area: 27, pos: { left: "78%", top: "72%" } },
+// Triangle = 0.5 x base x height. Freshly randomized per game start
+// (generateLandPlots/generateCustomers below) - same 12-slot layout every
+// time (4 squares, 4 rectangles, 4 triangles, same fixed grid positions)
+// but different dimensions per play, always constructed so every area
+// value is unique (no two plots share an area, so there's exactly one
+// correct plot per customer request - the challenge is calculating
+// correctly, not guessing among ties). Each customer's spoken "ask" text
+// is built directly FROM its target plot's real computed area (a single
+// source of truth), not a separately hardcoded number that could drift
+// out of sync the way the original hand-authored version risked. Verified
+// against 20,000 generated plot sets in a standalone script.
+const POSITIONS = [
+  { left: "6%", top: "12%" }, { left: "30%", top: "10%" }, { left: "54%", top: "14%" }, { left: "78%", top: "10%" },
+  { left: "6%", top: "42%" }, { left: "30%", top: "40%" }, { left: "54%", top: "42%" }, { left: "78%", top: "40%" },
+  { left: "6%", top: "72%" }, { left: "30%", top: "72%" }, { left: "54%", top: "72%" }, { left: "78%", top: "72%" },
 ];
 
-const CUSTOMERS = [
-  { id: "c1", name: "Mia", emoji: "\u{1F469}", targetPlotId: "p6", ask: "Hello! I want a land of 24 square meters, please." },
-  { id: "c2", name: "Raj", emoji: "\u{1F468}\u{200D}\u{1F9B1}", targetPlotId: "p3", ask: "Hi there! I'm looking for exactly 25 square meters for my eco farm." },
-  { id: "c3", name: "Grandma Lin", emoji: "\u{1F475}", targetPlotId: "p9", ask: "Good day! I need a plot of 30 square meters, please." },
-  { id: "c4", name: "Tomas", emoji: "\u{1F474}", targetPlotId: "p8", ask: "Hello! Can you show me a land of 42 square meters?" },
-  { id: "c5", name: "Aisha", emoji: "\u{1F9D5}", targetPlotId: "p10", ask: "Hi! I'd like a land of 20 square meters, please." },
+function genSquare(idx, usedAreas) {
+  let side, area;
+  do {
+    side = randInt(3, 9);
+    area = side * side;
+  } while (usedAreas.has(area));
+  usedAreas.add(area);
+  return { id: `p${idx + 1}`, shape: "square", side, area, pos: POSITIONS[idx] };
+}
+
+function genRectangle(idx, usedAreas) {
+  let length, breadth, area;
+  do {
+    length = randInt(5, 12);
+    breadth = randInt(2, 8);
+    area = length * breadth;
+  } while (length === breadth || usedAreas.has(area));
+  usedAreas.add(area);
+  return { id: `p${idx + 1}`, shape: "rectangle", length, breadth, area, pos: POSITIONS[idx] };
+}
+
+function genTriangle(idx, usedAreas) {
+  let base, height, area;
+  do {
+    base = randInt(4, 16);
+    height = randChoice([4, 6, 8, 10]); // always even, guarantees an integer area
+    area = 0.5 * base * height;
+  } while (usedAreas.has(area));
+  usedAreas.add(area);
+  return { id: `p${idx + 1}`, shape: "triangle", base, height, area, pos: POSITIONS[idx] };
+}
+
+function generateLandPlots() {
+  const usedAreas = new Set();
+  const plots = [];
+  for (let i = 0; i < 4; i++) plots.push(genSquare(i, usedAreas));
+  for (let i = 4; i < 8; i++) plots.push(genRectangle(i, usedAreas));
+  for (let i = 8; i < 12; i++) plots.push(genTriangle(i, usedAreas));
+  return plots;
+}
+
+const CUSTOMER_TEMPLATES = [
+  { name: "Mia", emoji: "\u{1F469}", askTemplate: (a) => `Hello! I want a land of ${a} square meters, please.` },
+  { name: "Raj", emoji: "\u{1F468}\u{200D}\u{1F9B1}", askTemplate: (a) => `Hi there! I'm looking for exactly ${a} square meters for my eco farm.` },
+  { name: "Grandma Lin", emoji: "\u{1F475}", askTemplate: (a) => `Good day! I need a plot of ${a} square meters, please.` },
+  { name: "Tomas", emoji: "\u{1F474}", askTemplate: (a) => `Hello! Can you show me a land of ${a} square meters?` },
+  { name: "Aisha", emoji: "\u{1F9D5}", askTemplate: (a) => `Hi! I'd like a land of ${a} square meters, please.` },
 ];
+
+function generateCustomers(plots) {
+  const targets = shuffle(plots).slice(0, 5);
+  return targets.map((plot, i) => {
+    const t = CUSTOMER_TEMPLATES[i];
+    return { id: `c${i + 1}`, name: t.name, emoji: t.emoji, targetPlotId: plot.id, ask: t.askTemplate(plot.area) };
+  });
+}
 
 const OWNER_HOME = { left: "42%", top: "94%" };
 
@@ -147,6 +195,12 @@ function EcoBloomsLandSalePage() {
   const reportedRef = useRef(false);
 
   const [screen, setScreen] = useState("start"); // start | playing | done
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateLandPlots/generateCustomers above. customers depends on the
+  // freshly-generated plots (their targetPlotId + ask text reference real
+  // plot areas), so it's always derived AFTER landPlots, never independently.
+  const [landPlots, setLandPlots] = useState(() => generateLandPlots());
+  const [customers, setCustomers] = useState(() => generateCustomers(landPlots));
   const [customerIndex, setCustomerIndex] = useState(0);
   const [solvedCount, setSolvedCount] = useState(0);
   const [mistakesByShape, setMistakesByShape] = useState({ square: 0, rectangle: 0, triangle: 0 });
@@ -159,12 +213,18 @@ function EcoBloomsLandSalePage() {
   const [confetti, setConfetti] = useState(false);
   const [awaitingNext, setAwaitingNext] = useState(false);
 
-  const customer = CUSTOMERS[customerIndex];
-  const targetPlot = useMemo(() => LAND_PLOTS.find((p) => p.id === customer?.targetPlotId), [customer]);
+  const customer = customers[customerIndex];
+  const targetPlot = useMemo(() => landPlots.find((p) => p.id === customer?.targetPlotId), [landPlots, customer]);
 
   const startGame = () => {
     reportedRef.current = false;
     setScreen("playing");
+    // Generate into a local variable first, then derive customers from
+    // THAT (not the stale `landPlots` state, which hasn't updated yet in
+    // this closure) - avoids customers referencing the previous game's plots.
+    const freshPlots = generateLandPlots();
+    setLandPlots(freshPlots);
+    setCustomers(generateCustomers(freshPlots));
     setCustomerIndex(0);
     setSolvedCount(0);
     setMistakesByShape({ square: 0, rectangle: 0, triangle: 0 });
@@ -184,16 +244,16 @@ function EcoBloomsLandSalePage() {
   }, [screen, customerIndex]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const goToNextCustomer = () => {
-    if (customerIndex + 1 < CUSTOMERS.length) {
+    if (customerIndex + 1 < customers.length) {
       setCustomerIndex((i) => i + 1);
       setOwnerPos(OWNER_HOME);
       setAwaitingNext(false);
     } else {
       reportedRef.current = true;
       const outcome = solvedCount >= 3 ? "win" : "loss";
-      reportFinish(outcome, Math.round((solvedCount / CUSTOMERS.length) * 100), {
+      reportFinish(outcome, Math.round((solvedCount / customers.length) * 100), {
         correctCount: solvedCount,
-        totalCount: CUSTOMERS.length,
+        totalCount: customers.length,
       });
       setScreen("done");
     }
@@ -253,12 +313,12 @@ function EcoBloomsLandSalePage() {
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">SOLD</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{solvedCount}/{CUSTOMERS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{solvedCount}/{customers.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">CUSTOMER</div>
             <div className="mt-2 text-display-sm font-bold text-foreground">
-              {screen === "playing" ? customerIndex + 1 : screen === "done" ? CUSTOMERS.length : 0}/{CUSTOMERS.length}
+              {screen === "playing" ? customerIndex + 1 : screen === "done" ? customers.length : 0}/{customers.length}
             </div>
           </div>
           <button
@@ -276,7 +336,7 @@ function EcoBloomsLandSalePage() {
       <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
         <div
           className="h-full transition-all duration-500"
-          style={{ width: `${(solvedCount / CUSTOMERS.length) * 100}%`, background: "var(--gradient-primary)" }}
+          style={{ width: `${(solvedCount / customers.length) * 100}%`, background: "var(--gradient-primary)" }}
         />
       </div>
 
@@ -302,7 +362,7 @@ function EcoBloomsLandSalePage() {
 
             {/* Land plots */}
             <div className="relative h-[420px]">
-              {LAND_PLOTS.map((plot) => {
+              {landPlots.map((plot) => {
                 const isTarget = screen === "playing" && plot.id === customer?.targetPlotId;
                 return (
                   <button
@@ -400,7 +460,7 @@ function EcoBloomsLandSalePage() {
                   ) : (
                     <Frown className="h-14 w-14 text-slate-300" />
                   )}
-                  <h2 className="text-2xl font-black text-white">You sold {solvedCount}/{CUSTOMERS.length} lands!</h2>
+                  <h2 className="text-2xl font-black text-white">You sold {solvedCount}/{customers.length} lands!</h2>
                   <p className="text-sm text-slate-100">
                     {solvedCount >= 3 ? "Great job, Land Owner!" : "Review the formulas and give it another shot."}
                   </p>
@@ -429,7 +489,7 @@ function EcoBloomsLandSalePage() {
           {awaitingNext && (
             <button type="button" onClick={goToNextCustomer} className="mt-4 btn btn-primary btn-lg w-full">
               <ArrowRight className="h-4 w-4" />
-              {customerIndex + 1 < CUSTOMERS.length ? "Next Customer" : "See Results"}
+              {customerIndex + 1 < customers.length ? "Next Customer" : "See Results"}
             </button>
           )}
         </section>

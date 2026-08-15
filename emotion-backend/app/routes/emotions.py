@@ -1,5 +1,6 @@
 from fastapi import APIRouter, status
 from datetime import datetime
+from pydantic import BaseModel
 import uuid
 from typing import List
 
@@ -53,6 +54,34 @@ async def ingest_emotion(event: EmotionEvent):
         "processed_at": datetime.utcnow().isoformat(),
         "current_dominant": dominant,
         "message": f"Emotion '{event.emotion}' recorded for student {event.student_id}"
+    }
+
+
+class InvalidFrameInput(BaseModel):
+    """Body for POST /emotions/invalid - see mark_invalid's docstring on
+    EmotionStore for why this is a separate, lighter path than the main
+    ingest_emotion route rather than just posting a fabricated EmotionEvent:
+    no fake emotion should ever reach class_session_store's profile bridge
+    or the emotion trend/distribution history."""
+    student_id: str
+    reason: str = "no_face_detected"
+
+
+@router.post("/invalid", status_code=status.HTTP_200_OK)
+async def ingest_invalid_frame(payload: InvalidFrameInput):
+    """
+    Record that a student is present but not currently classifiable
+    (occluded / looking away / no face detected at all) - keeps them in
+    active_students so the class size stays accurate, while excluding
+    their stale last-known emotion from the distribution/dominant-emotion
+    chart until a real classification resumes. See emotion-service's
+    FaceValidityError / mark_invalid for the upstream source of this call.
+    """
+    emotion_store.mark_invalid(payload.student_id, payload.reason)
+    return {
+        "success": True,
+        "student_id": payload.student_id,
+        "reason": payload.reason,
     }
 
 

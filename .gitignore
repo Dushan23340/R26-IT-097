@@ -31,7 +31,10 @@ emotion-service/model/backup_v1_fused_fer2013_only/
 emotion-service/model/backup_v2_fused_3class_only/
 emotion-service/debug_face.jpg
 emotion-service/debug_frame.jpg
+emotion-service/debug_frames/
+emotion-service/session_logs/
 emotion-service/*.log
+emotion-backend/*.log
 
 # macOS
 .DS_Store

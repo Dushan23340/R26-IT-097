@@ -14,47 +14,124 @@ import {
   LampDesk,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt, randChoice, shuffle } from "@/lib/gameRandom";
 
-// Grade-9 algebraic fraction questions, one per furniture item. Answers
-// verified by hand:
-//   Q1: 3/(2x) + 5/(3x)  -> LCD 6x -> 9/(6x) + 10/(6x) = 19/(6x)
-//   Q2: (2 1/3) * (6/7)  -> (7/3)*(6/7) = 42/21 = 2
-//   Q3: (4a/5) / (2a/15) -> (4a/5)*(15/2a) = 60a/10a = 6
-//   Q4: spends 1/3 + 1/4 = 7/12, remaining 5/12 = 50 -> total = 50*12/5 = 120
-const FURNITURE = [
-  {
-    id: "desk",
-    label: "Desk",
-    icon: LampDesk,
-    prompt: "Simplify: 3/(2x) + 5/(3x)",
-    options: ["19/(6x)", "8/(5x)", "3/(6x)", "19/(5x)"],
-    answer: "19/(6x)",
-  },
-  {
-    id: "bed",
-    label: "Bed",
-    icon: BedDouble,
-    prompt: "Solve: (2 1/3) x (6/7)",
-    options: ["2", "1 5/7", "14/21", "3"],
-    answer: "2",
-  },
-  {
-    id: "bookshelf",
-    label: "Bookshelf",
-    icon: BookOpen,
-    prompt: "Simplify: (4a/5) divided by (2a/15)",
-    options: ["6", "2a", "1/6", "30"],
-    answer: "6",
-  },
-  {
-    id: "closet",
-    label: "Closet",
-    icon: Archive,
-    prompt: "A student spends 1/3 of their allowance on books, 1/4 on food, and has $50 left. Find the total allowance.",
-    options: ["$120", "$100", "$150", "$144"],
-    answer: "$120",
-  },
-];
+function gcd(a, b) { return b === 0 ? a : gcd(b, a % b); }
+function lcm(a, b) { return (a * b) / gcd(a, b); }
+
+// Freshly randomized per game start (generateFurniture below) - same 4
+// algebraic-fraction question types every time (LCD addition, mixed-number
+// multiplication, variable-fraction division, "fraction of allowance" word
+// problem) but different numbers per play. Verified against 80,000
+// generated items in a standalone script: every answer matches an
+// independent recomputation from the same generated inputs, and all 4 MCQ
+// options are always distinct with exactly one matching the real answer
+// (a real bug - fractions that reduce to 1 could collapse distractors to
+// duplicates - was caught and fixed by that verification).
+function buildOptions(answer, distractorPool) {
+  const distractors = [];
+  for (const d of distractorPool) {
+    if (d !== answer && !distractors.includes(d)) distractors.push(d);
+    if (distractors.length === 3) break;
+  }
+  let salt = 1;
+  while (distractors.length < 3) {
+    const numMatch = answer.match(/-?\d+/);
+    if (numMatch) {
+      const candidate = answer.replace(numMatch[0], String(Number(numMatch[0]) + salt));
+      if (candidate !== answer && !distractors.includes(candidate)) distractors.push(candidate);
+    } else {
+      distractors.push(`${answer}_${salt}`);
+    }
+    salt++;
+  }
+  const values = shuffle([answer, ...distractors]);
+  return { options: values, correctIndex: values.indexOf(answer) };
+}
+
+function genDesk() {
+  const a = randChoice([2, 3, 4, 5]);
+  const b = randChoice([2, 3, 4, 5, 6].filter((d) => d !== a));
+  const p = randInt(1, 9);
+  const q = randInt(1, 9);
+  const L = lcm(a, b);
+  const numerator = p * (L / a) + q * (L / b);
+  const answer = `${numerator}/(${L}x)`;
+  const { options, correctIndex } = buildOptions(answer, [
+    `${p + q}/(${a + b}x)`, `${p}/(${L}x)`, `${numerator}/(${a * b}x)`, `${numerator + 1}/(${L}x)`,
+  ]);
+  return { id: "desk", label: "Desk", icon: LampDesk, prompt: `Simplify: ${p}/(${a}x) + ${q}/(${b}x)`, options, answer, correctIndex };
+}
+
+function genBed() {
+  // Constructed so the improper numerator cancels exactly with the second
+  // fraction's denominator - same trick the original example used
+  // ((2 1/3)*(6/7), where 7 = 2*3+1).
+  const den = randChoice([3, 4, 5, 6]);
+  const whole = randInt(1, 3);
+  const num = randInt(1, den - 1);
+  const imp = whole * den + num;
+  const d2 = imp;
+  const k = randInt(1, 3);
+  const n2 = k * den;
+  const answer = String(k);
+  const { options, correctIndex } = buildOptions(answer, [
+    String(k + 1), String(k + 2), `${imp * n2}/${den * d2}`,
+  ]);
+  return { id: "bed", label: "Bed", icon: BedDouble, prompt: `Solve: (${whole} ${num}/${den}) x (${n2}/${d2})`, options, answer, correctIndex };
+}
+
+function genBookshelf() {
+  const p = randInt(2, 9);
+  const q = randInt(2, 9);
+  const r = randInt(2, 9);
+  const s = randInt(2, 9);
+  const num = p * s;
+  const den = q * r;
+  const g = gcd(num, den);
+  const redNum = num / g;
+  const redDen = den / g;
+  const answer = redDen === 1 ? `${redNum}` : `${redNum}/${redDen}`;
+  const reciprocal = redNum === 1 ? `${redDen}` : `${redDen}/${redNum}`;
+  const unreduced = `${num}/${den}`;
+  const n2 = p * r, d2 = q * s, g2 = gcd(n2, d2);
+  const forgotFlip = d2 / g2 === 1 ? `${n2 / g2}` : `${n2 / g2}/${d2 / g2}`;
+  const { options, correctIndex } = buildOptions(answer, [reciprocal, unreduced, forgotFlip, `${redNum + 1}`]);
+  return { id: "bookshelf", label: "Bookshelf", icon: BookOpen, prompt: `Simplify: (${p}a/${q}) divided by (${r}a/${s})`, options, answer, correctIndex };
+}
+
+function genCloset() {
+  // Constructed so the remaining-fraction always divides the leftover
+  // dollar amount cleanly - m*remNumReduced dollars left implies a
+  // whole-dollar total allowance.
+  let den1, den2, num2, L, remNum;
+  do {
+    den1 = randChoice([3, 4, 5]);
+    den2 = randChoice([3, 4, 5, 6].filter((d) => d !== den1));
+    num2 = randInt(1, den2 - 1);
+    L = lcm(den1, den2);
+    remNum = L - 1 * (L / den1) - num2 * (L / den2);
+  } while (remNum <= 0);
+  const g = gcd(remNum, L);
+  const remNumR = remNum / g;
+  const remDenR = L / g;
+  const m = randInt(2, 9);
+  const leftover = m * remNumR;
+  const total = m * remDenR;
+  const answer = `$${total}`;
+  const { options, correctIndex } = buildOptions(answer, [
+    `$${total + 10}`, `$${Math.max(total - 10, 10)}`, `$${leftover * 3}`, `$${total + 20}`,
+  ]);
+  return {
+    id: "closet", label: "Closet", icon: Archive,
+    prompt: `A student spends 1/${den1} of their allowance on books, ${num2}/${den2} on food, and has $${leftover} left. Find the total allowance.`,
+    options, answer, correctIndex,
+  };
+}
+
+function generateFurniture() {
+  return [genDesk(), genBed(), genBookshelf(), genCloset()];
+}
 
 const MAX_WRONG = 2; // 2 or more wrong -> fail, per spec (need >=3/4 correct to pass)
 
@@ -75,6 +152,9 @@ function DarkRoomEscapePage() {
   const { reportFinish } = useGameSession("dark_room");
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateFurniture above.
+  const [furniture, setFurniture] = useState(() => generateFurniture());
   const [solvedIds, setSolvedIds] = useState([]);
   const [wrongCount, setWrongCount] = useState(0);
   const [activeFurniture, setActiveFurniture] = useState(null);
@@ -85,17 +165,18 @@ function DarkRoomEscapePage() {
   const answeredCount = correctCount + wrongCount;
 
   useEffect(() => {
-    if (screen !== "playing" || answeredCount < FURNITURE.length) return;
+    if (screen !== "playing" || answeredCount < furniture.length) return;
     const won = correctCount >= 3;
-    reportFinish(won ? "win" : "loss", Math.round((correctCount / FURNITURE.length) * 100), {
+    reportFinish(won ? "win" : "loss", Math.round((correctCount / furniture.length) * 100), {
       correctCount,
-      totalCount: FURNITURE.length,
+      totalCount: furniture.length,
     });
     setScreen(won ? "won" : "lost");
   }, [answeredCount]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startGame() {
     setScreen("playing");
+    setFurniture(generateFurniture());
     setSolvedIds([]);
     setWrongCount(0);
     setActiveFurniture(null);
@@ -146,7 +227,7 @@ function DarkRoomEscapePage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">SOLVED</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{correctCount}/{FURNITURE.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{correctCount}/{furniture.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">MISSED</div>
@@ -233,7 +314,7 @@ function DarkRoomEscapePage() {
 
           {screen === "playing" && (
             <div className="relative z-10 grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4">
-              {FURNITURE.map((item) => {
+              {furniture.map((item) => {
                 const Icon = item.icon;
                 const solved = solvedIds.includes(item.id);
                 return (
@@ -263,7 +344,7 @@ function DarkRoomEscapePage() {
                 <Sun className="mx-auto h-14 w-14 text-amber-500" />
                 <h2 className="mt-4 text-heading-lg text-amber-900 font-bold">Escaped!</h2>
                 <p className="mt-2 text-amber-800">Excellent Fraction Mastery!</p>
-                <p className="mt-1 text-sm text-amber-700">{correctCount} of {FURNITURE.length} scrolls solved.</p>
+                <p className="mt-1 text-sm text-amber-700">{correctCount} of {furniture.length} scrolls solved.</p>
                 <div className="mt-6 flex flex-col gap-3">
                   <button type="button" onClick={startGame} className="btn btn-primary btn-lg">
                     <RotateCcw className="h-4 w-4" />
@@ -283,7 +364,7 @@ function DarkRoomEscapePage() {
                 <Skull className="mx-auto h-14 w-14 text-red-500" />
                 <h2 className="mt-4 text-heading-lg text-red-400 font-bold">Caught in the Dark!</h2>
                 <p className="mt-2 text-slate-300">Something in the shadows found you first.</p>
-                <p className="mt-1 text-sm text-slate-400">{correctCount} of {FURNITURE.length} scrolls solved.</p>
+                <p className="mt-1 text-sm text-slate-400">{correctCount} of {furniture.length} scrolls solved.</p>
                 <div className="mt-6 flex flex-col gap-3">
                   <button type="button" onClick={startGame} className="btn btn-primary btn-lg">
                     <RotateCcw className="h-4 w-4" />

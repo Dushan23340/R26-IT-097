@@ -39,7 +39,16 @@ function normalizePredictResponse(payload = {}) {
     facialEmotion: normalizedFacialEmotion,
     emotionConfidence: Number(payload.emotionConfidence || payload.confidence || 0),
     attentionScore: Number(payload.attentionScore || 0),
-    faceDetected: Boolean(normalizedFacialEmotion && normalizedFacialEmotion !== "No face detected"),
+    // Prefer the backend's own explicit flag (set on every rejection path -
+    // "no_face_detected"/"no_landmarks"/"looking_away" - see flask_api.py)
+    // over a string comparison, which only ever recognized the literal
+    // "No face detected" text and would have silently treated newer
+    // rejection reasons like "Face Occluded"/"Looking Away" as a detected face.
+    faceDetected:
+      typeof payload.faceDetected === "boolean"
+        ? payload.faceDetected
+        : Boolean(normalizedFacialEmotion && normalizedFacialEmotion !== "No face detected"),
+    invalidReason: payload.invalidReason || null,
     metrics: {
       emotionDuration: metricsRoot.emotionDuration || {},
       transitionRate: Number(metricsRoot.transitionRate || 0),

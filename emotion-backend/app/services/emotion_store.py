@@ -14,16 +14,35 @@ class EmotionStore:
     def __init__(self, window_seconds: int = 60):
         self.events: List[EmotionEvent] = []
         self.window_seconds = window_seconds
+        # Face-validity tracking (mark_invalid), mirroring emotion-service's
+        # own tracker.py: a student whose camera currently can't produce a
+        # real classification (occluded/looking away/no face at all) still
+        # counts as present (active_students), but their stale last-known
+        # emotion must not keep being counted in the distribution/dominant-
+        # emotion chart - see get_current_distribution.
+        self.invalid_students: Dict[str, datetime] = {}
 
     def add_event(self, event: EmotionEvent) -> None:
         """Add a new emotion event."""
         self.events.append(event)
         self._cleanup_old_events()
 
+    def mark_invalid(self, student_id: str, reason: str) -> None:
+        """Records that this student is currently present but not
+        classifiable (see emotion-service/flask_api.py's REASON_LABELS for
+        the possible reasons). Deliberately does NOT create an EmotionEvent
+        - this student's real emotion trend/distribution must not be
+        polluted by a frame where no real classification happened."""
+        self.invalid_students[student_id] = datetime.utcnow()
+        self._cleanup_old_events()
+
     def _cleanup_old_events(self) -> None:
-        """Remove events outside the sliding window."""
+        """Remove events/invalid-markers outside the sliding window."""
         cutoff = datetime.utcnow() - timedelta(seconds=self.window_seconds)
         self.events = [e for e in self.events if e.timestamp >= cutoff]
+        self.invalid_students = {
+            student_id: ts for student_id, ts in self.invalid_students.items() if ts >= cutoff
+        }
 
     def get_current_distribution(self) -> Dict:
         """
@@ -32,7 +51,7 @@ class EmotionStore:
         """
         self._cleanup_old_events()
 
-        if not self.events:
+        if not self.events and not self.invalid_students:
             return self._empty_distribution()
 
         # Each student's most-recent reading within the window is their
@@ -48,13 +67,26 @@ class EmotionStore:
             if existing is None or event.timestamp > existing.timestamp:
                 latest_by_student[event.student_id] = event
 
-        emotion_counts = defaultdict(int)
-        active_students = set()
-        for student_id, event in latest_by_student.items():
-            emotion_counts[event.emotion.value] += 1
-            active_students.add(student_id)
+        # A student currently marked invalid (occluded/looking away/no face)
+        # still counts as present (active_students), but only if that's
+        # actually their MOST RECENT signal - a valid event that arrived
+        # after the last invalid marker supersedes it, same ordering rule
+        # as emotion-service's EmotionTracker._face_detected.
+        currently_invalid = {
+            student_id
+            for student_id, invalid_ts in self.invalid_students.items()
+            if student_id not in latest_by_student or latest_by_student[student_id].timestamp < invalid_ts
+        }
 
-        total = len(latest_by_student)
+        emotion_counts = defaultdict(int)
+        active_students = set(currently_invalid)
+        for student_id, event in latest_by_student.items():
+            active_students.add(student_id)
+            if student_id in currently_invalid:
+                continue
+            emotion_counts[event.emotion.value] += 1
+
+        total = len(active_students) - len(currently_invalid)
         all_emotions = [e.value for e in EmotionType]
 
         distribution = []
@@ -70,7 +102,12 @@ class EmotionStore:
         # Sort by percentage descending
         distribution.sort(key=lambda x: x.percentage, reverse=True)
 
-        dominant = distribution[0]
+        # total == 0 with active_students > 0 means everyone present right
+        # now is face-invalid (occluded/looking away/no face) - distribution[0]
+        # would otherwise show an arbitrary emotion at 0%, misrepresenting
+        # "nobody is currently classifiable" as a real (if low) reading.
+        dominant_emotion = distribution[0].emotion if total > 0 else "NO_FACE"
+        dominant_percentage = distribution[0].percentage if total > 0 else 0.0
 
         # Calculate engagement score (HAPPY + NORMAL = engaged)
         engaged_count = emotion_counts.get("HAPPY", 0) + emotion_counts.get("NORMAL", 0)
@@ -89,8 +126,8 @@ class EmotionStore:
             "active_students": len(active_students),
             "window_seconds": self.window_seconds,
             "distribution": distribution,
-            "dominant_emotion": dominant.emotion,
-            "dominant_percentage": dominant.percentage,
+            "dominant_emotion": dominant_emotion,
+            "dominant_percentage": dominant_percentage,
             "class_engagement_score": engagement_score
         }
 

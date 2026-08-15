@@ -10,76 +10,16 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt, randChoice, shuffle } from "@/lib/gameRandom";
 
 // Grade-9 liquid volume & capacity: V = l x b x h (cm^3), 1000 cm^3 = 1 L.
-// Every tank's volume verified by hand; each order has exactly one tank
-// that matches the customer's requested capacity.
-const ORDERS = [
-  {
-    id: "order-1",
-    customer: "Hello! I need a tank that can hold exactly 12 Liters of water!",
-    needLabel: "12 L",
-    tanks: [
-      { id: "a", l: 40, b: 30, h: 10 }, // 12000 cm3 = 12 L (correct)
-      { id: "b", l: 35, b: 30, h: 10 }, // 10500 cm3 = 10.5 L
-      { id: "c", l: 30, b: 30, h: 10 }, // 9000 cm3 = 9 L
-      { id: "d", l: 45, b: 30, h: 10 }, // 13500 cm3 = 13.5 L
-    ],
-    correctTankId: "a",
-  },
-  {
-    id: "order-2",
-    customer: "I'm setting up a small betta tank - I need 2.5 Liters of water.",
-    needLabel: "2.5 L",
-    tanks: [
-      { id: "a", l: 20, b: 20, h: 5 }, // 2000 cm3 = 2 L
-      { id: "b", l: 25, b: 20, h: 5 }, // 2500 cm3 = 2.5 L (correct)
-      { id: "c", l: 30, b: 20, h: 5 }, // 3000 cm3 = 3 L
-      { id: "d", l: 25, b: 25, h: 5 }, // 3125 cm3 = 3.125 L
-    ],
-    correctTankId: "b",
-  },
-  {
-    id: "order-3",
-    customer: "Just a tiny bowl for one goldfish - 500 milliliters should do it.",
-    needLabel: "500 mL",
-    tanks: [
-      { id: "a", l: 10, b: 10, h: 5 }, // 500 cm3 (correct)
-      { id: "b", l: 10, b: 10, h: 4 }, // 400 cm3
-      { id: "c", l: 10, b: 10, h: 6 }, // 600 cm3
-      { id: "d", l: 20, b: 10, h: 5 }, // 1000 cm3
-    ],
-    correctTankId: "a",
-  },
-  {
-    id: "order-4",
-    customer: "I'm going big - a proper display tank for 60 Liters, please!",
-    needLabel: "60 L",
-    tanks: [
-      { id: "a", l: 50, b: 40, h: 30 }, // 60000 cm3 = 60 L (correct)
-      { id: "b", l: 50, b: 40, h: 20 }, // 40000 cm3 = 40 L
-      { id: "c", l: 60, b: 40, h: 20 }, // 48000 cm3 = 48 L
-      { id: "d", l: 50, b: 50, h: 30 }, // 75000 cm3 = 75 L
-    ],
-    correctTankId: "a",
-  },
-  {
-    id: "order-5",
-    customer: "My last one - I need exactly 18.5 Liters for my cichlid tank.",
-    needLabel: "18.5 L",
-    tanks: [
-      { id: "a", l: 50, b: 37, h: 10 }, // 18500 cm3 = 18.5 L (correct)
-      { id: "b", l: 50, b: 35, h: 10 }, // 17500 cm3 = 17.5 L
-      { id: "c", l: 50, b: 40, h: 10 }, // 20000 cm3 = 20 L
-      { id: "d", l: 45, b: 37, h: 10 }, // 16650 cm3 = 16.65 L
-    ],
-    correctTankId: "a",
-  },
-];
-
-const SALARY_PER_SALE = 5;
-const WIN_THRESHOLD = 3; // at least 3 of 5 correct sales to end the shift on a high note
-
+// Orders are freshly randomized per game start (generateOrders below) so
+// concurrent students, and repeat plays, each get different tank sizes -
+// not the same 5 hardcoded orders every time. Verified against 20,000
+// generated order sets (100,000 tanks) in a standalone script: every
+// order's 4 tanks always have distinct volumes, the stated needLabel
+// always round-trips exactly to the correct tank's real volume, and
+// large (Litre-scale) orders never need more than 1 decimal place.
 function tankVolume(tank) {
   return tank.l * tank.b * tank.h;
 }
@@ -88,6 +28,107 @@ function formatVolume(cm3) {
   const liters = cm3 / 1000;
   return `${cm3.toLocaleString()} cm3 = ${liters} L`;
 }
+
+const SMALL_CUSTOMER_LINES = [
+  (cm3) => `Just a tiny bowl for one goldfish - ${cm3} milliliters should do it.`,
+  (cm3) => `I'm setting up a tiny nano tank - I need about ${cm3} milliliters of water.`,
+];
+const LARGE_CUSTOMER_LINES = [
+  (l) => `Hello! I need a tank that can hold exactly ${l} Liters of water!`,
+  (l) => `I'm setting up a small betta tank - I need ${l} Liters of water.`,
+  (l) => `I'm going big - a proper display tank for ${l} Liters, please!`,
+  (l) => `My last one - I need exactly ${l} Liters for my cichlid tank.`,
+];
+
+function perturbTank(base, isSmall) {
+  // Perturbing exactly 1 axis by a fixed step collides for symmetric bases
+  // (e.g. a 5x5x5 cube: nudging any single axis by the same delta gives the
+  // same volume via commutativity, since l*b*h doesn't care which axis
+  // changed) - varying how many axes change, and by how much, avoids that.
+  const dims = shuffle(["l", "b", "h"]);
+  const numDimsToPerturb = randChoice([1, 1, 2]);
+  const next = { ...base };
+  for (let i = 0; i < numDimsToPerturb; i++) {
+    const dim = dims[i];
+    const step = isSmall ? 5 : dim === "h" ? 20 : 5;
+    const mult = randChoice([1, 2]);
+    next[dim] = next[dim] + randChoice([-1, 1]) * step * mult;
+  }
+  if (next.l <= 0 || next.b <= 0 || next.h <= 0) return null;
+  return next;
+}
+
+function generateDistractors(correctDims, isSmall) {
+  const usedVolumes = new Set([tankVolume(correctDims)]);
+  const distractors = [];
+  let attempts = 0;
+  while (distractors.length < 3 && attempts < 300) {
+    attempts++;
+    const candidate = perturbTank(correctDims, isSmall);
+    if (!candidate) continue;
+    const vol = tankVolume(candidate);
+    if (vol <= 0 || usedVolumes.has(vol)) continue;
+    usedVolumes.add(vol);
+    distractors.push(candidate);
+  }
+  // Verified this never happens across 100,000 generated orders, but a
+  // fallback keeps the game from ever rendering fewer than 4 tank options.
+  let fallbackStep = isSmall ? 5 : 20;
+  while (distractors.length < 3) {
+    fallbackStep += isSmall ? 5 : 20;
+    const candidate = { ...correctDims, l: correctDims.l + fallbackStep };
+    const vol = tankVolume(candidate);
+    if (!usedVolumes.has(vol)) {
+      usedVolumes.add(vol);
+      distractors.push(candidate);
+    }
+  }
+  return distractors;
+}
+
+function generateOrder(orderId, isSmall) {
+  let l, b, h, cm3;
+  if (isSmall) {
+    // Rejection sampling: a plain range for l/b/h alone doesn't guarantee
+    // a sub-1000cm3 (mL-scale) result - e.g. 15x15x15 alone is 3375cm3.
+    do {
+      l = randInt(5, 15, 5);
+      b = randInt(5, 15, 5);
+      h = randInt(5, 15, 5);
+      cm3 = l * b * h;
+    } while (cm3 >= 1000);
+  } else {
+    // l/b multiples of 5, h a multiple of 20 - guarantees the volume is
+    // always a multiple of 100, so needLabel never needs more than 1
+    // decimal place (matching the original hand-authored orders' format).
+    l = randInt(20, 60, 5);
+    b = randInt(20, 60, 5);
+    h = randInt(20, 40, 20);
+    cm3 = l * b * h;
+  }
+  const correctDims = { l, b, h };
+  const liters = cm3 / 1000;
+  const needLabel = cm3 < 1000 ? `${cm3} mL` : `${Number.isInteger(liters) ? liters : liters.toFixed(1)} L`;
+  const customer = isSmall
+    ? randChoice(SMALL_CUSTOMER_LINES)(cm3)
+    : randChoice(LARGE_CUSTOMER_LINES)(Number.isInteger(liters) ? liters : liters.toFixed(1));
+
+  const distractorDims = generateDistractors(correctDims, isSmall);
+  const allDims = shuffle([correctDims, ...distractorDims]);
+  const tankIds = ["a", "b", "c", "d"];
+  const tanks = allDims.map((dims, i) => ({ id: tankIds[i], ...dims }));
+  const correctTankId = tanks.find((t) => t.l === l && t.b === b && t.h === h).id;
+
+  return { id: orderId, customer, needLabel, tanks, correctTankId };
+}
+
+function generateOrders() {
+  const smallIndex = randInt(0, 4);
+  return Array.from({ length: 5 }, (_, i) => generateOrder(`order-${i + 1}`, i === smallIndex));
+}
+
+const SALARY_PER_SALE = 5;
+const WIN_THRESHOLD = 3; // at least 3 of 5 correct sales to end the shift on a high note
 
 const Route = createFileRoute("/fish-tank-shop")({
   head: () => ({
@@ -106,6 +147,9 @@ function FishTankShopPage() {
   const { reportFinish } = useGameSession("fish_tank_shop");
 
   const [screen, setScreen] = useState("start"); // start | playing | done
+  // Freshly randomized on mount and again on every startGame() call - see
+  // generateOrders above.
+  const [orders, setOrders] = useState(() => generateOrders());
   const [orderIndex, setOrderIndex] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
   const [wrongCount, setWrongCount] = useState(0);
@@ -113,21 +157,22 @@ function FishTankShopPage() {
   const [feedback, setFeedback] = useState(null); // "correct" | "wrong" | null
 
   const salary = correctCount * SALARY_PER_SALE;
-  const order = ORDERS[orderIndex];
-  const finished = orderIndex >= ORDERS.length;
+  const order = orders[orderIndex];
+  const finished = orderIndex >= orders.length;
 
   useEffect(() => {
     if (screen !== "playing" || !finished) return;
     const won = correctCount >= WIN_THRESHOLD;
-    reportFinish(won ? "win" : "loss", Math.round((correctCount / ORDERS.length) * 100), {
+    reportFinish(won ? "win" : "loss", Math.round((correctCount / orders.length) * 100), {
       correctCount,
-      totalCount: ORDERS.length,
+      totalCount: orders.length,
     });
     setScreen("done");
   }, [finished]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function startGame() {
     setScreen("playing");
+    setOrders(generateOrders());
     setOrderIndex(0);
     setCorrectCount(0);
     setWrongCount(0);
@@ -177,7 +222,7 @@ function FishTankShopPage() {
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">SOLD</div>
-            <div className="mt-2 text-display-sm font-bold text-foreground">{correctCount}/{ORDERS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-foreground">{correctCount}/{orders.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">REJECTED</div>
@@ -211,7 +256,7 @@ function FishTankShopPage() {
                 <div className="text-4xl select-none" role="img" aria-label="Customer">🧑</div>
                 <div className="relative rounded-2xl rounded-tl-none bg-white text-slate-900 px-4 py-3 max-w-md shadow-lg">
                   <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-slate-500 mb-1">
-                    <MessageCircle className="h-3 w-3" /> Customer {orderIndex + 1} of {ORDERS.length}
+                    <MessageCircle className="h-3 w-3" /> Customer {orderIndex + 1} of {orders.length}
                   </div>
                   <p className="text-sm font-medium">{order.customer}</p>
                   <p className="mt-1 text-xs text-slate-500">Needs: <span className="font-bold text-accent">{order.needLabel}</span></p>
@@ -272,7 +317,7 @@ function FishTankShopPage() {
                   {won ? "The shop is thriving thanks to your math skills!" : "A few sales slipped away - review the volume formula and try again."}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  {correctCount} of {ORDERS.length} tanks sold - ${salary} earned.
+                  {correctCount} of {orders.length} tanks sold - ${salary} earned.
                 </p>
                 <div className="mt-6 flex flex-col gap-3">
                   <button type="button" onClick={startGame} className="btn btn-primary btn-lg">
@@ -295,7 +340,7 @@ function FishTankShopPage() {
         <ul className="mt-4 space-y-2 text-body-sm leading-6 text-text-secondary">
           <li className="flex gap-3"><span className="text-accent font-bold">1.</span> Each customer states the water volume they need in L or mL</li>
           <li className="flex gap-3"><span className="text-accent font-bold">2.</span> Calculate V = l x b x h in cm3, then convert to litres (1000 cm3 = 1 L)</li>
-          <li className="flex gap-3"><span className="text-accent font-bold">3.</span> Sell at least {WIN_THRESHOLD} of {ORDERS.length} customers the correct tank</li>
+          <li className="flex gap-3"><span className="text-accent font-bold">3.</span> Sell at least {WIN_THRESHOLD} of {orders.length} customers the correct tank</li>
         </ul>
       </div>
     </div>

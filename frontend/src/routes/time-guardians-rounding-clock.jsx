@@ -14,6 +14,7 @@ import {
   Zap,
 } from "lucide-react";
 import { useGameSession } from "@/hooks/useGameSession";
+import { randInt } from "@/lib/gameRandom";
 
 // Grade-9 rounding: nearest 10/100, decimal places, significant figures,
 // and a real-life estimate. Answers are numeric (not symbolic like the
@@ -28,48 +29,90 @@ function normalizeNumber(input) {
   return Number.isFinite(n) ? n : null;
 }
 
-const CRYSTALS = [
-  {
-    id: "c1",
-    type: "Nearest 10",
-    displayNumber: "47",
-    prompt: "Round 47 to the nearest 10.",
-    answer: 50,
-    color: "#60a5fa",
-  },
-  {
-    id: "c2",
-    type: "Nearest 100",
-    displayNumber: "1,346",
-    prompt: "Round 1,346 to the nearest 100.",
-    answer: 1300,
-    color: "#c084fc",
-  },
-  {
-    id: "c3",
-    type: "2 Decimal Places",
-    displayNumber: "8.7654",
-    prompt: "Round 8.7654 to 2 decimal places.",
-    answer: 8.77,
-    color: "#34d399",
-  },
-  {
-    id: "c4",
-    type: "3 Significant Figures",
-    displayNumber: "0.004567",
-    prompt: "Round 0.004567 to 3 significant figures.",
-    answer: 0.00457,
-    color: "#f472b6",
-  },
-  {
-    id: "c5",
-    type: "Real Life",
-    displayNumber: "Rs. 1,899",
-    prompt: "A shop price is Rs. 1,899. Round it to the nearest 100 for a quick estimate.",
-    answer: 1900,
-    color: "#fbbf24",
-  },
-];
+// Each crystal's numbers are freshly randomized per game start (see
+// generateCrystals below) so concurrent students - and repeat plays by the
+// same student - each get a different set, not the identical fixed numbers
+// every time. Rounding is computed from the individual decimal DIGITS, not
+// float multiplication/toFixed - e.g. (12.405).toFixed(2) === "12.40" in JS
+// because the literal 12.405 isn't exactly representable in binary, which
+// would silently mark a correctly "round half up" student answer wrong.
+// Verified against 20,000+ random cases plus hand-picked carry edge cases
+// (e.g. 8.995 -> 9.00) in a standalone script before wiring in here.
+const CRYSTAL_COLORS = { c1: "#60a5fa", c2: "#c084fc", c3: "#34d399", c4: "#f472b6", c5: "#fbbf24" };
+
+function genNearest10() {
+  const tens = randInt(1, 99);
+  const ones = randInt(1, 9); // nonzero last digit - avoids a trivial already-rounded number
+  const n = tens * 10 + ones;
+  const answer = Math.round(n / 10) * 10;
+  return {
+    id: "c1", type: "Nearest 10", color: CRYSTAL_COLORS.c1,
+    displayNumber: String(n), prompt: `Round ${n} to the nearest 10.`, answer,
+  };
+}
+
+function genNearest100() {
+  const n = randInt(1, 98) * 100 + randInt(1, 99);
+  const answer = Math.round(n / 100) * 100;
+  return {
+    id: "c2", type: "Nearest 100", color: CRYSTAL_COLORS.c2,
+    displayNumber: n.toLocaleString(), prompt: `Round ${n.toLocaleString()} to the nearest 100.`, answer,
+  };
+}
+
+function genTwoDp() {
+  const intPart = randInt(1, 20);
+  const d1 = randInt(0, 9);
+  const d2 = randInt(0, 9);
+  const d3 = randInt(0, 9);
+  const d4 = randInt(0, 9);
+  const displayNumber = `${intPart}.${d1}${d2}${d3}${d4}`;
+  let hundredths = d1 * 10 + d2;
+  let whole = intPart;
+  if (d3 >= 5) {
+    hundredths += 1;
+    if (hundredths === 100) {
+      hundredths = 0;
+      whole += 1;
+    }
+  }
+  const answerString = `${whole}.${Math.floor(hundredths / 10)}${hundredths % 10}`;
+  return {
+    id: "c3", type: "2 Decimal Places", color: CRYSTAL_COLORS.c3,
+    displayNumber, prompt: `Round ${displayNumber} to 2 decimal places.`, answer: Number(answerString),
+  };
+}
+
+function genSigFig3() {
+  const leadingZeros = randInt(1, 3);
+  const s1 = randInt(1, 8);
+  const s2 = randInt(0, 9);
+  const s3 = randInt(0, 8); // capped so a +1 carry from rounding never needs to cascade further
+  const s4 = randInt(0, 9);
+  const zeros = "0".repeat(leadingZeros);
+  const displayNumber = `0.${zeros}${s1}${s2}${s3}${s4}`;
+  const roundedS3 = s4 >= 5 ? s3 + 1 : s3;
+  const answerString = `0.${zeros}${s1}${s2}${roundedS3}`;
+  return {
+    id: "c4", type: "3 Significant Figures", color: CRYSTAL_COLORS.c4,
+    displayNumber, prompt: `Round ${displayNumber} to 3 significant figures.`, answer: Number(answerString),
+  };
+}
+
+function genRealLife() {
+  const n = randInt(1, 98) * 100 + randInt(1, 99);
+  const answer = Math.round(n / 100) * 100;
+  return {
+    id: "c5", type: "Real Life", color: CRYSTAL_COLORS.c5,
+    displayNumber: `Rs. ${n.toLocaleString()}`,
+    prompt: `A shop price is Rs. ${n.toLocaleString()}. Round it to the nearest 100 for a quick estimate.`,
+    answer,
+  };
+}
+
+function generateCrystals() {
+  return [genNearest10(), genNearest100(), genTwoDp(), genSigFig3(), genRealLife()];
+}
 
 const QUESTION_SECONDS = 30;
 const HINT_COST_SECONDS = 5;
@@ -195,6 +238,10 @@ function TimeGuardiansPage() {
   const inputRef = useRef(null);
 
   const [screen, setScreen] = useState("start"); // start | playing | won | lost
+  // Freshly randomized on mount and again on every startGame() call (Start
+  // Game / Play Again) so concurrent students, and repeat plays, each get
+  // different numbers - see generateCrystals above.
+  const [crystals, setCrystals] = useState(() => generateCrystals());
   const [crystalIndex, setCrystalIndex] = useState(0);
   const [gears, setGears] = useState(MAX_GEARS);
   const [purified, setPurified] = useState(0);
@@ -212,12 +259,13 @@ function TimeGuardiansPage() {
   const [glitchMonster, setGlitchMonster] = useState(false);
   const [glitchFlash, setGlitchFlash] = useState(false);
 
-  const crystal = CRYSTALS[crystalIndex];
+  const crystal = crystals[crystalIndex];
   const trappedSpirits = SPIRITS.filter((s) => !freedIds.includes(s.id));
 
   const startGame = () => {
     reportedRef.current = false;
     setScreen("playing");
+    setCrystals(generateCrystals());
     setCrystalIndex(0);
     setGears(MAX_GEARS);
     setPurified(0);
@@ -275,9 +323,9 @@ function TimeGuardiansPage() {
     window.setTimeout(() => setGlitchFlash(false), 400);
     if (newGears <= 0) {
       reportedRef.current = true;
-      reportFinish("loss", Math.round((purified / CRYSTALS.length) * 100), {
+      reportFinish("loss", Math.round((purified / crystals.length) * 100), {
         correctCount: purified,
-        totalCount: CRYSTALS.length,
+        totalCount: crystals.length,
       });
       setScreen("lost");
       return;
@@ -319,13 +367,13 @@ function TimeGuardiansPage() {
   }
 
   function goToNext() {
-    if (crystalIndex + 1 < CRYSTALS.length) {
+    if (crystalIndex + 1 < crystals.length) {
       setCrystalIndex((i) => i + 1);
       setTimeLeft(QUESTION_SECONDS);
       setAwaitingNext(false);
     } else {
       reportedRef.current = true;
-      reportFinish("win", 100, { correctCount: CRYSTALS.length, totalCount: CRYSTALS.length });
+      reportFinish("win", 100, { correctCount: crystals.length, totalCount: crystals.length });
       setScreen("won");
       setConfetti(true);
       sounds.playVictory();
@@ -339,7 +387,7 @@ function TimeGuardiansPage() {
 
   const weakestType = Object.entries(mistakesByType).sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
   const breakdown = crystal ? placeValueBreakdown(crystal.displayNumber) : null;
-  const clockGlow = 0.3 + (purified / CRYSTALS.length) * 0.7;
+  const clockGlow = 0.3 + (purified / crystals.length) * 0.7;
 
   return (
     <div className="space-y-6">
@@ -358,7 +406,7 @@ function TimeGuardiansPage() {
         <div className="grid grid-cols-3 gap-3">
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">PURIFIED</div>
-            <div className="mt-2 text-display-sm font-bold text-accent">{purified}/{CRYSTALS.length}</div>
+            <div className="mt-2 text-display-sm font-bold text-accent">{purified}/{crystals.length}</div>
           </div>
           <div className="card rounded-2xl">
             <div className="text-label-md text-text-muted">GEARS</div>
@@ -382,7 +430,7 @@ function TimeGuardiansPage() {
       <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
         <div
           className="h-full transition-all duration-500"
-          style={{ width: `${(purified / CRYSTALS.length) * 100}%`, background: "linear-gradient(90deg,#60a5fa,#c084fc)" }}
+          style={{ width: `${(purified / crystals.length) * 100}%`, background: "linear-gradient(90deg,#60a5fa,#c084fc)" }}
         />
       </div>
 
@@ -402,7 +450,7 @@ function TimeGuardiansPage() {
 
             {/* City lights - turn on one by one as crystals are purified */}
             <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-1 opacity-90 pointer-events-none">
-              {CRYSTALS.map((_, i) => (
+              {crystals.map((_, i) => (
                 <div
                   key={i}
                   className="w-8 rounded-t-sm transition-all duration-700"
@@ -430,14 +478,14 @@ function TimeGuardiansPage() {
               >
                 <span className="text-3xl">{"\u{1F550}"}</span>
                 <div className="absolute -bottom-2 rounded-full bg-cyan-950 px-2 py-0.5 text-[9px] font-bold text-cyan-200 border border-cyan-400/40">
-                  {purified}/{CRYSTALS.length} gears turned
+                  {purified}/{crystals.length} gears turned
                 </div>
               </div>
             </div>
 
             {/* Crystals */}
             <div className="relative z-10 mx-auto mt-6 grid grid-cols-5 gap-2 max-w-lg">
-              {CRYSTALS.map((c, idx) => {
+              {crystals.map((c, idx) => {
                 const isCurrent = idx === crystalIndex && screen === "playing";
                 const isPure = idx < crystalIndex || (idx === crystalIndex && crystalState === "clear");
                 return (
@@ -549,7 +597,7 @@ function TimeGuardiansPage() {
               <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-3 bg-black/70 backdrop-blur-sm rounded-3xl text-center px-6">
                 <Skull className="h-14 w-14 text-red-400" />
                 <h2 className="text-2xl font-black text-white">Time Fractured!</h2>
-                <p className="text-sm text-slate-200">You purified {purified} of {CRYSTALS.length} crystals before running out of gears.</p>
+                <p className="text-sm text-slate-200">You purified {purified} of {crystals.length} crystals before running out of gears.</p>
                 {weakestType && (
                   <p className="max-w-xs text-xs text-amber-200">
                     Most mistakes were on <span className="font-bold">{weakestType}</span> - worth practicing that type more.
@@ -574,7 +622,7 @@ function TimeGuardiansPage() {
           <div className="card rounded-2xl">
             <div className="flex items-center justify-between gap-3 mb-3">
               <div>
-                <div className="text-label-md text-text-muted">CRYSTAL {Math.min(crystalIndex + 1, CRYSTALS.length)}/{CRYSTALS.length}</div>
+                <div className="text-label-md text-text-muted">CRYSTAL {Math.min(crystalIndex + 1, crystals.length)}/{crystals.length}</div>
                 <div className="badge badge-primary mt-1">{crystal?.type ?? "-"}</div>
               </div>
               <div className={`flex items-center gap-1.5 text-sm font-bold ${timeLeft <= 10 ? "text-error animate-pulse" : "text-foreground"}`}>
@@ -589,7 +637,7 @@ function TimeGuardiansPage() {
                   <p className="text-success font-semibold text-body-sm">Crystal purified! A spirit is free!</p>
                   <button type="button" onClick={goToNext} className="btn btn-primary btn-lg w-full">
                     <ArrowRight className="h-4 w-4" />
-                    {crystalIndex + 1 < CRYSTALS.length ? "Next Crystal" : "See Results"}
+                    {crystalIndex + 1 < crystals.length ? "Next Crystal" : "See Results"}
                   </button>
                 </div>
               ) : (
