@@ -4,7 +4,7 @@ from datetime import datetime
 
 from flask import Blueprint, jsonify, request
 
-from services import profile_service
+from services import intervention_service, profile_service
 
 bp = Blueprint("profiles", __name__)
 
@@ -92,6 +92,19 @@ def record_lo_score():
         score=float(data["score"]),
         max_score=float(data.get("max_score", 100.0)),
     )
+
+    # Reactive intervention-outcome resolution (SO5): if this session is a
+    # retake of a lesson with a pending approved recommendation, this may
+    # be the post-intervention measurement. Best-effort - self-corrects on
+    # every subsequent LO-score POST for the same session, so a partial
+    # read here isn't a real failure, just recomputed on the next call.
+    lesson_id = profile_service.get_lesson_id_for_session(data["session_id"])
+    if lesson_id:
+        try:
+            intervention_service.try_resolve_pending(data["student_id"], lesson_id)
+        except Exception:
+            pass
+
     return jsonify({"success": True}), 201
 
 

@@ -239,3 +239,70 @@ def get_student_engagement(student_id: str) -> list[dict[str, Any]]:
         )
         cols = [d.name for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def get_latest_lesson_session_before(student_id: str, lesson_id: str, before) -> Optional[dict[str, Any]]:
+    """Most recent session (+ its avg LO score) for this student+lesson at
+    or before `before` - the "pre" baseline for intervention outcome
+    tracking, anchored to the recommendation's created_at so it can't drift
+    if the teacher reviews it days later."""
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT session_id FROM learning_sessions
+            WHERE student_id = %s AND lesson_id = %s AND start_time <= %s
+            ORDER BY start_time DESC LIMIT 1
+            """,
+            (student_id, lesson_id, before),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        session_id = str(row[0])
+
+        avg_score = _session_avg_score(cur, session_id)
+        if avg_score is None:
+            return None
+        return {"session_id": session_id, "avg_score": avg_score}
+
+
+def find_newer_session_for_lesson(student_id: str, lesson_id: str, after_session_id: str) -> Optional[dict[str, Any]]:
+    """The next session (if any) for this student+lesson strictly after
+    `after_session_id`'s start_time - used to detect a real retake/
+    post-intervention attempt."""
+    with get_cursor() as cur:
+        cur.execute("SELECT start_time FROM learning_sessions WHERE session_id = %s", (after_session_id,))
+        anchor = cur.fetchone()
+        if not anchor:
+            return None
+
+        cur.execute(
+            """
+            SELECT session_id FROM learning_sessions
+            WHERE student_id = %s AND lesson_id = %s AND start_time > %s
+            ORDER BY start_time ASC LIMIT 1
+            """,
+            (student_id, lesson_id, anchor[0]),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        session_id = str(row[0])
+
+        avg_score = _session_avg_score(cur, session_id)
+        if avg_score is None:
+            return None
+        return {"session_id": session_id, "avg_score": avg_score}
+
+
+def get_lesson_id_for_session(session_id: str) -> Optional[str]:
+    with get_cursor() as cur:
+        cur.execute("SELECT lesson_id FROM learning_sessions WHERE session_id = %s", (session_id,))
+        row = cur.fetchone()
+        return row[0] if row else None
+
+
+def _session_avg_score(cur, session_id: str) -> Optional[float]:
+    cur.execute("SELECT AVG(score) FROM lo_achievement_scores WHERE session_id = %s", (session_id,))
+    row = cur.fetchone()
+    return float(row[0]) if row and row[0] is not None else None

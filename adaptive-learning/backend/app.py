@@ -29,10 +29,13 @@ from recommendation import (
     estimate_time_to_master,
     generate_full_report
 )
-from lessons import list_lessons, get_lesson, get_quiz_for_lesson
-from mastery import score_submission
+from lessons import list_lessons, get_lesson, get_quiz_for_lesson, get_lesson_difficulty
+import advisor_recommendations
+from mastery import score_submission, score_generated_submission
 from semantic_recommender import recommend_resources
 from analytics_bridge import push_quiz_result_async, get_latest_weak_los, get_live_emotion, get_class_dominant_emotion
+from quiz_gen.generator import generate_quiz, strip_answers, SUPPORTED_LESSONS as QUIZ_GEN_LESSONS
+from quiz_gen import store as quiz_store
 
 # ───────────────────────────────────────────────
 # Flask App Setup
@@ -299,6 +302,24 @@ def get_lessons():
 
 @app.route("/api/lessons/<lesson_id>/quiz", methods=["GET"])
 def get_lesson_quiz(lesson_id):
+    # Pilot lessons: every request (first attempt AND every retake) gets a
+    # freshly generated 18-question instance instead of picking between 2
+    # static sets - the `set` query param is ignored for these, since
+    # "always different" supersedes "1 of 2 fixed variants". Falls back to
+    # the static PDF content (set 1) if generation raises for any reason,
+    # so a bug in quiz_gen never takes the lesson offline.
+    if lesson_id in QUIZ_GEN_LESSONS:
+        lesson = get_lesson(lesson_id)
+        if lesson:
+            try:
+                quiz = generate_quiz(lesson_id, lesson["title"], lesson["subject"])
+                instance_id = quiz_store.save(quiz)
+                response = strip_answers(quiz)
+                response["quiz_set"] = instance_id
+                return jsonify({"success": True, "data": response})
+            except Exception:
+                app.logger.exception(f"quiz_gen failed for {lesson_id}, falling back to static set 1")
+
     quiz_set = request.args.get("set", default=1, type=int)
     quiz = get_quiz_for_lesson(lesson_id, quiz_set=quiz_set)
     if not quiz:
@@ -341,7 +362,14 @@ def submit_lesson_quiz(lesson_id):
     if not emotion and student_id != "anonymous":
         emotion = get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
 
-    result = score_submission(lesson_id, answers, quiz_set=quiz_set)
+    # If quiz_set is a quiz_gen instance_id (a string handed out by the GET
+    # route above, not the legacy int 1/2), score against that generated
+    # instance's real answer key instead of the static LESSONS content.
+    generated_instance = quiz_store.get(quiz_set) if isinstance(quiz_set, str) else None
+    if generated_instance:
+        result = score_generated_submission(lesson_id, generated_instance["questions"], answers, quiz_set)
+    else:
+        result = score_submission(lesson_id, answers, quiz_set=quiz_set)
 
     recommendations = {
         lo: recommend_resources(lesson_id, lo, emotion=emotion, mastery_tier=result["lo_scores"][lo]["mastery_tier"], top_k=3)
@@ -354,6 +382,7 @@ def submit_lesson_quiz(lesson_id):
             student_id, lesson_id, lesson["title"], result, student_name, student_email,
             answered_count=len(answers), total_questions=sum(len(v["items"]) for v in result["lo_scores"].values()),
             duration_seconds=duration_seconds,
+            difficulty=get_lesson_difficulty(lesson_id),
         )
 
     return jsonify({
@@ -374,21 +403,52 @@ def student_dashboard_recommendations(student_id):
     for You" panel, based on whichever LOs were still weak in this
     student's most recent lesson attempt (via analytics-service) - the
     same semantic_recommender used right after a quiz submission, just
-    retrievable without requiring a fresh submission first."""
-    latest = get_latest_weak_los(student_id)
-    if not latest:
-        return jsonify({"success": True, "data": {"lesson_id": None, "recommendations": []}})
+    retrievable without requiring a fresh submission first.
 
-    lesson = get_lesson(latest["lesson_id"])
+    Also merges in any advisor_recommendations forwarded from
+    IT22197146's analytics-service when a teacher approved/modified a
+    statistically-grounded suggestion for this student - a distinct signal
+    from the weak-LO resource links above, so kept in its own field rather
+    than mixed into `recommendations`."""
+    latest = get_latest_weak_los(student_id)
+    lesson_id = latest["lesson_id"] if latest else None
     resources = []
-    for lo in latest["weak_los"]:
-        for res in recommend_resources(latest["lesson_id"], lo, top_k=2):
-            resources.append({**res, "lo_level": lo, "lesson_title": lesson["title"] if lesson else latest["lesson_id"]})
+    if latest:
+        lesson = get_lesson(latest["lesson_id"])
+        for lo in latest["weak_los"]:
+            for res in recommend_resources(latest["lesson_id"], lo, top_k=2):
+                resources.append({**res, "lo_level": lo, "lesson_title": lesson["title"] if lesson else latest["lesson_id"]})
 
     return jsonify({
         "success": True,
-        "data": {"lesson_id": latest["lesson_id"], "recommendations": resources},
+        "data": {
+            "lesson_id": lesson_id,
+            "recommendations": resources,
+            "advisor_recommendations": advisor_recommendations.get_for_student(student_id),
+        },
     })
+
+
+@app.route("/api/students/<student_id>/advisor-recommendations", methods=["POST"])
+def receive_advisor_recommendation(student_id):
+    """Ingestion point for IT22197146's analytics-service: called when a
+    teacher/advisor approves or modifies a statistically-grounded
+    recommendation, so it reaches the student the same way weak-LO
+    resource recommendations already do."""
+    data = request.get_json(force=True) or {}
+    lesson_id = data.get("lesson_id")
+    text = data.get("text")
+    if not lesson_id or not text:
+        return jsonify({"error": "lesson_id and text are required"}), 400
+
+    rec_id = advisor_recommendations.add(
+        student_id,
+        lesson_id,
+        text,
+        data.get("insight_type", "advisor"),
+        data.get("source", "analytics-service"),
+    )
+    return jsonify({"success": True, "id": rec_id}), 201
 
 
 # ───────────────────────────────────────────────

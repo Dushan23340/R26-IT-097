@@ -24,6 +24,9 @@ matplotlib==3.9.0
 # Environment variables
 python-dotenv==1.0.1
 
+# Forwarding approved recommendations to adaptive-learning/backend (IT22186492)
+requests==2.32.3
+
 # Synthetic data generation
 Faker==25.8.0
 

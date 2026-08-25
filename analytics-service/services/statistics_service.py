@@ -3,12 +3,20 @@
 Five analyses, each backed by a real scipy statistical test rather than a
 heuristic threshold:
 
-  1. LO trend analysis      - OLS linear regression (scipy.stats.linregress)
-  2. Stability analysis     - variance/std-dev, flagged against a class-wide
-                               baseline (class mean std + 1.5 SD)
-  3. Emotion-LO correlation - Pearson's r per emotion category
-  4. Engagement-performance - Mann-Whitney U, high- vs low-engagement sessions
-  5. Fairness audit         - see fairness_service.py (separate module, SO4)
+  1. LO trend analysis        - OLS linear regression (scipy.stats.linregress)
+  2. Stability analysis       - variance/std-dev, flagged against a class-wide
+                                 baseline (class mean std + 1.5 SD)
+  3. Emotion-LO correlation   - Pearson's r per emotion category
+  4. Engagement-performance   - Mann-Whitney U, high- vs low-engagement sessions
+  5. Difficulty-vs-achievement - OLS regression of LO score against lesson
+                                 difficulty (easy/medium/hard, ordinally
+                                 encoded); relies on adaptive-learning's
+                                 LESSON_DIFFICULTY tags flowing through
+                                 learning_sessions.difficulty (see
+                                 analytics_bridge.py's _push())
+
+Fairness auditing (disparate impact, variance calibration) is a separate
+concern (SO4) - see fairness_service.py.
 
 All functions operate on rows already pulled from Postgres via
 profile_service - this module has no DB access of its own, which keeps the
@@ -27,9 +35,11 @@ from scipy import stats
 MIN_SESSIONS_FOR_TREND = 3
 MIN_SESSIONS_FOR_CORRELATION = 3
 MIN_SESSIONS_PER_GROUP = 3
+MIN_SESSIONS_FOR_DIFFICULTY = 3
 TREND_SIGNIFICANCE = 0.05
 CORRELATION_THRESHOLD = 0.3  # |r| below this is not "meaningful" per Table 8
 ENGAGEMENT_HIGH_THRESHOLD = 0.6  # engagement_score is stored 0-1 per schema
+DIFFICULTY_ORDINAL = {"easy": 1, "medium": 2, "hard": 3}
 
 
 def _session_average_scores(lo_history: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -226,4 +236,86 @@ def analyze_engagement_performance(
         "u_statistic": round(float(u_stat), 4),
         "p_value": round(float(p_value), 4),
         "significant": bool(p_value < TREND_SIGNIFICANCE),
+    }
+
+
+def _session_average_scores_with_difficulty(lo_history: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Same grouping as _session_average_scores, but also carries each
+    session's lesson difficulty (learning_sessions.difficulty, joined in by
+    profile_service.get_student_lo_history) - needed only by
+    analyze_difficulty_relationship, so kept separate rather than adding an
+    unused field to every other caller of _session_average_scores."""
+    by_session: dict[str, dict[str, Any]] = {}
+    order: list[str] = []
+    for row in lo_history:
+        sid = str(row["session_id"])
+        if sid not in by_session:
+            by_session[sid] = {
+                "session_id": sid,
+                "start_time": row["start_time"],
+                "difficulty": row.get("difficulty"),
+                "scores": [],
+            }
+            order.append(sid)
+        by_session[sid]["scores"].append(float(row["score"]))
+
+    return [
+        {
+            "session_id": sid,
+            "start_time": by_session[sid]["start_time"],
+            "difficulty": by_session[sid]["difficulty"],
+            "avg_score": mean(by_session[sid]["scores"]),
+        }
+        for sid in order
+    ]
+
+
+def analyze_difficulty_relationship(lo_history: list[dict[str, Any]]) -> dict[str, Any]:
+    """OLS regression of session-average LO score against lesson difficulty
+    (easy=1/medium=2/hard=3). Sessions whose lesson has no difficulty tag
+    (learning_sessions.difficulty IS NULL - true for any lesson not yet
+    covered by adaptive-learning's LESSON_DIFFICULTY map, or for historical
+    sessions recorded before that tagging existed) are excluded rather than
+    guessed at."""
+    sessions = [
+        s for s in _session_average_scores_with_difficulty(lo_history)
+        if s["difficulty"] in DIFFICULTY_ORDINAL
+    ]
+    distinct_levels = {s["difficulty"] for s in sessions}
+
+    if len(sessions) < MIN_SESSIONS_FOR_DIFFICULTY or len(distinct_levels) < 2:
+        return {
+            "available": False,
+            "reason": (
+                f"need at least {MIN_SESSIONS_FOR_DIFFICULTY} difficulty-tagged sessions "
+                f"spanning 2+ difficulty levels, have {len(sessions)} session(s) across "
+                f"{len(distinct_levels)} level(s)"
+            ),
+            "session_count": len(sessions),
+        }
+
+    x = np.array([DIFFICULTY_ORDINAL[s["difficulty"]] for s in sessions], dtype=float)
+    y = np.array([s["avg_score"] for s in sessions], dtype=float)
+
+    result = stats.linregress(x, y)
+
+    if result.pvalue < TREND_SIGNIFICANCE:
+        relationship = "harder lessons score lower" if result.slope < 0 else "harder lessons score higher"
+    else:
+        relationship = "no significant relationship"
+
+    by_level: dict[str, list[float]] = defaultdict(list)
+    for s in sessions:
+        by_level[s["difficulty"]].append(s["avg_score"])
+
+    return {
+        "available": True,
+        "session_count": len(sessions),
+        "slope": round(float(result.slope), 4),
+        "intercept": round(float(result.intercept), 4),
+        "r_value": round(float(result.rvalue), 4),
+        "p_value": round(float(result.pvalue), 4),
+        "significant": bool(result.pvalue < TREND_SIGNIFICANCE),
+        "relationship": relationship,
+        "mean_score_by_difficulty": {level: round(mean(scores), 4) for level, scores in by_level.items()},
     }

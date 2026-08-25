@@ -111,14 +111,27 @@ def score_submission(lesson_id: str, answers: dict[str, str], quiz_set: int = 1)
     if not lesson:
         raise ValueError(f"Unknown lesson: {lesson_id}")
 
+    # Lessons not yet migrated to the pilot format have no "set" field -
+    # treat them as belonging to set 1 only, so a set=2 request against
+    # an unmigrated lesson naturally falls back to its one and only set.
+    questions = [q for q in lesson["questions"] if q.get("set", 1) == quiz_set]
+    return _score_questions(lesson_id, questions, answers, quiz_set)
+
+
+def score_generated_submission(lesson_id: str, questions: list[dict], answers: dict[str, str], instance_id: str) -> dict:
+    """Same scoring as score_submission, but against a quiz_gen-generated
+    instance's questions (passed in directly, not looked up from the
+    static LESSONS dict) - used for the pilot lessons where every quiz is
+    freshly generated per request. `instance_id` is echoed back in the
+    result's quiz_set field exactly like a static quiz_set int would be,
+    since the frontend already treats that field as an opaque round-trip
+    value."""
+    return _score_questions(lesson_id, questions, answers, instance_id)
+
+
+def _score_questions(lesson_id: str, questions: list[dict], answers: dict[str, str], quiz_set) -> dict:
     per_lo_items: dict[str, list[dict]] = {}
-    for q in lesson["questions"]:
-        # Lessons not yet migrated to the pilot format have no "set" field -
-        # treat them as belonging to set 1 only, so a set=2 request against
-        # an unmigrated lesson naturally falls back to its one and only set.
-        q_set = q.get("set", 1)
-        if q_set != quiz_set:
-            continue
+    for q in questions:
         selected = answers.get(q["id"])
         correct = _is_correct(q, selected)
         per_lo_items.setdefault(q["lo_level"], []).append({

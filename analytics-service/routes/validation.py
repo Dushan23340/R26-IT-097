@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
-from services import profile_service, statistics_service, validation_service
+from services import intervention_service, profile_service, statistics_service, validation_service
 
 bp = Blueprint("validation", __name__)
 
@@ -52,3 +52,13 @@ def review_recommendation(recommendation_id: int):
         return jsonify({"error": str(exc)}), 404
 
     return jsonify(updated), 200
+
+
+@bp.route("/students/<student_id>/interventions", methods=["GET"])
+def student_interventions(student_id: str):
+    return jsonify({"interventions": intervention_service.list_interventions(student_id)}), 200
+
+
+@bp.route("/interventions/effectiveness", methods=["GET"])
+def interventions_effectiveness():
+    return jsonify({"effectiveness": intervention_service.effectiveness_summary()}), 200

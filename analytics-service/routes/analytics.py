@@ -5,7 +5,7 @@ from statistics import mean
 
 from flask import Blueprint, jsonify, request
 
-from services import fairness_service, profile_service, statistics_service
+from services import fairness_audit_service, fairness_service, lesson_intelligence_service, profile_service, statistics_service
 
 # seed_synthetic_data.py generates demo/testing students with this prefix
 # (Faker-generated names/emails/histories) - real aggregate views (Teacher
@@ -42,6 +42,17 @@ def engagement_performance(student_id: str):
     history = profile_service.get_student_lo_history(student_id)
     engagement = profile_service.get_student_engagement(student_id)
     return jsonify(statistics_service.analyze_engagement_performance(history, engagement)), 200
+
+
+@bp.route("/students/<student_id>/analytics/difficulty", methods=["GET"])
+def difficulty_relationship(student_id: str):
+    history = profile_service.get_student_lo_history(student_id)
+    return jsonify(statistics_service.analyze_difficulty_relationship(history)), 200
+
+
+@bp.route("/students/<student_id>/analytics/lesson-intelligence", methods=["GET"])
+def lesson_intelligence(student_id: str):
+    return jsonify({"lessons": lesson_intelligence_service.generate_lesson_intelligence(student_id)}), 200
 
 
 @bp.route("/class/stability-baseline", methods=["GET"])
@@ -122,6 +133,7 @@ def class_overview():
     )
 
     disparate_impact = fairness_service.compute_disparate_impact(avg_score_by_student, group_by_student)
+    fairness_audit_service.record_disparate_impact_result(disparate_impact)
 
     return jsonify({
         "total_students": len(students),

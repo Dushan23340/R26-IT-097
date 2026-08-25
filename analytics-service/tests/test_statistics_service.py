@@ -12,6 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from services.statistics_service import (
+    analyze_difficulty_relationship,
     analyze_emotion_lo_correlation,
     analyze_engagement_performance,
     analyze_lo_trend,
@@ -32,6 +33,21 @@ def _lo_rows(scores: list[float]) -> list[dict]:
             "lo_level": "understand",
             "score": score,
             "max_score": 100,
+        })
+    return rows
+
+
+def _lo_rows_with_difficulty(scores_and_difficulty: list[tuple[float, str]]) -> list[dict]:
+    base = datetime(2026, 1, 1)
+    rows = []
+    for i, (score, difficulty) in enumerate(scores_and_difficulty):
+        rows.append({
+            "session_id": f"session-{i}",
+            "start_time": base + timedelta(days=i),
+            "lo_level": "understand",
+            "score": score,
+            "max_score": 100,
+            "difficulty": difficulty,
         })
     return rows
 
@@ -132,6 +148,44 @@ class EngagementPerformanceTests(unittest.TestCase):
         ]
         result = analyze_engagement_performance(lo_rows, engagement_records)
         self.assertFalse(result["available"])
+
+
+class DifficultyRelationshipTests(unittest.TestCase):
+    def test_harder_lessons_score_lower_is_detected(self):
+        rows = _lo_rows_with_difficulty([
+            (90, "easy"), (88, "easy"),
+            (70, "medium"), (68, "medium"),
+            (40, "hard"), (42, "hard"),
+        ])
+        result = analyze_difficulty_relationship(rows)
+        self.assertTrue(result["available"])
+        self.assertLess(result["slope"], 0)
+        self.assertEqual(result["relationship"], "harder lessons score lower")
+        self.assertTrue(result["significant"])
+
+    def test_untagged_sessions_are_excluded_not_guessed(self):
+        rows = _lo_rows_with_difficulty([(90, "easy"), (88, "medium")])
+        rows.append({
+            "session_id": "session-untagged", "start_time": datetime(2026, 1, 10),
+            "lo_level": "understand", "score": 50, "max_score": 100, "difficulty": None,
+        })
+        result = analyze_difficulty_relationship(rows)
+        # only 2 tagged sessions - below MIN_SESSIONS_FOR_DIFFICULTY
+        self.assertFalse(result["available"])
+
+    def test_single_difficulty_level_reports_unavailable(self):
+        rows = _lo_rows_with_difficulty([(90, "easy"), (88, "easy"), (85, "easy")])
+        result = analyze_difficulty_relationship(rows)
+        self.assertFalse(result["available"])
+
+    def test_no_relationship_when_scores_dont_track_difficulty(self):
+        rows = _lo_rows_with_difficulty([
+            (80, "easy"), (80, "medium"), (80, "hard"),
+            (80, "easy"), (80, "medium"), (80, "hard"),
+        ])
+        result = analyze_difficulty_relationship(rows)
+        self.assertTrue(result["available"])
+        self.assertEqual(result["relationship"], "no significant relationship")
 
 
 if __name__ == "__main__":

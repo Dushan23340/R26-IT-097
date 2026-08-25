@@ -133,6 +133,7 @@ def _push(
     answered_count: int = 0,
     total_questions: int = 0,
     duration_seconds: int | None = None,
+    difficulty: str | None = None,
 ) -> None:
     # learning_sessions.student_id is a foreign key into student_profiles -
     # a real logged-in student has never had a profile row created for
@@ -163,6 +164,7 @@ def _push(
         "lesson_title": lesson_title,
         "start_time": start_time.isoformat(),
         "end_time": end_time.isoformat(),
+        "difficulty": difficulty,
     })
     if not session_response:
         return
@@ -204,6 +206,7 @@ def push_quiz_result_async(
     answered_count: int = 0,
     total_questions: int = 0,
     duration_seconds: int | None = None,
+    difficulty: str | None = None,
 ) -> None:
     threading.Thread(
         target=_push,
@@ -212,6 +215,7 @@ def push_quiz_result_async(
             "answered_count": answered_count,
             "total_questions": total_questions,
             "duration_seconds": duration_seconds,
+            "difficulty": difficulty,
         },
         daemon=True,
     ).start()

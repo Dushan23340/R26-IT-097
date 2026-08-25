@@ -22,7 +22,8 @@ import {
   AlertCircle,
   MousePointerClick,
   RefreshCw,
-  ExternalLink
+  ExternalLink,
+  UserCheck
 } from "lucide-react";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
@@ -64,6 +65,10 @@ function StudentDashboard() {
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [recommendations, setRecommendations] = useState([]);
   const [loadingRecommendations, setLoadingRecommendations] = useState(true);
+  // Statistically-grounded recommendations a teacher/advisor approved via
+  // analytics-service's expert-in-the-loop queue (IT22197146 SO5/Figure 3) -
+  // distinct from the weak-LO resource links above.
+  const [advisorRecommendations, setAdvisorRecommendations] = useState([]);
 
   // Real per-session LO history from analytics-service, used to derive
   // Quick Stats and Your Progress below - replaces the previously
@@ -80,8 +85,14 @@ function StudentDashboard() {
 
     adaptiveApiService
       .getStudentRecommendations(studentId)
-      .then((res) => setRecommendations(res.data?.recommendations || []))
-      .catch(() => setRecommendations([]))
+      .then((res) => {
+        setRecommendations(res.data?.recommendations || []);
+        setAdvisorRecommendations(res.data?.advisor_recommendations || []);
+      })
+      .catch(() => {
+        setRecommendations([]);
+        setAdvisorRecommendations([]);
+      })
       .finally(() => setLoadingRecommendations(false));
 
     studentProfileApi
@@ -785,6 +796,23 @@ function StudentDashboard() {
           <BookOpen className="h-5 w-5 text-primary" />
           Recommended for You
         </h2>
+
+        {!loadingRecommendations && advisorRecommendations.length > 0 && (
+          <div className="mb-4 space-y-2">
+            {advisorRecommendations.map((rec) => (
+              <div
+                key={rec.id}
+                className="p-3 rounded-xl border border-primary/40 bg-primary/5 flex items-start gap-3"
+              >
+                <UserCheck className="h-5 w-5 text-primary shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-semibold text-primary mb-1">From your advisor</p>
+                  <p className="text-sm text-foreground">{rec.text}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {loadingRecommendations ? (
           <div className="py-8 flex justify-center text-muted-foreground">

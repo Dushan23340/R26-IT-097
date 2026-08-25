@@ -12,7 +12,7 @@ import {
   Scatter,
   ZAxis
 } from "recharts";
-import { Activity, TrendingUp, Calendar, RefreshCw, AlertTriangle, Sparkles, Mail, ShieldCheck, Users, Scale, Gamepad2, Clock, Video } from "lucide-react";
+import { Activity, TrendingUp, Calendar, RefreshCw, AlertTriangle, Sparkles, Mail, ShieldCheck, Users, Scale, Gamepad2, Clock, Video, Layers, BarChart3, Target, BellRing, CheckCircle2 } from "lucide-react";
 import { EmotionBadge } from "@/components/EmotionBadge";
 import { MasteryRing } from "@/components/MasteryRing";
 import { studentProfileApi } from "@/lib/studentProfileApi";
@@ -167,6 +167,9 @@ function TeacherProfileCard({ user }) {
   const [pendingCount, setPendingCount] = useState(null);
   const [effectiveness, setEffectiveness] = useState(null);
   const [history, setHistory] = useState([]);
+  const [recEffectiveness, setRecEffectiveness] = useState(null);
+  const [fairnessAlerts, setFairnessAlerts] = useState([]);
+  const [resolvingAlertId, setResolvingAlertId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -180,13 +183,17 @@ function TeacherProfileCard({ user }) {
       studentProfileApi.getPendingRecommendations(),
       emotionApi.getEffectiveness(),
       emotionApi.getRecommendationHistory(10080), // last 7 days
+      studentProfileApi.getInterventionsEffectiveness(),
+      studentProfileApi.getFairnessAlerts("open"),
     ])
-      .then(([overviewData, pendingData, effData, historyData]) => {
+      .then(([overviewData, pendingData, effData, historyData, recEffData, alertsData]) => {
         if (cancelled) return;
         setOverview(overviewData);
         setPendingCount((pendingData?.recommendations || []).length);
         setEffectiveness(effData);
         setHistory((historyData?.history || []).slice(-8).reverse());
+        setRecEffectiveness(recEffData?.effectiveness || []);
+        setFairnessAlerts(alertsData?.alerts || []);
       })
       .catch((e) => {
         if (!cancelled) setError(e.message || "Failed to load class analytics");
@@ -199,6 +206,18 @@ function TeacherProfileCard({ user }) {
       cancelled = true;
     };
   }, []);
+
+  async function handleResolveAlert(alertId) {
+    setResolvingAlertId(alertId);
+    try {
+      await studentProfileApi.resolveFairnessAlert(alertId, user?.name || user?.email || "teacher");
+      setFairnessAlerts((prev) => prev.filter((a) => a.id !== alertId));
+    } catch (e) {
+      setError(e.message || "Failed to resolve fairness alert");
+    } finally {
+      setResolvingAlertId(null);
+    }
+  }
 
   const fairness = overview?.fairness;
   const strugglingAreas = (overview?.struggling_areas || []).slice().sort((a, b) => a.avg_score - b.avg_score);
@@ -364,6 +383,89 @@ function TeacherProfileCard({ user }) {
         </div>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {
+    /* Recommendation Effectiveness - distinct from "Intervention
+       Effectiveness" above (that's emotion-backend's game-recommendation
+       metric). This is analytics-service's own expert-in-the-loop
+       recommendations: does approving a trend/stability/emotion/engagement
+       insight actually correlate with improved subsequent LO scores. */
+  }
+        <div className="glass rounded-2xl p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <Target className="h-4 w-4 text-primary" /> Recommendation Effectiveness
+          </div>
+          {loading ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+            </div>
+          ) : recEffectiveness?.length > 0 ? (
+            <div className="space-y-3">
+              {recEffectiveness.map((row) => (
+                <div key={row.insight_type} className="flex items-center justify-between text-xs border-b border-border/40 pb-2 last:border-0 last:pb-0">
+                  <div>
+                    <span className="font-medium capitalize">{row.insight_type.replace(/_/g, " ")}</span>
+                    <span className="text-muted-foreground"> · {row.applications} applied</span>
+                  </div>
+                  <div className="flex items-center gap-3 text-right">
+                    <span className="text-emotion-happy font-semibold">{row.improved} improved</span>
+                    <span className="text-muted-foreground">{row.no_significant_change} no change</span>
+                    <span className="text-destructive font-semibold">{row.declined} declined</span>
+                    <span className={`font-mono ${row.avg_improvement_points >= 0 ? "text-emotion-happy" : "text-destructive"}`}>
+                      {row.avg_improvement_points >= 0 ? "+" : ""}{row.avg_improvement_points}pt
+                    </span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              No evaluated recommendations yet - approve a pending insight and wait for the student's next attempt at that lesson.
+            </p>
+          )}
+        </div>
+
+        {
+    /* Fairness Alert History - persisted violations from
+       fairness_audits (FR09), distinct from the live snapshot above which
+       recomputes on every page load and has no memory of past findings. */
+  }
+        <div className="glass rounded-2xl p-5">
+          <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+            <BellRing className="h-4 w-4 text-primary" /> Fairness Alert History
+          </div>
+          {loading ? (
+            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+              <RefreshCw className="h-5 w-5 animate-spin" />
+            </div>
+          ) : fairnessAlerts.length > 0 ? (
+            <div className="space-y-2">
+              {fairnessAlerts.map((alert) => (
+                <div key={alert.id} className="p-3 rounded-lg border border-destructive/30 bg-destructive/5 text-xs">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <span className="font-semibold capitalize">{alert.metric.replace(/_/g, " ")}</span>
+                      <span className="text-muted-foreground"> · {alert.groups_compared.join(", ")}</span>
+                      <p className="text-muted-foreground mt-1">{new Date(alert.created_at).toLocaleString()}</p>
+                    </div>
+                    <button
+                      onClick={() => handleResolveAlert(alert.id)}
+                      disabled={resolvingAlertId === alert.id}
+                      className="px-2.5 py-1 rounded-lg text-[11px] font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-1 flex-shrink-0"
+                    >
+                      {resolvingAlertId === alert.id ? <RefreshCw className="h-3 w-3 animate-spin" /> : <CheckCircle2 className="h-3 w-3" />}
+                      Resolve
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">No open fairness alerts - disparate-impact and variance-calibration checks are clean.</p>
+          )}
+        </div>
+      </div>
+
       <p className="text-xs text-muted-foreground flex items-center gap-1.5">
         <Users className="h-3.5 w-3.5" /> Looking for a specific student's learning analytics? Open Teacher Console to browse the class
         and start a recommendation - individual student profiles are viewed from there.
@@ -383,6 +485,8 @@ function StudentAnalyticsView() {
   const [trend, setTrend] = useState(null);
   const [stability, setStability] = useState(null);
   const [correlation, setCorrelation] = useState(null);
+  const [lessonIntelligence, setLessonIntelligence] = useState([]);
+  const [difficulty, setDifficulty] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -414,14 +518,18 @@ function StudentAnalyticsView() {
       studentProfileApi.getStudentStability(selectedId),
       studentProfileApi.getStudentEmotionCorrelation(selectedId),
       studentProfileApi.getApprovedRecommendations(selectedId),
+      studentProfileApi.getStudentLessonIntelligence(selectedId),
+      studentProfileApi.getStudentDifficulty(selectedId),
     ])
-      .then(([historyData, trendData, stabilityData, correlationData, recsData]) => {
+      .then(([historyData, trendData, stabilityData, correlationData, recsData, lessonIntelData, difficultyData]) => {
         if (cancelled) return;
         setHistory(historyData);
         setTrend(trendData);
         setStability(stabilityData);
         setCorrelation(correlationData);
         setRecommendations(recsData.recommendations || []);
+        setLessonIntelligence(lessonIntelData?.lessons || []);
+        setDifficulty(difficultyData);
       })
       .catch((e) => {
         if (!cancelled) setError(e.message || "Failed to load student analytics");
@@ -633,6 +741,109 @@ function StudentAnalyticsView() {
             </div>
           )}
         </div>
+      </div>
+
+      {
+    /* Difficulty vs Achievement - the 5th statistical analysis, only
+       meaningful once sessions span 2+ difficulty-tagged lessons
+       (adaptive-learning's LESSON_DIFFICULTY tags). */
+  }
+      <div className="glass rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <div className="text-sm font-semibold flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-primary" /> Difficulty vs. Achievement
+          </div>
+          {difficulty?.available && (
+            <span className="text-[11px] text-muted-foreground">
+              {difficulty.relationship}{difficulty.significant ? `, p=${difficulty.p_value}` : ""}
+            </span>
+          )}
+        </div>
+        {loading ? (
+          <div className="h-16 flex items-center justify-center text-sm text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+          </div>
+        ) : difficulty?.available ? (
+          <div className="space-y-3">
+            {["easy", "medium", "hard"].map((level) => {
+              const score = difficulty.mean_score_by_difficulty[level];
+              if (score == null) return null;
+              return (
+                <div key={level}>
+                  <div className="flex items-center justify-between text-xs mb-1">
+                    <span className="font-medium capitalize">{level}</span>
+                    <span className="text-muted-foreground">{score}% avg</span>
+                  </div>
+                  <div className="h-1.5 w-full rounded-full bg-secondary overflow-hidden">
+                    <div
+                      className="h-full"
+                      style={{
+                        width: `${score}%`,
+                        background: level === "hard" ? "var(--emotion-confused)" : level === "medium" ? "var(--emotion-bored, #f59e0b)" : "var(--gradient-primary)",
+                      }}
+                    />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            {difficulty?.reason || "Not enough difficulty-tagged sessions yet across 2+ difficulty levels."}
+          </p>
+        )}
+      </div>
+
+      {
+    /* Lesson-by-Lesson Intelligence (SO3/FR06) - groups by lesson_id
+       (trend/stability/dominant emotion/verdict per lesson), distinct from
+       the per-SESSION "Lesson-by-Lesson Breakdown" table further down. */
+  }
+      <div className="glass rounded-2xl p-5">
+        <div className="text-sm font-semibold flex items-center gap-2 mb-4">
+          <Layers className="h-4 w-4 text-primary" /> Lesson-by-Lesson Intelligence
+        </div>
+        {loading ? (
+          <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
+            <RefreshCw className="h-5 w-5 animate-spin" />
+          </div>
+        ) : lessonIntelligence.length > 0 ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {lessonIntelligence.map((l) => {
+              const verdictColor = l.verdict === "strength" ? "var(--emotion-happy)" : l.verdict === "weakness" ? "var(--emotion-confused)" : "var(--muted-foreground)";
+              return (
+                <div key={l.lesson_id} className="p-3 rounded-lg border border-border/60 text-xs">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="font-semibold capitalize">{l.lesson_id.replace(/-/g, " ")}</span>
+                    <span
+                      className="px-2 py-0.5 rounded-full text-[10px] font-medium capitalize"
+                      style={{ background: `color-mix(in oklab, ${verdictColor} 15%, transparent)`, color: verdictColor }}
+                    >
+                      {l.verdict}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-2 gap-y-1 text-muted-foreground">
+                    <span>Current: <span className="font-mono text-foreground">{l.current_score}%</span></span>
+                    <span>History: <span className="font-mono text-foreground">{l.historical_average}%</span></span>
+                    <span>Trend: <span className="text-foreground capitalize">{l.trend.replace(/_/g, " ")}</span></span>
+                    <span>Sessions: <span className="font-mono text-foreground">{l.session_count}</span></span>
+                  </div>
+                  {(l.dominant_emotion || l.avg_engagement != null) && (
+                    <div className="flex items-center gap-3 mt-2 pt-2 border-t border-border/40">
+                      {toEmotionKey(l.dominant_emotion) && <EmotionBadge emotion={toEmotionKey(l.dominant_emotion)} size="sm" />}
+                      {l.avg_engagement != null && (
+                        <span className="text-muted-foreground">{Math.round(l.avg_engagement * 100)}% engagement</span>
+                      )}
+                      {l.is_unstable && <span className="text-emotion-confused">high variance</span>}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">No lesson data yet - take a quiz from Adaptive Learning and it'll show up here.</p>
+        )}
       </div>
 
       {

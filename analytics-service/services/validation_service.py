@@ -14,7 +14,7 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from config.database import get_cursor
-from services import profile_service, statistics_service
+from services import intervention_service, lo_component_bridge, profile_service, statistics_service
 
 INSIGHT_THRESHOLDS_NOTE = (
     "Recommendations are only generated for findings that clear the "
@@ -29,16 +29,17 @@ def _queue(
     insight_type: str,
     recommendation_text: str,
     evidence: dict[str, Any],
+    lesson_id: Optional[str] = None,
     session_id: Optional[str] = None,
 ) -> int:
     with get_cursor() as cur:
         cur.execute(
             """
-            INSERT INTO recommendations (student_id, session_id, insight_type, recommendation_text, statistical_evidence)
-            VALUES (%s, %s, %s, %s, %s)
+            INSERT INTO recommendations (student_id, session_id, lesson_id, insight_type, recommendation_text, statistical_evidence)
+            VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING id
             """,
-            (student_id, session_id, insight_type, recommendation_text, _to_jsonb(evidence)),
+            (student_id, session_id, lesson_id, insight_type, recommendation_text, _to_jsonb(evidence)),
         )
         return int(cur.fetchone()[0])
 
@@ -59,6 +60,12 @@ def analyze_student_and_queue_recommendations(
     emotional_states = profile_service.get_student_emotional_states(student_id)
     engagement = profile_service.get_student_engagement(student_id)
 
+    # Every analysis above operates on the student's WHOLE history, not one
+    # lesson - but an approved recommendation needs something concrete to
+    # measure a retake against. The student's most-recent lesson (their
+    # "current" context at generation time) is that anchor.
+    lesson_id = max(lo_history, key=lambda row: row["start_time"])["lesson_id"] if lo_history else None
+
     created: list[int] = []
 
     trend = statistics_service.analyze_lo_trend(lo_history)
@@ -69,7 +76,7 @@ def analyze_student_and_queue_recommendations(
             f"(slope={trend['slope']}, p={trend['p_value']}). Consider a check-in or "
             "targeted review of recent lesson content."
         )
-        created.append(_queue(student_id, "trend", text, trend))
+        created.append(_queue(student_id, "trend", text, trend, lesson_id=lesson_id))
 
     if stability_baseline and stability_baseline.get("available"):
         stability = statistics_service.compute_stability(lo_history)
@@ -82,7 +89,7 @@ def analyze_student_and_queue_recommendations(
                 "High variance in performance is a stronger dropout/disengagement predictor than low "
                 "average performance alone - recommend individual follow-up."
             )
-            created.append(_queue(student_id, "stability", text, {**stability, "baseline": stability_baseline}))
+            created.append(_queue(student_id, "stability", text, {**stability, "baseline": stability_baseline}, lesson_id=lesson_id))
 
     correlations = statistics_service.analyze_emotion_lo_correlation(lo_history, emotional_states)
     for emotion, result in correlations.items():
@@ -92,7 +99,7 @@ def analyze_student_and_queue_recommendations(
                 f"(r={result['r']}, p={result['p_value']}, n={result['n']}). Consider addressing {emotion.lower()} "
                 "triggers directly (pacing, content difficulty, or a check-in)."
             )
-            created.append(_queue(student_id, "emotion_correlation", text, {emotion: result}))
+            created.append(_queue(student_id, "emotion_correlation", text, {emotion: result}, lesson_id=lesson_id))
 
     engagement_result = statistics_service.analyze_engagement_performance(lo_history, engagement)
     if engagement_result.get("available") and engagement_result["significant"] and (
@@ -105,7 +112,7 @@ def analyze_student_and_queue_recommendations(
             "Engagement-boosting interventions (e.g. interactive activities) are likely to translate "
             "directly into better outcomes for this student."
         )
-        created.append(_queue(student_id, "engagement_comparison", text, engagement_result))
+        created.append(_queue(student_id, "engagement_comparison", text, engagement_result, lesson_id=lesson_id))
 
     return created
 
@@ -126,7 +133,7 @@ def _list_by_status(status: str) -> list[dict[str, Any]]:
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT id, student_id, session_id, insight_type, recommendation_text,
+            SELECT id, student_id, session_id, lesson_id, insight_type, recommendation_text,
                    statistical_evidence, status, modified_text, reviewed_by, reviewed_at,
                    rejection_rationale, created_at
             FROM recommendations
@@ -158,7 +165,7 @@ def review_recommendation(
             SET status = %s, reviewed_by = %s, reviewed_at = CURRENT_TIMESTAMP,
                 modified_text = %s, rejection_rationale = %s
             WHERE id = %s
-            RETURNING id, student_id, session_id, insight_type, recommendation_text,
+            RETURNING id, student_id, session_id, lesson_id, insight_type, recommendation_text,
                       statistical_evidence, status, modified_text, reviewed_by, reviewed_at,
                       rejection_rationale, created_at
             """,
@@ -168,4 +175,20 @@ def review_recommendation(
         if row is None:
             raise LookupError(f"No recommendation with id {recommendation_id}")
         cols = [d.name for d in cur.description]
-        return dict(zip(cols, row))
+        result = dict(zip(cols, row))
+
+    # Figure 3's "forwarded to Learning Outcome Component" step + SO5's
+    # outcome tracking - only for real actions that mean "act on this",
+    # not for reject. Best-effort: a down LO component or a
+    # not-yet-attempted lesson (create_intervention_outcome returns None)
+    # must never fail the review action itself.
+    if action in ("approve", "modify") and result.get("lesson_id"):
+        final_text = result.get("modified_text") or result["recommendation_text"]
+        intervention_service.create_intervention_outcome(
+            recommendation_id, result["student_id"], result["lesson_id"], result["created_at"]
+        )
+        lo_component_bridge.forward_recommendation(
+            result["student_id"], result["lesson_id"], final_text, result["insight_type"]
+        )
+
+    return result
