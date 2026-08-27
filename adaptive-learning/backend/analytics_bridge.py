@@ -51,11 +51,18 @@ MASTERY_THRESHOLD = 75.0  # mastery.py no longer uses a numeric threshold (raw-c
 # i.e. 3/3 correct) from "average"/"weak" (<=66.7%) for this function's purpose
 
 
-# Only these map to an EMOTION_BIAS entry in semantic_recommender.py -
-# "Engaged"/"Neutral"/"Happy"/"Angry" have no bias rule, so returning them
-# unmapped is fine (the recommender just skips the bias step, same as
-# emotion=None did before).
-_TRACKER_STATE_TO_BIAS_KEY = {"confused": "confused", "bored": "bored", "frustrated": "frustrated"}
+# All 6 emotion-service tracker states map through - EMOTION_BIAS and
+# validated_recommendations.py's (lesson x emotion) table both cover the
+# full set (happy/normal/confused/bored/frustrated/angry), unlike the
+# earlier 3-state subset this used to be restricted to.
+_TRACKER_STATE_TO_BIAS_KEY = {
+    "happy": "happy",
+    "normal": "normal",
+    "confused": "confused",
+    "bored": "bored",
+    "frustrated": "frustrated",
+    "angry": "angry",
+}
 
 
 def get_live_emotion(student_id: str) -> str | None:

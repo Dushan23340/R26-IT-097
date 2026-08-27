@@ -31,13 +31,9 @@ LESSON_TITLES = {
     "number-patterns": ("Number Patterns", "Mathematics"),
     "fractions-bodmas": ("Fractions & BODMAS", "Mathematics"),
     "binary-numbers": ("Binary Numbers", "Mathematics"),
-    "pythagorean-theorem": ("Pythagorean Theorem", "Mathematics"),
     "area-of-shapes": ("Area", "Mathematics"),
-    "circumference-of-a-circle": ("Circumference of a Circle", "Mathematics"),
-    "angles-of-a-polygon": ("Angles of a Polygon", "Mathematics"),
     "percentages": ("Percentages", "Mathematics"),
     "sets": ("Sets", "Mathematics"),
-    "data-representation-and-interpretation": ("Data Representation and Interpretation", "Mathematics"),
 }
 
 

@@ -154,6 +154,21 @@ function StudentDashboard() {
     };
   }, []);
 
+  // classSession (the poll above) and inLiveClass/currentLiveClass (the
+  // full-screen Live Class view's own gate, set by handleJoinClassSession/
+  // the hang-up button) used to be two disconnected pieces of state - the
+  // teacher ending the class flips classSession to null within 5s, but
+  // nothing ever told inLiveClass to follow, so a joined student's screen
+  // stayed stuck on "LIVE" forever until they manually hung up. This
+  // brings them back to the dashboard within one poll cycle of the
+  // teacher actually ending it.
+  useEffect(() => {
+    if (!classSession && inLiveClass) {
+      setInLiveClass(false);
+      setCurrentLiveClass(null);
+    }
+  }, [classSession, inLiveClass]);
+
   function handleJoinClassSession() {
     if (!classSession) return;
     emotionApi.joinClassSession(studentId, classSession.session_id, user?.name).catch(() => {

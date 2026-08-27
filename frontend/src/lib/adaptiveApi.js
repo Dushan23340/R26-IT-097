@@ -54,7 +54,8 @@ export const adaptiveApiService = {
   // retake thereafter (a different set of questions per LO so answers
   // can't just be remembered from the first attempt).
   getLessons: () => adaptiveApi.get("/lessons"),
-  getLessonQuiz: (lessonId, quizSet = 1) => adaptiveApi.get(`/lessons/${lessonId}/quiz?set=${quizSet}`),
+  getLessonQuiz: (lessonId, quizSet = 1, studentId = "anonymous") =>
+    adaptiveApi.get(`/lessons/${lessonId}/quiz?set=${quizSet}&student_id=${encodeURIComponent(studentId)}`),
   submitLessonQuiz: ({ lessonId, studentId, studentName, studentEmail, answers, emotion, durationSeconds, quizSet = 1 }) =>
     adaptiveApi.post(`/lessons/${lessonId}/quiz/submit`, {
       student_id: studentId,
@@ -71,4 +72,11 @@ export const adaptiveApiService = {
   // the dashboard's "Recommended for You" panel, without requiring a fresh
   // quiz submission first.
   getStudentRecommendations: (studentId) => adaptiveApi.get(`/students/${studentId}/recommendations`),
+
+  // Live-class-gated quiz access - a lesson's quiz is only takeable once
+  // the student completed a live class for it AND a teacher unlocked it.
+  getLessonAccess: (lessonId, studentId) =>
+    adaptiveApi.get(`/lessons/${lessonId}/access?student_id=${encodeURIComponent(studentId)}`),
+  getLessonLocks: () => adaptiveApi.get("/lessons/locks"),
+  setLessonLock: (lessonId, locked) => adaptiveApi.post(`/lessons/${lessonId}/lock`, { locked }),
 };

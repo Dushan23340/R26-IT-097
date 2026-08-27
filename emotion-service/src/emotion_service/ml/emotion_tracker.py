@@ -310,6 +310,14 @@ class EmotionTracker:
             emotion = prev["emotion"]
             delta = curr["time"] - prev["time"]
             durations[emotion] = durations.get(emotion, 0.0) + delta
+        # The loop above only sums gaps BETWEEN recorded entries, so the
+        # most recent emotion's still-ongoing span (last entry -> now) was
+        # never counted - durations looked frozen at whatever they were as
+        # of the last update() call instead of growing between calls.
+        if state.emotion_history:
+            last = state.emotion_history[-1]
+            tail = max(0.0, time.time() - last["time"])
+            durations[last["emotion"]] = durations.get(last["emotion"], 0.0) + tail
         return durations
 
     def _get_current_continuous_duration(self, state: _StudentState) -> float:

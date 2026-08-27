@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from typing import Dict
 
 from app.services.class_session import class_session_store
-from app.services import student_profile_bridge
+from app.services import student_profile_bridge, adaptive_learning_bridge
 
 router = APIRouter(prefix="/class-session", tags=["class-session"])
 
@@ -15,9 +15,14 @@ async def get_class_session_state() -> Dict:
 
 @router.post("/start")
 async def start_class_session(body: Dict) -> Dict:
-    """Body: {"subject": "Mathematics", "started_by": "Dr. Sarah Johnson"}.
-    Starts a fresh session (joined count resets)."""
-    class_session_store.start(subject=body.get("subject"), started_by=body.get("started_by"))
+    """Body: {"subject": "Mathematics", "started_by": "Dr. Sarah Johnson",
+    "lesson_id": "fractions-bodmas"}. lesson_id is optional - a real
+    lessons.py id from adaptive-learning/backend, used at end() to mark
+    that lesson complete for whoever attended. Starts a fresh session
+    (joined count resets)."""
+    class_session_store.start(
+        subject=body.get("subject"), started_by=body.get("started_by"), lesson_id=body.get("lesson_id")
+    )
     return {"success": True, **class_session_store.get_state()}
 
 
@@ -25,12 +30,19 @@ async def start_class_session(body: Dict) -> Dict:
 async def end_class_session() -> Dict:
     """Teacher ends the live class for the whole class. Pushes a final
     engagement_metrics summary to analytics-service for every student who
-    had a linked session (best-effort, fire-and-forget)."""
-    summaries = class_session_store.end()
-    for student_id, analytics_session_id, engagement_score, time_on_task, interaction_count in summaries:
+    had a linked session, and - if this class was started for a real
+    lesson_id - forwards each attendee's real dominant emotion to
+    adaptive-learning/backend so it can mark that lesson complete and
+    gate quiz access. Both pushes are best-effort."""
+    result = class_session_store.end()
+    for student_id, analytics_session_id, engagement_score, time_on_task, interaction_count in result[
+        "engagement_summaries"
+    ]:
         student_profile_bridge.push_engagement_metrics_async(
             analytics_session_id, student_id, engagement_score, time_on_task, interaction_count
         )
+    if result["lesson_id"]:
+        adaptive_learning_bridge.push_lesson_completions_async(result["lesson_id"], result["lesson_completions"])
     return {"success": True, "is_live": False}
 
 

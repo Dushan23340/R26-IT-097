@@ -1,6 +1,5 @@
-"""quiz_gen/solvers_arithmetic.py — Deterministic solvers for percentages,
-sets, and data-representation-and-interpretation. Same correctness role as
-solvers.py/solvers_geometry.py.
+"""quiz_gen/solvers_arithmetic.py — Deterministic solvers for percentages
+and sets. Same correctness role as solvers.py/solvers_geometry.py.
 """
 
 from __future__ import annotations
@@ -91,46 +90,3 @@ def format_subsets(values: list) -> str:
     for s in subsets:
         parts.append("{}" if not s else "{" + ", ".join(str(v) for v in sorted(s)) + "}")
     return ", ".join(parts)
-
-
-# ───────────────────────────── data-representation-and-interpretation ─────────────────────────────
-
-
-def mode(data: list[int]) -> int:
-    counts: dict[int, int] = {}
-    for v in data:
-        counts[v] = counts.get(v, 0) + 1
-    return max(counts.items(), key=lambda kv: kv[1])[0]
-
-
-def median(data: list[int]) -> Fraction:
-    ordered = sorted(data)
-    n = len(ordered)
-    mid = n // 2
-    if n % 2 == 1:
-        return Fraction(ordered[mid])
-    return Fraction(ordered[mid - 1] + ordered[mid], 2)
-
-
-def mean(data: list[int]) -> Fraction:
-    return Fraction(sum(data), len(data))
-
-
-def median_position(n: int) -> int:
-    """1-indexed position of the median for an odd-length data set."""
-    assert n % 2 == 1
-    return (n + 1) // 2
-
-
-def data_range(data: list[int]) -> int:
-    return max(data) - min(data)
-
-
-def frequency_of(data: list[int], value: int) -> int:
-    return data.count(value)
-
-
-def format_decimal(value: Fraction) -> str:
-    if value.denominator == 1:
-        return str(value.numerator)
-    return f"{float(value):g}"

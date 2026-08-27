@@ -31,6 +31,7 @@ from recommendation import (
 )
 from lessons import list_lessons, get_lesson, get_quiz_for_lesson, get_lesson_difficulty
 import advisor_recommendations
+import lesson_progress
 from mastery import score_submission, score_generated_submission
 from semantic_recommender import recommend_resources
 from analytics_bridge import push_quiz_result_async, get_latest_weak_los, get_live_emotion, get_class_dominant_emotion
@@ -43,6 +44,16 @@ from quiz_gen import store as quiz_store
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for frontend integration
+
+
+def _quiz_locked_response(access: dict):
+    reason = "locked_by_teacher" if access["completed"] else "not_completed"
+    message = (
+        "Your teacher hasn't unlocked this quiz yet."
+        if reason == "locked_by_teacher"
+        else "Attend the live class for this lesson before taking its quiz."
+    )
+    return jsonify({"success": False, "error": message, "reason": reason, "access": access}), 403
 
 # ───────────────────────────────────────────────
 # Health Check
@@ -300,8 +311,85 @@ def get_lessons():
     return jsonify({"success": True, "data": list_lessons()})
 
 
+@app.route("/api/lessons/<lesson_id>/complete", methods=["POST"])
+def complete_lesson(lesson_id):
+    """Internal ingestion point for emotion-backend's
+    adaptive_learning_bridge.py: called when a teacher ends a live class
+    that was started for this lesson_id. Body:
+    { "completions": [{"student_id": "...", "dominant_emotion": "bored" | null}, ...] }
+    Marks each student as having completed this lesson with their real,
+    session-long dominant emotion - independent of the teacher's separate
+    lock/unlock decision (see /lock below)."""
+    if not get_lesson(lesson_id):
+        return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
+
+    data = request.get_json(force=True) or {}
+    completions = data.get("completions", [])
+    if not isinstance(completions, list):
+        return jsonify({"success": False, "error": "completions must be a list"}), 400
+
+    count = 0
+    for entry in completions:
+        student_id = entry.get("student_id")
+        if not student_id:
+            continue
+        lesson_progress.mark_completed(student_id, lesson_id, entry.get("dominant_emotion"))
+        count += 1
+
+    return jsonify({"success": True, "marked_completed": count}), 201
+
+
+@app.route("/api/lessons/<lesson_id>/access", methods=["GET"])
+def get_lesson_access(lesson_id):
+    """Whether this student can currently take this lesson's quiz - used by
+    the frontend to show the quiz card visibly but disabled with a real
+    reason, rather than only enforcing this at submit time."""
+    student_id = request.args.get("student_id")
+    if not student_id:
+        return jsonify({"success": False, "error": "student_id query param is required"}), 400
+    if not get_lesson(lesson_id):
+        return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
+
+    return jsonify({"success": True, "data": lesson_progress.get_access(student_id, lesson_id)})
+
+
+@app.route("/api/lessons/locks", methods=["GET"])
+def get_lesson_locks():
+    """Teacher-facing: current lock state for every lesson the teacher has
+    ever explicitly touched. A lesson_id absent here is still locked (the
+    default) - the frontend should treat any of the 6 real lesson_ids not
+    in this dict as locked."""
+    return jsonify({"success": True, "data": lesson_progress.get_all_locks()})
+
+
+@app.route("/api/lessons/<lesson_id>/lock", methods=["POST"])
+def set_lesson_lock(lesson_id):
+    """Teacher-facing: publish (unlock) or withdraw (lock) this lesson's
+    quiz. Body: { "locked": true | false }. Same trust level as every
+    other route in this platform - no auth exists anywhere in this
+    service, so this is real, backend-enforced state, but not
+    cryptographically verified as coming from an actual teacher."""
+    if not get_lesson(lesson_id):
+        return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
+
+    data = request.get_json(force=True) or {}
+    if "locked" not in data:
+        return jsonify({"success": False, "error": "locked (bool) is required"}), 400
+
+    lesson_progress.set_lock(lesson_id, bool(data["locked"]))
+    return jsonify({"success": True, "lesson_id": lesson_id, "locked": bool(data["locked"])})
+
+
 @app.route("/api/lessons/<lesson_id>/quiz", methods=["GET"])
 def get_lesson_quiz(lesson_id):
+    student_id = request.args.get("student_id")
+    if not student_id:
+        return jsonify({"success": False, "error": "student_id query param is required"}), 400
+
+    access = lesson_progress.get_access(student_id, lesson_id)
+    if not access["can_take_quiz"]:
+        return _quiz_locked_response(access)
+
     # Pilot lessons: every request (first attempt AND every retake) gets a
     # freshly generated 18-question instance instead of picking between 2
     # static sets - the `set` query param is ignored for these, since
@@ -354,13 +442,20 @@ def submit_lesson_quiz(lesson_id):
     if not isinstance(answers, dict):
         return jsonify({"success": False, "error": "answers must be a dict {question_id: free-text answer}"}), 400
 
-    # No frontend page sends "emotion" explicitly. Best-effort: prefer the
-    # emotion that was dominant during this student's most recent live
-    # class (a real session-level summary), falling back to their
-    # instantaneous live-tracker state if they've never been in a tracked
-    # live class, then None if neither is available.
+    access = lesson_progress.get_access(student_id, lesson_id)
+    if not access["can_take_quiz"]:
+        return _quiz_locked_response(access)
+
+    # No frontend page sends "emotion" explicitly. Prefer the real
+    # dominant_emotion recorded from the live class this student actually
+    # completed for this lesson (lesson_progress, pushed by emotion-
+    # backend's class_session.py at class-end) - a genuine session-long
+    # signal, not an instantaneous or decoupled guess. Fall back to the
+    # older best-effort inference chain only for the edge case where a
+    # teacher manually unlocked a lesson without a completed live-class
+    # record (get_access still allowed it through, just with no emotion).
     if not emotion and student_id != "anonymous":
-        emotion = get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
+        emotion = access["dominant_emotion"] or get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
 
     # If quiz_set is a quiz_gen instance_id (a string handed out by the GET
     # route above, not the legacy int 1/2), score against that generated
@@ -415,8 +510,11 @@ def student_dashboard_recommendations(student_id):
     resources = []
     if latest:
         lesson = get_lesson(latest["lesson_id"])
+        emotion = None
+        if student_id != "anonymous":
+            emotion = get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
         for lo in latest["weak_los"]:
-            for res in recommend_resources(latest["lesson_id"], lo, top_k=2):
+            for res in recommend_resources(latest["lesson_id"], lo, emotion=emotion, top_k=2):
                 resources.append({**res, "lo_level": lo, "lesson_title": lesson["title"] if lesson else latest["lesson_id"]})
 
     return jsonify({
@@ -484,5 +582,9 @@ if __name__ == "__main__":
     print("  POST /api/full-report")
     print("  POST /api/time-estimate")
     print("  GET  /api/health")
+    print("  GET  /api/lessons/<id>/access")
+    print("  GET  /api/lessons/locks")
+    print("  POST /api/lessons/<id>/lock")
+    print("  POST /api/lessons/<id>/complete")
 
     app.run(host="0.0.0.0", port=port, debug=debug)

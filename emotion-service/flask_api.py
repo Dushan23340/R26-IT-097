@@ -554,13 +554,17 @@ def predict():
 
         try:
             with _PREDICTION_LOCK:
+                # return_probabilities costs nothing extra (the fused model
+                # already computes the full softmax either way - see
+                # predict_emotion_with_confidence's docstring), so always
+                # request it now instead of gating it behind
+                # EMOTION_FRAME_DUMP_DIR - the per-class breakdown is part of
+                # the documented response schema, not a debug-only extra.
+                raw_emotion, confidence, probabilities = predict_emotion_with_confidence(
+                    face_roi, return_probabilities=True
+                )
                 if _FRAME_DUMP_DIR:
-                    raw_emotion, confidence, probabilities = predict_emotion_with_confidence(
-                        face_roi, return_probabilities=True
-                    )
                     _dump_debug_frame(face_roi, student_id, raw_emotion, confidence, probabilities)
-                else:
-                    raw_emotion, confidence = predict_emotion_with_confidence(face_roi)
         except FaceValidityError as validity_exc:
             tracker.mark_invalid(student_id, validity_exc.reason)
             _log_invalid_session_row(student_id, validity_exc.reason)
@@ -673,11 +677,14 @@ def predict():
         return jsonify({
 
             # Current student state
+            "studentId": student_id,  # anonymized pseudonym, never the raw ID this request arrived with (FR10)
+            "timestamp": datetime.utcnow().isoformat(),
             "emotion": smoothed_state or "Unknown",
             "studentState": smoothed_state or "Unknown",
             "rawEmotion": raw_emotion,
             "facialEmotion": raw_emotion,
             "emotionConfidence": round(confidence, 4),
+            "emotionProbabilities": probabilities,
             "attentionScore": attention_score,
 
             # Analytics - all computed over the trailing analyticsWindowSeconds

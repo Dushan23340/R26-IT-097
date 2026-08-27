@@ -98,6 +98,11 @@ function LessonsPage() {
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [error, setError] = useState(null);
 
+  // lesson_id -> { completed, dominant_emotion, quiz_unlocked, can_take_quiz }
+  // - a lesson's quiz requires attending its live class AND a teacher
+  // unlocking it. Fetched once lessons load; a lesson absent here (still
+  // loading, or the fetch failed) is treated as inaccessible, not open.
+  const [access, setAccess] = useState({});
   const [quiz, setQuiz] = useState(null);
   const [loadingQuiz, setLoadingQuiz] = useState(false);
   const [answers, setAnswers] = useState({});
@@ -125,6 +130,31 @@ function LessonsPage() {
       .catch((e) => setError(e.message || "Failed to load lessons"))
       .finally(() => setLoadingLessons(false));
   }, []);
+
+  // Live-class-gated quiz access, one lookup per lesson - drives the
+  // locked/unlocked state of each lesson card below. Re-fetched whenever
+  // the lesson list changes; doesn't re-poll on an interval, so a teacher
+  // unlocking mid-visit needs a page refresh to reflect here (acceptable -
+  // this mirrors how the rest of this page already treats lesson data as
+  // load-once, not live).
+  useEffect(() => {
+    if (lessons.length === 0) return;
+    let cancelled = false;
+    Promise.all(
+      lessons.map((lesson) =>
+        adaptiveApiService
+          .getLessonAccess(lesson.lesson_id, studentId)
+          .then((res) => [lesson.lesson_id, res.data])
+          .catch(() => [lesson.lesson_id, null])
+      )
+    ).then((pairs) => {
+      if (cancelled) return;
+      setAccess(Object.fromEntries(pairs.filter(([, data]) => data != null)));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [lessons, studentId]);
 
   // Restore any saved quiz/results/resource-completion progress once the
   // real student id is known, so a refresh doesn't drop back to "select".
@@ -163,7 +193,7 @@ function LessonsPage() {
     setAnswers({});
     setResult(null);
     try {
-      const res = await adaptiveApiService.getLessonQuiz(lessonId, quizSet);
+      const res = await adaptiveApiService.getLessonQuiz(lessonId, quizSet, studentId);
       setQuiz(res.data);
       setScreen("quiz");
       quizStartedAtRef.current = Date.now();
@@ -281,8 +311,13 @@ function LessonsPage() {
     ? quiz.questions.filter((q) => answers[q.id] != null && String(answers[q.id]).trim() !== "").length
     : 0;
 
+  // Deduped, not flatMap - the same resource id often covers multiple weak
+  // LOs at once (e.g. one teacher-validated video for the whole lesson), so
+  // counting per-LO would demand completing the same card several times.
   const allResourceIds = result
-    ? (result.weak_los || []).flatMap((lo) => (result.recommendations[lo] || []).map((r) => r.id))
+    ? Array.from(
+        new Set((result.weak_los || []).flatMap((lo) => (result.recommendations[lo] || []).map((r) => r.id)))
+      )
     : [];
   const allResourcesCompleted =
     allResourceIds.length > 0 && allResourceIds.every((id) => completedResourceIds.has(id));
@@ -318,21 +353,36 @@ function LessonsPage() {
             <p className="text-sm text-muted-foreground">No lessons available.</p>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {lessons.map((lesson) => (
-                <button
-                  key={lesson.lesson_id}
-                  type="button"
-                  onClick={() => startLesson(lesson.lesson_id)}
-                  disabled={loadingQuiz}
-                  className="text-left p-4 rounded-xl border border-border/60 hover:border-primary/60 transition-colors disabled:opacity-50"
-                >
-                  <div className="text-xs uppercase tracking-widest text-muted-foreground">{lesson.subject}</div>
-                  <div className="font-semibold mt-1">{lesson.title}</div>
-                  <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                    {lesson.question_count} questions <ArrowRight className="h-3 w-3" />
-                  </div>
-                </button>
-              ))}
+              {lessons.map((lesson) => {
+                const lessonAccess = access[lesson.lesson_id];
+                const canTake = lessonAccess?.can_take_quiz ?? false;
+                const lockReason = !lessonAccess
+                  ? "Checking access..."
+                  : !lessonAccess.completed
+                  ? "Attend the live class for this lesson first"
+                  : "Waiting for your teacher to unlock this quiz";
+                return (
+                  <button
+                    key={lesson.lesson_id}
+                    type="button"
+                    onClick={() => canTake && startLesson(lesson.lesson_id)}
+                    disabled={loadingQuiz || !canTake}
+                    className="text-left p-4 rounded-xl border border-border/60 hover:border-primary/60 transition-colors disabled:opacity-50 disabled:hover:border-border/60"
+                  >
+                    <div className="text-xs uppercase tracking-widest text-muted-foreground">{lesson.subject}</div>
+                    <div className="font-semibold mt-1">{lesson.title}</div>
+                    {canTake ? (
+                      <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                        {lesson.question_count} questions <ArrowRight className="h-3 w-3" />
+                      </div>
+                    ) : (
+                      <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
+                        <Lock className="h-3 w-3" /> {lockReason}
+                      </div>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -507,49 +557,65 @@ function LessonsPage() {
                 <Sparkles className="h-4 w-4 text-primary" />
                 <h2 className="text-sm font-semibold">Recommended resources for your gaps</h2>
               </div>
-              <div className="space-y-4">
-                {result.weak_los.map((lo) => (
-                  <div key={lo}>
-                    <div className="text-xs uppercase tracking-widest text-muted-foreground mb-2">
-                      {LO_LABELS[lo] || lo}
-                    </div>
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {(result.recommendations[lo] || []).map((res) => {
-                        const TypeIcon = RESOURCE_TYPE_ICONS[res.type] || FileText;
-                        const done = completedResourceIds.has(res.id);
-                        return (
-                          <div
-                            key={res.id}
-                            className={`p-3 rounded-lg border transition-colors ${
-                              done ? "border-emotion-happy/40 bg-emotion-happy/5" : "border-border/60 hover:border-primary/60"
+              {(() => {
+                // A given teacher-validated resource is the same for every weak LO in
+                // this lesson+emotion (the source document doesn't vary by Bloom level
+                // or mastery tier) - group by resource id instead of repeating an
+                // identical card under every LO heading.
+                const byResource = new Map();
+                for (const lo of result.weak_los) {
+                  for (const res of result.recommendations[lo] || []) {
+                    if (!byResource.has(res.id)) byResource.set(res.id, { res, los: [] });
+                    byResource.get(res.id).los.push(lo);
+                  }
+                }
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {Array.from(byResource.values()).map(({ res, los }) => {
+                      const TypeIcon = RESOURCE_TYPE_ICONS[res.type] || FileText;
+                      const done = completedResourceIds.has(res.id);
+                      return (
+                        <div
+                          key={res.id}
+                          className={`p-3 rounded-lg border transition-colors ${
+                            done ? "border-emotion-happy/40 bg-emotion-happy/5" : "border-border/60 hover:border-primary/60"
+                          }`}
+                        >
+                          <div className="flex flex-wrap gap-1 mb-2">
+                            {los.map((lo) => (
+                              <span
+                                key={lo}
+                                className="text-[9px] uppercase tracking-widest text-muted-foreground px-1.5 py-0.5 rounded bg-white/5 border border-border/60"
+                              >
+                                {LO_LABELS[lo] || lo}
+                              </span>
+                            ))}
+                          </div>
+                          <a href={res.url} target="_blank" rel="noopener noreferrer" className="block">
+                            <div className="flex items-start gap-2">
+                              <TypeIcon className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
+                              <p className="text-sm font-medium flex-1">{res.title}</p>
+                              <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-1" />
+                            </div>
+                            <p className="text-xs text-muted-foreground mt-1 ml-6">{res.type} - {res.difficulty}</p>
+                            <p className="text-[10px] text-muted-foreground mt-2 ml-6">{res.rationale.join(" - ")}</p>
+                          </a>
+                          <button
+                            type="button"
+                            onClick={() => toggleResourceComplete(res.id)}
+                            className={`mt-3 ml-6 flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                              done ? "text-emotion-happy" : "text-muted-foreground hover:text-primary"
                             }`}
                           >
-                            <a href={res.url} target="_blank" rel="noopener noreferrer" className="block">
-                              <div className="flex items-start gap-2">
-                                <TypeIcon className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-                                <p className="text-sm font-medium flex-1">{res.title}</p>
-                                <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-1" />
-                              </div>
-                              <p className="text-xs text-muted-foreground mt-1 ml-6">{res.type} - {res.difficulty}</p>
-                              <p className="text-[10px] text-muted-foreground mt-2 ml-6">{res.rationale.join(" - ")}</p>
-                            </a>
-                            <button
-                              type="button"
-                              onClick={() => toggleResourceComplete(res.id)}
-                              className={`mt-3 ml-6 flex items-center gap-1.5 text-xs font-medium transition-colors ${
-                                done ? "text-emotion-happy" : "text-muted-foreground hover:text-primary"
-                              }`}
-                            >
-                              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
-                              {done ? "Completed" : "Mark as complete"}
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
+                            {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                            {done ? "Completed" : "Mark as complete"}
+                          </button>
+                        </div>
+                      );
+                    })}
                   </div>
-                ))}
-              </div>
+                );
+              })()}
             </div>
           )}
 

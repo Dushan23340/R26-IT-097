@@ -18,13 +18,16 @@ current emotional state and how weak/average they scored on this LO:
   weak       -> easier, more scaffolded resources
   average    -> moderate-difficulty resources
 
-resolve_recommendation_strategy() is a placeholder for the
-(bloom_level x mastery_tier x emotion) recommendation mapping the user is
-preparing separately as an external document (level itself is already
-handled upstream - by WHICH lo_name's resource pool a call draws from).
-It's deliberately isolated to one small function returning a list of
-boost rules, so replacing this rule-based approximation with a literal
-72-entry lookup later is a one-function swap - no call site changes.
+resolve_recommendation_strategy() re-weights the semantic-similarity
+ranking below for lessons NOT covered by the real, teacher-validated
+(lesson x emotion) lookup in validated_recommendations.py. For lessons
+that ARE covered, recommend_resources() returns that literal, validated
+video directly (skipping this rule-based approximation entirely - a
+teacher-validated video outranks a re-ranked generic search-query guess)
+BLENDED with lesson_resources.py's matching (lesson x Bloom level) short
+note when one exists - the video answers "what to watch for this
+emotional state", the note answers "what to read for this Bloom level";
+neither replaces the other.
 """
 
 from __future__ import annotations
@@ -35,6 +38,7 @@ from sentence_transformers import SentenceTransformer, util
 
 from data import LO_DESCRIPTIONS
 from lesson_resources import get_lesson_resources
+from validated_recommendations import get_validated_video
 
 _MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -85,12 +89,32 @@ def _resource_text(resource: dict) -> str:
 def recommend_resources(
     lesson_id: str, lo_name: str, emotion: str | None = None, mastery_tier: str | None = None, top_k: int = 3
 ) -> list[dict]:
-    """Semantic-similarity ranking of resources for one LO within a specific
-    lesson, re-weighted by emotional state and mastery tier per
-    resolve_recommendation_strategy(). Resources are real, lesson-specific
-    search-query URLs (see lesson_resources.py) - not generic Bloom-level
-    placeholders reused across every lesson regardless of topic."""
-    candidates = get_lesson_resources(lesson_id, lo_name)
+    """Teacher-validated (lesson x emotion) video when one exists
+    (validated_recommendations.py) - takes priority since it's a real
+    validated answer, not an approximation - blended with
+    lesson_resources.py's matching (lesson x Bloom level) short note when
+    one exists, so a weak LO surfaces both "watch this" and "read this"
+    rather than only one. If no validated video exists, falls back to
+    semantic-similarity ranking of lesson_resources.py's resource pool,
+    re-weighted by emotional state and mastery tier per
+    resolve_recommendation_strategy()."""
+    validated = get_validated_video(lesson_id, emotion)
+    note = get_lesson_resources(lesson_id, lo_name)
+    if validated:
+        results = [{
+            **validated,
+            "match_score": 1.0,
+            "rationale": ["teacher-validated resource for this lesson and emotional state"],
+        }]
+        for resource in note:
+            results.append({
+                **resource,
+                "match_score": 1.0,
+                "rationale": ["teacher-prepared short notes for this learning outcome"],
+            })
+        return results[:top_k]
+
+    candidates = note
     if not candidates:
         return []
 

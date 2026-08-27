@@ -53,10 +53,13 @@ export const emotionApi = {
   // Real live-class broadcast (distinct from the game broadcast above) -
   // teacher starts/ends, students poll + join.
   getClassSessionState: () => request("/class-session/state"),
-  startClassSession: (subject, startedBy) =>
+  // lessonId: a real adaptive-learning lesson_id (e.g. "fractions-bodmas").
+  // Optional - a class started without one just skips lesson-completion
+  // gating entirely, same as before this existed.
+  startClassSession: (subject, startedBy, lessonId) =>
     request("/class-session/start", {
       method: "POST",
-      body: JSON.stringify({ subject, started_by: startedBy }),
+      body: JSON.stringify({ subject, started_by: startedBy, lesson_id: lessonId }),
     }),
   endClassSession: () => request("/class-session/end", { method: "POST" }),
   joinClassSession: (studentId, sessionId, studentName) =>

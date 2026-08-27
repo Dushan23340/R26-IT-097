@@ -33,9 +33,7 @@ from . import templates as T
 
 LESSON_ORDER = [
     "number-patterns", "fractions-bodmas", "binary-numbers",
-    "pythagorean-theorem", "area-of-shapes", "circumference-of-a-circle",
-    "angles-of-a-polygon", "percentages", "sets",
-    "data-representation-and-interpretation",
+    "area-of-shapes", "percentages", "sets",
 ]
 LEVEL_ORDER = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
 

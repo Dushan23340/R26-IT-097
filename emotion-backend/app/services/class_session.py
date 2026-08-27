@@ -54,6 +54,13 @@ class ClassSessionStore:
         self.started_by: Optional[str] = None
         self.started_at: Optional[datetime] = None
         self.session_id: Optional[str] = None
+        # Real lesson_id from adaptive-learning/backend's lessons.py (e.g.
+        # "fractions-bodmas"), not the free-text subject - lets end() tell
+        # that service which lesson to mark complete for the roster below.
+        # None for a class started without picking a real lesson (e.g. an
+        # ad-hoc/topic-only session) - lesson-completion forwarding is
+        # simply skipped in that case, everything else works as before.
+        self.lesson_id: Optional[str] = None
         self.joined_students: set = set()  # pseudonyms
 
         # Student Profile (analytics-service) bridging state - all keyed
@@ -69,13 +76,22 @@ class ClassSessionStore:
         self._last_forward_time: Dict[str, float] = {}
         self._reading_counts: Dict[str, int] = {}
         self._engaged_counts: Dict[str, int] = {}
+        # Full per-label breakdown per student (e.g. {"HAPPY": 12, "BORED": 3})
+        # - same session-long lifetime as _reading_counts/_engaged_counts
+        # above (only reset in start()/end(), never trimmed mid-session),
+        # unlike emotion_store.py's EmotionStore which only keeps a 60s
+        # rolling window and can't answer "what was this student's dominant
+        # emotion across the whole class". This is what end() uses to
+        # compute a real per-student dominant_emotion for lesson completion.
+        self._emotion_label_counts: Dict[str, Dict[str, int]] = {}
 
-    def start(self, subject: Optional[str], started_by: Optional[str]) -> None:
+    def start(self, subject: Optional[str], started_by: Optional[str], lesson_id: Optional[str] = None) -> None:
         self.is_live = True
         self.subject = subject or "Live Class"
         self.started_by = started_by or "Teacher"
         self.started_at = datetime.utcnow()
         self.session_id = str(uuid.uuid4())[:8]
+        self.lesson_id = lesson_id
         self.joined_students = set()
         self._analytics_sessions = {}
         self._real_ids = {}
@@ -84,16 +100,26 @@ class ClassSessionStore:
         self._last_forward_time = {}
         self._reading_counts = {}
         self._engaged_counts = {}
+        self._emotion_label_counts = {}
 
-    def end(self) -> List[Tuple[str, str, float, float, int]]:
-        """Returns (real_student_id, analytics_session_id, engagement_score,
-        time_on_task_seconds, interaction_count) for every student who had
-        an analytics-service session created this class, so the route
-        handler can push a final engagement_metrics row for each (under
-        their real ID, matching the session created in join()) before the
-        bridging state resets below."""
+    def end(self) -> Dict:
+        """Computes everything BEFORE the reset below, since end() is also
+        where this store forgets the whole session. Returns:
+          - "engagement_summaries": (real_student_id, analytics_session_id,
+            engagement_score, time_on_task_seconds, interaction_count) for
+            every student who had an analytics-service session created this
+            class - unchanged from before, still consumed by the route
+            handler to push a final engagement_metrics row per student.
+          - "lesson_id": the real lesson_id this class was for, or None.
+          - "lesson_completions": [{"student_id", "dominant_emotion"}, ...]
+            for every student on the joined roster (NOT gated on having an
+            analytics-service link, unlike engagement_summaries - a lesson
+            still gets marked complete even if that sibling service was
+            briefly unreachable at join time), with dominant_emotion being
+            the modal label from _emotion_label_counts, or None if this
+            student never produced a countable reading."""
         now = time.time()
-        summaries = []
+        engagement_summaries = []
         for pseudonym, session_id in self._analytics_sessions.items():
             real_id = self._real_ids.get(pseudonym)
             if not real_id:
@@ -102,13 +128,25 @@ class ClassSessionStore:
             engaged = self._engaged_counts.get(pseudonym, 0)
             engagement_score = (engaged / total) if total > 0 else 0.5
             time_on_task = now - self._join_times.get(pseudonym, now)
-            summaries.append((real_id, session_id, engagement_score, time_on_task, total))
+            engagement_summaries.append((real_id, session_id, engagement_score, time_on_task, total))
+
+        lesson_id = self.lesson_id
+        lesson_completions = []
+        if lesson_id:
+            for pseudonym in self.joined_students:
+                real_id = self._real_ids.get(pseudonym)
+                if not real_id:
+                    continue
+                label_counts = self._emotion_label_counts.get(pseudonym) or {}
+                dominant_emotion = max(label_counts, key=label_counts.get) if label_counts else None
+                lesson_completions.append({"student_id": real_id, "dominant_emotion": dominant_emotion})
 
         self.is_live = False
         self.subject = None
         self.started_by = None
         self.started_at = None
         self.session_id = None
+        self.lesson_id = None
         self.joined_students = set()
         self._analytics_sessions = {}
         self._real_ids = {}
@@ -117,7 +155,12 @@ class ClassSessionStore:
         self._last_forward_time = {}
         self._reading_counts = {}
         self._engaged_counts = {}
-        return summaries
+        self._emotion_label_counts = {}
+        return {
+            "engagement_summaries": engagement_summaries,
+            "lesson_id": lesson_id,
+            "lesson_completions": lesson_completions,
+        }
 
     def join(self, student_id: str, session_id: str, student_name: Optional[str] = None) -> bool:
         """student_id here is the REAL id, exactly as the frontend sends
@@ -152,14 +195,14 @@ class ClassSessionStore:
         reading - pseudonym is event.student_id, already anonymised by
         emotion-service before this event was ever forwarded. Returns
         (analytics_session_id, real_student_id) to forward this reading to
-        if this student is part of the live class, has a linked analytics
-        session, and the throttle interval has elapsed - None otherwise
-        (skip, not an error)."""
+        analytics-service if this student has a linked session and the
+        throttle interval has elapsed - None otherwise (skip, not an
+        error). reading/engaged/emotion-label counts, however, are updated
+        for every joined student regardless of whether an analytics-service
+        link exists, so lesson-completion tracking (end()) still gets a
+        real dominant emotion even if that sibling service was briefly
+        unreachable at join time."""
         if not self.is_live or pseudonym not in self.joined_students:
-            return None
-        session_id = self._analytics_sessions.get(pseudonym)
-        real_id = self._real_ids.get(pseudonym)
-        if not session_id or not real_id:
             return None
 
         now = time.time()
@@ -168,9 +211,17 @@ class ClassSessionStore:
         self._last_forward_time[pseudonym] = now
 
         self._reading_counts[pseudonym] = self._reading_counts.get(pseudonym, 0) + 1
-        if (emotion_label or "").upper() in _ENGAGED_STATES:
+        normalized = (emotion_label or "").upper()
+        if normalized in _ENGAGED_STATES:
             self._engaged_counts[pseudonym] = self._engaged_counts.get(pseudonym, 0) + 1
+        if normalized:
+            label_counts = self._emotion_label_counts.setdefault(pseudonym, {})
+            label_counts[normalized] = label_counts.get(normalized, 0) + 1
 
+        session_id = self._analytics_sessions.get(pseudonym)
+        real_id = self._real_ids.get(pseudonym)
+        if not session_id or not real_id:
+            return None
         return session_id, real_id
 
     def get_state(self) -> Dict:
@@ -182,6 +233,7 @@ class ClassSessionStore:
             "started_by": self.started_by,
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "session_id": self.session_id,
+            "lesson_id": self.lesson_id,
             "joined_count": len(self.joined_students),
         }
 

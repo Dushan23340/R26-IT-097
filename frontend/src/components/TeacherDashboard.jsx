@@ -1,6 +1,18 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 import {
   Monitor,
   Users,
@@ -32,7 +44,9 @@ import {
   ThumbsUp,
   ThumbsDown,
   Pencil,
-  ShieldAlert
+  ShieldAlert,
+  Lock,
+  Unlock
 } from "lucide-react";
 import { EMOTIONS, toEmotionKey } from "@/lib/emotions";
 
@@ -75,6 +89,15 @@ function TeacherDashboard() {
   // fetching lessons twice).
   const [allLessons, setAllLessons] = useState([]);
   const [selectedLessonId, setSelectedLessonId] = useState("");
+  // Which real lesson (if any) "Start Class" is for - separate from
+  // selectedLessonId above (that one only narrows the Game Recommendation
+  // Engine). Optional: starting a class without picking one just skips
+  // live-class-gated quiz access for that class, same as before this existed.
+  const [classLessonId, setClassLessonId] = useState("");
+  // lesson_id -> locked (bool). A lesson_id absent here is still locked
+  // (the backend's own default) - see the fallback in the render below.
+  const [lessonLocks, setLessonLocks] = useState({});
+  const [lockUpdating, setLockUpdating] = useState(null);
   // Alert ids already surfaced as a toast this session - so a still-active
   // alert (e.g. pattern.detected staying true across many 5s polls) fires
   // once, not on every poll. Cleared per-id once that alert stops being
@@ -88,7 +111,26 @@ function TeacherDashboard() {
       .catch(() => {
         // silent - the Recommend/Start Quiz pickers just show no lessons
       });
+    adaptiveApiService
+      .getLessonLocks()
+      .then((res) => setLessonLocks(res.data || {}))
+      .catch(() => {
+        // silent - Quiz Access panel just shows every lesson as locked (the real default)
+      });
   }, []);
+
+  const handleToggleLock = async (lessonId, currentlyLocked) => {
+    setLockUpdating(lessonId);
+    try {
+      await adaptiveApiService.setLessonLock(lessonId, !currentlyLocked);
+      setLessonLocks((prev) => ({ ...prev, [lessonId]: !currentlyLocked }));
+      toast.success(!currentlyLocked ? "Quiz unlocked for students." : "Quiz locked.");
+    } catch (e) {
+      toast.error("Couldn't update quiz access - try again.");
+    } finally {
+      setLockUpdating(null);
+    }
+  };
 
   // Real "Start Quiz" broadcast (Quick Actions) - teacher picks one of
   // adaptive-learning's real lessons; students see a live prompt to jump
@@ -119,6 +161,11 @@ function TeacherDashboard() {
   // Pattern & trend data
   const [pattern, setPattern] = useState(null);
   const [trend, setTrend] = useState(null);
+
+  // Recommendation history log (real backend endpoint, GET /recommendation/history
+  // - already used by profile.jsx's activity feed, just never rendered here
+  // on the live teacher-facing dashboard until now).
+  const [recommendationHistory, setRecommendationHistory] = useState([]);
 
   // Real, live students currently being tracked by emotion-service (i.e.
   // actually connected with their camera on right now) - not a synthetic
@@ -220,13 +267,14 @@ function TeacherDashboard() {
     }
   }
 
+  // 2000ms, not the previous 5000ms - proposal NFR is dashboard refresh <=2s.
   useEffect(() => {
     fetchActiveRecommendation();
     fetchActiveStats();
     const interval = setInterval(() => {
       fetchActiveRecommendation();
       fetchActiveStats();
-    }, 5000);
+    }, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -244,13 +292,14 @@ function TeacherDashboard() {
     }
   }
 
-  // Fetch analytics periodically when live
+  // Fetch analytics periodically when live. 2000ms, not the previous
+  // 5000ms - proposal NFR is dashboard refresh <=2s.
   useEffect(() => {
     if (!isLive) return;
     fetchAnalytics();
     const interval = setInterval(() => {
       fetchAnalytics();
-    }, 5000);
+    }, 2000);
     return () => clearInterval(interval);
   }, [isLive]);
 
@@ -260,6 +309,7 @@ function TeacherDashboard() {
     fetchVariationWindow();
     fetchPattern();
     fetchTrend();
+    fetchRecommendationHistory();
   }, []);
 
   async function fetchLiveStudents() {
@@ -280,10 +330,11 @@ function TeacherDashboard() {
 
   // Poll students actually connected right now (emotion-service's live,
   // in-memory tracker - not a stored roster), so the panel reflects who's
-  // really here instead of a fixed list.
+  // really here instead of a fixed list. 2000ms - proposal NFR is
+  // dashboard refresh <=2s.
   useEffect(() => {
     fetchLiveStudents();
-    const interval = setInterval(fetchLiveStudents, 5000);
+    const interval = setInterval(fetchLiveStudents, 2000);
     return () => clearInterval(interval);
   }, []);
 
@@ -300,19 +351,23 @@ function TeacherDashboard() {
       }
     }
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, 2000);
     return () => clearInterval(interval);
   }, []);
 
-  // Fetch pattern & trend when live
+  // Fetch pattern & trend when live. 2000ms, not the previous 10000ms -
+  // proposal NFR is dashboard refresh <=2s; recommendation history is
+  // slower-changing but polled at the same cadence here for simplicity.
   useEffect(() => {
     if (!isLive) return;
     fetchPattern();
     fetchTrend();
+    fetchRecommendationHistory();
     const interval = setInterval(() => {
       fetchPattern();
       fetchTrend();
-    }, 10000);
+      fetchRecommendationHistory();
+    }, 2000);
     return () => clearInterval(interval);
   }, [isLive]);
 
@@ -359,6 +414,15 @@ function TeacherDashboard() {
       setTrend(data);
     } catch (e) {
       console.error("Failed to fetch trend", e);
+    }
+  }
+
+  async function fetchRecommendationHistory() {
+    try {
+      const data = await emotionApi.getRecommendationHistory(10080); // last 7 days, same window profile.jsx uses
+      setRecommendationHistory((data?.history || []).slice(-10).reverse());
+    } catch (e) {
+      console.error("Failed to fetch recommendation history", e);
     }
   }
 
@@ -559,7 +623,7 @@ function TeacherDashboard() {
   // purely-local isLive/studentsJoined=18 fake state.
   const handleStartClass = async () => {
     try {
-      const data = await emotionApi.startClassSession(selectedSubject, user?.name);
+      const data = await emotionApi.startClassSession(selectedSubject, user?.name, classLessonId || undefined);
       setIsLive(true);
       setStudentsJoined(0);
       setSessionId(data?.session_id ?? null);
@@ -838,6 +902,25 @@ function TeacherDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alertIdsKey]);
 
+  // trend.snapshots is [{timestamp, distribution: {EMOTION: pct, ...}, dominant_emotion}, ...]
+  // - Recharts' LineChart wants one flat row per point instead, with each
+  // emotion as its own column, plus the real set of emotion keys actually
+  // present (not the full EMOTIONS map - a short trend window may never
+  // see every emotion, and an empty Line for one that never occurred would
+  // just be a flat line at 0 cluttering the legend).
+  const trendChartData = useMemo(() => {
+    if (!trend?.snapshots?.length) return [];
+    return trend.snapshots.map((snap) => ({
+      time: new Date(snap.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+      ...(snap.distribution || {}),
+    }));
+  }, [trend]);
+
+  const trendEmotionKeys = useMemo(() => {
+    if (!trend?.snapshots?.length) return [];
+    return Array.from(new Set(trend.snapshots.flatMap((s) => Object.keys(s.distribution || {}))));
+  }, [trend]);
+
   const smartSuggestions = [
     {
       id: "1",
@@ -930,6 +1013,25 @@ function TeacherDashboard() {
             {
     /* Control Buttons */
   }
+            {!isLive && (
+              <div className="mb-3">
+                <label className="text-xs text-muted-foreground mb-1 block">
+                  Lesson (optional - required for live-class-gated quiz access)
+                </label>
+                <select
+                  value={classLessonId}
+                  onChange={(e) => setClassLessonId(e.target.value)}
+                  className="px-3 py-2 rounded-lg text-sm border border-border/60 bg-secondary w-full sm:w-72"
+                >
+                  <option value="">No specific lesson (subject only)</option>
+                  {allLessons.map((l) => (
+                    <option key={l.lesson_id} value={l.lesson_id}>
+                      {l.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex flex-wrap gap-3">
               {!isLive ? <button
     onClick={handleStartClass}
@@ -1015,42 +1117,72 @@ function TeacherDashboard() {
           )}
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {analytics && analytics.distribution ? (
-            analytics.distribution.map((item) => {
-              const e = EMOTIONS[toEmotionKey(item.emotion)] || { emoji: "❓", label: item.emotion, color: "#888" };
-              return (
-                <div
-                  key={item.emotion}
-                  className="p-4 rounded-xl border border-border/60 text-center"
-                  style={{ background: `${e.color}08` }}
-                >
-                  <div className="text-3xl mb-1">{e.emoji}</div>
-                  <p className="text-xs font-semibold mb-1">{e.label}</p>
-                  <p className="text-xl font-bold" style={{ color: e.color }}>
-                    {item.percentage}%
-                  </p>
-                  <p className="text-xs text-muted-foreground">{item.count} students</p>
-                </div>
-              );
-            })
-          ) : (
-            <div className="col-span-full text-center py-8 text-muted-foreground">
-              {isLive ? (
-                <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
-              ) : (
-                <>
-                  <Eye className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                  <p>Start a class to see real-time emotion analytics</p>
-                </>
-              )}
+        {analytics && analytics.distribution ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-center">
+            <div className="h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={analytics.distribution}
+                    dataKey="percentage"
+                    nameKey="emotion"
+                    innerRadius="55%"
+                    outerRadius="85%"
+                    paddingAngle={2}
+                  >
+                    {analytics.distribution.map((item) => {
+                      const e = EMOTIONS[toEmotionKey(item.emotion)] || { color: "#888" };
+                      return <Cell key={item.emotion} fill={e.color} stroke="none" />;
+                    })}
+                  </Pie>
+                  <Tooltip
+                    formatter={(value, _name, entry) => [
+                      `${value}% (${entry.payload.count} students)`,
+                      EMOTIONS[toEmotionKey(entry.payload.emotion)]?.label || entry.payload.emotion,
+                    ]}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
             </div>
-          )}
-        </div>
+            <div className="space-y-2">
+              {analytics.distribution.map((item) => {
+                const e = EMOTIONS[toEmotionKey(item.emotion)] || { emoji: "❓", label: item.emotion, color: "#888" };
+                return (
+                  <div
+                    key={item.emotion}
+                    className="flex items-center justify-between px-3 py-2 rounded-lg border border-border/60"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className="text-lg">{e.emoji}</span>
+                      <span className="text-sm font-medium">{e.label}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-sm font-bold" style={{ color: e.color }}>
+                        {item.percentage}%
+                      </span>
+                      <span className="text-xs text-muted-foreground ml-2">{item.count} students</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="text-center py-8 text-muted-foreground">
+            {isLive ? (
+              <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+            ) : (
+              <>
+                <Eye className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                <p>Start a class to see real-time emotion analytics</p>
+              </>
+            )}
+          </div>
+        )}
       </div>
 
       {/* 2b. Emotion Trend Chart */}
-      {trend && trend.snapshots && trend.snapshots.length > 0 && (
+      {trendChartData.length > 0 && (
         <div className="glass rounded-2xl p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-bold flex items-center gap-2">
@@ -1058,37 +1190,61 @@ function TeacherDashboard() {
               Emotion Trend (Last {trend.count} Snapshots)
             </h2>
           </div>
-          <div className="space-y-3">
-            {trend.snapshots.map((snap, idx) => {
-              const dist = snap.distribution || {};
-              const total = Object.values(dist).reduce((a, b) => a + b, 0) || 1;
-              return (
-                <div key={idx} className="flex items-center gap-3">
-                  <span className="text-xs text-muted-foreground w-16 flex-shrink-0">
-                    {new Date(snap.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-                  </span>
-                  <div className="flex-1 h-6 rounded-full bg-secondary overflow-hidden flex">
-                    {Object.entries(dist).map(([emotion, pct]) => {
-                      const e = EMOTIONS[toEmotionKey(emotion)] || { color: "#888" };
-                      return (
-                        <div
-                          key={emotion}
-                          className="h-full transition-all"
-                          style={{
-                            width: `${(pct / total) * 100}%`,
-                            background: e.color,
-                          }}
-                          title={`${emotion}: ${pct}%`}
-                        />
-                      );
-                    })}
+          <div className="h-72">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendChartData} margin={{ top: 5, right: 20, left: -10, bottom: 5 }}>
+                <CartesianGrid strokeDasharray="3 3" className="opacity-20" />
+                <XAxis dataKey="time" fontSize={11} />
+                <YAxis fontSize={11} unit="%" />
+                <Tooltip />
+                {trendEmotionKeys.map((key) => {
+                  const e = EMOTIONS[toEmotionKey(key)] || { color: "#888", label: key };
+                  return (
+                    <Line
+                      key={key}
+                      type="monotone"
+                      dataKey={key}
+                      name={e.label}
+                      stroke={e.color}
+                      strokeWidth={2}
+                      dot={false}
+                      connectNulls
+                    />
+                  );
+                })}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* 2c. Recommendation History Log - real backend data (GET
+          /recommendation/history), same feed profile.jsx already shows the
+          student, surfaced here for the teacher too. */}
+      {recommendationHistory.length > 0 && (
+        <div className="glass rounded-2xl p-6">
+          <h2 className="font-display text-xl font-bold flex items-center gap-2 mb-4">
+            <ClipboardCheck className="h-5 w-5 text-primary" />
+            Recommendation History
+          </h2>
+          <div className="space-y-2">
+            {recommendationHistory.map((h, i) => (
+              <div key={i} className="flex items-center justify-between p-3 rounded-lg border border-border/60">
+                <div className="flex items-center gap-3">
+                  <Gamepad2 className="h-4 w-4 text-primary flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-medium">{h.game_type || "Recommendation"}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {h.subject || "General"}
+                      {h.emotion ? ` · triggered by ${h.emotion}` : ""}
+                    </p>
                   </div>
-                  <span className="text-xs font-medium w-20 text-right">
-                    {snap.dominant_emotion}
-                  </span>
                 </div>
-              );
-            })}
+                <span className="text-xs text-muted-foreground flex-shrink-0">
+                  {h.timestamp ? new Date(h.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : ""}
+                </span>
+              </div>
+            ))}
           </div>
         </div>
       )}
@@ -1784,6 +1940,50 @@ function TeacherDashboard() {
             </div>
           )}
         </div>
+      </div>
+
+      {
+    /* 8. Quiz Access - a lesson's quiz only unlocks once a student both
+       completed a live class for it AND a teacher publishes it here. Every
+       lesson starts locked (the real backend default) until toggled. */
+  }
+      <div className="glass rounded-2xl p-6">
+        <h2 className="font-display text-xl font-bold flex items-center gap-2 mb-4">
+          <Lock className="h-5 w-5 text-primary" />
+          Quiz Access
+        </h2>
+        {allLessons.length === 0 ? (
+          <p className="text-sm text-muted-foreground">No lessons available.</p>
+        ) : (
+          <div className="space-y-2">
+            {allLessons.map((l) => {
+              const locked = lessonLocks[l.lesson_id] ?? true;
+              return (
+                <div
+                  key={l.lesson_id}
+                  className="flex items-center justify-between p-3 rounded-xl border border-border/60"
+                >
+                  <div>
+                    <div className="font-medium text-sm">{l.title}</div>
+                    <div className="text-xs text-muted-foreground">{l.subject}</div>
+                  </div>
+                  <button
+                    onClick={() => handleToggleLock(l.lesson_id, locked)}
+                    disabled={lockUpdating === l.lesson_id}
+                    className={`px-4 py-2 rounded-lg text-xs font-semibold flex items-center gap-2 transition-colors disabled:opacity-50 ${
+                      locked
+                        ? "bg-secondary text-muted-foreground hover:bg-secondary/70"
+                        : "bg-emotion-happy/10 text-emotion-happy border border-emotion-happy/30"
+                    }`}
+                  >
+                    {locked ? <Lock className="h-3.5 w-3.5" /> : <Unlock className="h-3.5 w-3.5" />}
+                    {locked ? "Locked" : "Unlocked"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
     </div>;

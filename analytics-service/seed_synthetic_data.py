@@ -38,15 +38,11 @@ TRAJECTORIES = ["improving", "declining", "stable", "volatile"]
 # trend/stability could never compute at all - MIN_SESSIONS_FOR_TREND=3).
 LESSON_CATALOG = [
     ("percentages", "easy"),
-    ("circumference-of-a-circle", "easy"),
-    ("data-representation-and-interpretation", "easy"),
     ("number-patterns", "medium"),
     ("fractions-bodmas", "medium"),
-    ("pythagorean-theorem", "medium"),
     ("area-of-shapes", "medium"),
     ("binary-numbers", "hard"),
     ("sets", "hard"),
-    ("angles-of-a-polygon", "hard"),
 ]
 
 
