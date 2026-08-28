@@ -26,5 +26,9 @@ export default defineConfig({
   server: {
     port: 3002,
     strictPort: false,
+    // Binds all interfaces, not just localhost - required for other
+    // laptops on the same LAN (e.g. a live-class demo) to reach this dev
+    // server via this machine's LAN IP instead of only 127.0.0.1.
+    host: true,
   },
 });

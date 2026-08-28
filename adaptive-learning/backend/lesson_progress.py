@@ -67,3 +67,12 @@ def get_all_locks() -> dict[str, bool]:
     default get_access() applies)."""
     with _LOCK:
         return dict(_LOCK_STATE)
+
+
+def get_completed_students(lesson_id: str) -> list[str]:
+    """Every student_id who has completed this lesson's live class,
+    regardless of current lock state - used when a teacher unlocks a
+    lesson to know who to notify (backend/'s POST /api/notify/quiz-unlocked),
+    not just who currently has access."""
+    with _LOCK:
+        return [sid for (sid, lid) in _COMPLETION if lid == lesson_id]

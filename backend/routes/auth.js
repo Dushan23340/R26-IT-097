@@ -46,6 +46,8 @@ router.post("/signup", async (req, res) => {
       name: user.name,
       role: user.role,
       createdAt: user.createdAt,
+      avatarDataUrl: user.avatarDataUrl || null,
+      notificationPreferences: user.notificationPreferences,
     };
 
     res.status(201).json({
@@ -98,6 +100,8 @@ router.post("/login", async (req, res) => {
       name: user.name,
       role: user.role,
       createdAt: user.createdAt,
+      avatarDataUrl: user.avatarDataUrl || null,
+      notificationPreferences: user.notificationPreferences,
     };
 
     res.json({

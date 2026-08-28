@@ -64,6 +64,14 @@ function AuthProvider({ children }) {
       return { success: false, message: error.message || "Failed to resend OTP" };
     }
   };
+  // Shared by every Account Settings form (profile info, avatar,
+  // notification prefs) - each PUTs to its own routes/users.js endpoint,
+  // then hands the returned user object here to update context +
+  // localStorage in one place instead of repeating this pattern per form.
+  const updateUser = (updatedUser) => {
+    setUser(updatedUser);
+    localStorage.setItem("user", JSON.stringify(updatedUser));
+  };
   const logout = () => {
     setUser(null);
     localStorage.removeItem("user");
@@ -73,7 +81,7 @@ function AuthProvider({ children }) {
     // is the one place that reliably gets you off a protected page.
     router.navigate({ to: "/login" });
   };
-  return <AuthContext.Provider value={{ user, isLoading, signup, login, verifyOtp, logout, resendOtp }}>
+  return <AuthContext.Provider value={{ user, isLoading, signup, login, verifyOtp, logout, resendOtp, updateUser }}>
       {children}
     </AuthContext.Provider>;
 }

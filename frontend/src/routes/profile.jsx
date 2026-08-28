@@ -15,6 +15,7 @@ import {
 import { Activity, TrendingUp, Calendar, RefreshCw, AlertTriangle, Sparkles, Mail, ShieldCheck, Users, Scale, Gamepad2, Clock, Video, Layers, BarChart3, Target, BellRing, CheckCircle2 } from "lucide-react";
 import { EmotionBadge } from "@/components/EmotionBadge";
 import { MasteryRing } from "@/components/MasteryRing";
+import { AccountSettings } from "@/components/AccountSettings";
 import { studentProfileApi } from "@/lib/studentProfileApi";
 import { emotionApi } from "@/lib/emotionApi";
 import { toEmotionKey } from "@/lib/emotions";
@@ -144,10 +145,12 @@ function buildLiveClassSessions(emotionalStates) {
 // confusing when a teacher expects to see their own account here).
 function ProfileView() {
   const { user } = useAuth();
-  if (user?.role === "teacher") {
-    return <TeacherProfileCard user={user} />;
-  }
-  return <StudentAnalyticsView />;
+  return (
+    <div className="space-y-6">
+      <AccountSettings />
+      {user?.role === "teacher" ? <TeacherProfileCard user={user} /> : <StudentAnalyticsView />}
+    </div>
+  );
 }
 
 // Real, no relative-time library in this project - short and good enough
@@ -226,10 +229,14 @@ function TeacherProfileCard({ user }) {
     <div className="space-y-6 stagger-children">
       <div className="glass rounded-2xl p-6 flex flex-wrap items-center gap-6">
         <div
-          className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0"
+          className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0 overflow-hidden"
           style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
         >
-          {(user?.name || "?").slice(0, 2).toUpperCase()}
+          {user?.avatarDataUrl ? (
+            <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            (user?.name || "?").slice(0, 2).toUpperCase()
+          )}
         </div>
         <div className="flex-1 min-w-[200px]">
           <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Teacher Profile</div>
@@ -594,10 +601,14 @@ function StudentAnalyticsView() {
   }
       <div className="glass rounded-2xl p-6 flex flex-wrap items-center gap-6">
         <div
-    className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0"
+    className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0 overflow-hidden"
     style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
   >
-          {displayName.slice(0, 2).toUpperCase()}
+          {user?.avatarDataUrl ? (
+            <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" />
+          ) : (
+            displayName.slice(0, 2).toUpperCase()
+          )}
         </div>
         <div className="flex-1 min-w-[200px]">
           <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Student Profile</div>

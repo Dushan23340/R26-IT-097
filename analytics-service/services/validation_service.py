@@ -49,6 +49,29 @@ def _to_jsonb(evidence: dict[str, Any]):
     return json.dumps(evidence, default=str)
 
 
+def _has_open_recommendation(student_id: str, insight_type: str) -> bool:
+    """True if this student already has a pending/approved/modified
+    recommendation of this insight_type - re-running analysis (e.g. a
+    student clicking "Run Analysis" repeatedly, or a teacher re-checking
+    a class) used to queue an unbounded number of near-identical
+    duplicates every time, since the same underlying statistical
+    condition (e.g. "scores are volatile") stays true across many runs.
+    A rejected recommendation doesn't count as open - rejection signals
+    the finding wasn't useful, so a fresh analysis should be allowed to
+    try again."""
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT 1 FROM recommendations
+            WHERE student_id = %s AND insight_type = %s
+              AND status IN ('pending', 'approved', 'modified')
+            LIMIT 1
+            """,
+            (student_id, insight_type),
+        )
+        return cur.fetchone() is not None
+
+
 def analyze_student_and_queue_recommendations(
     student_id: str,
     stability_baseline: Optional[dict[str, Any]] = None,
@@ -69,7 +92,10 @@ def analyze_student_and_queue_recommendations(
     created: list[int] = []
 
     trend = statistics_service.analyze_lo_trend(lo_history)
-    if trend.get("available") and trend["significant"] and trend["direction"] == "declining":
+    if (
+        trend.get("available") and trend["significant"] and trend["direction"] == "declining"
+        and not _has_open_recommendation(student_id, "trend")
+    ):
         text = (
             f"Student {student_id}'s learning-outcome scores show a statistically significant "
             f"declining trend across {trend['session_count']} sessions "
@@ -80,8 +106,10 @@ def analyze_student_and_queue_recommendations(
 
     if stability_baseline and stability_baseline.get("available"):
         stability = statistics_service.compute_stability(lo_history)
-        if stability.get("available") and statistics_service.is_at_risk_by_stability(
-            stability["std_dev"], stability_baseline
+        if (
+            stability.get("available")
+            and statistics_service.is_at_risk_by_stability(stability["std_dev"], stability_baseline)
+            and not _has_open_recommendation(student_id, "stability")
         ):
             text = (
                 f"Student {student_id}'s scores are unusually volatile across sessions "
@@ -92,18 +120,22 @@ def analyze_student_and_queue_recommendations(
             created.append(_queue(student_id, "stability", text, {**stability, "baseline": stability_baseline}, lesson_id=lesson_id))
 
     correlations = statistics_service.analyze_emotion_lo_correlation(lo_history, emotional_states)
-    for emotion, result in correlations.items():
-        if result.get("available") and result["meaningful"] and result["direction"] == "negative":
-            text = (
-                f"Student {student_id}'s sessions with higher {emotion} show significantly lower LO scores "
-                f"(r={result['r']}, p={result['p_value']}, n={result['n']}). Consider addressing {emotion.lower()} "
-                "triggers directly (pacing, content difficulty, or a check-in)."
-            )
-            created.append(_queue(student_id, "emotion_correlation", text, {emotion: result}, lesson_id=lesson_id))
+    if not _has_open_recommendation(student_id, "emotion_correlation"):
+        for emotion, result in correlations.items():
+            if result.get("available") and result["meaningful"] and result["direction"] == "negative":
+                text = (
+                    f"Student {student_id}'s sessions with higher {emotion} show significantly lower LO scores "
+                    f"(r={result['r']}, p={result['p_value']}, n={result['n']}). Consider addressing {emotion.lower()} "
+                    "triggers directly (pacing, content difficulty, or a check-in)."
+                )
+                created.append(_queue(student_id, "emotion_correlation", text, {emotion: result}, lesson_id=lesson_id))
+                break  # one open emotion_correlation recommendation is enough - re-check next analysis run
 
     engagement_result = statistics_service.analyze_engagement_performance(lo_history, engagement)
-    if engagement_result.get("available") and engagement_result["significant"] and (
-        engagement_result["high_median"] > engagement_result["low_median"]
+    if (
+        engagement_result.get("available") and engagement_result["significant"]
+        and engagement_result["high_median"] > engagement_result["low_median"]
+        and not _has_open_recommendation(student_id, "engagement_comparison")
     ):
         text = (
             f"Student {student_id} scores significantly higher in high-engagement sessions "
@@ -133,12 +165,13 @@ def _list_by_status(status: str) -> list[dict[str, Any]]:
     with get_cursor() as cur:
         cur.execute(
             """
-            SELECT id, student_id, session_id, lesson_id, insight_type, recommendation_text,
-                   statistical_evidence, status, modified_text, reviewed_by, reviewed_at,
-                   rejection_rationale, created_at
-            FROM recommendations
-            WHERE status = %s
-            ORDER BY created_at DESC
+            SELECT r.id, r.student_id, r.session_id, r.lesson_id, r.insight_type, r.recommendation_text,
+                   r.statistical_evidence, r.status, r.modified_text, r.reviewed_by, r.reviewed_at,
+                   r.rejection_rationale, r.created_at, sp.full_name AS student_name
+            FROM recommendations r
+            LEFT JOIN student_profiles sp ON sp.student_id = r.student_id
+            WHERE r.status = %s
+            ORDER BY r.created_at DESC
             """,
             (status,),
         )
