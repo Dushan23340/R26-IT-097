@@ -741,6 +741,7 @@ if __name__ == "__main__":
     )
 
     app.run(
+        host="0.0.0.0",  # not just 127.0.0.1 - other services/machines on the LAN need to reach this
         debug=debug,
         use_reloader=use_reloader,
         port=port

@@ -32,6 +32,7 @@ from recommendation import (
 from lessons import list_lessons, get_lesson, get_quiz_for_lesson, get_lesson_difficulty
 import advisor_recommendations
 import lesson_progress
+import user_management_bridge
 from mastery import score_submission, score_generated_submission
 from semantic_recommender import recommend_resources
 from analytics_bridge import push_quiz_result_async, get_latest_weak_los, get_live_emotion, get_class_dominant_emotion
@@ -376,8 +377,20 @@ def set_lesson_lock(lesson_id):
     if "locked" not in data:
         return jsonify({"success": False, "error": "locked (bool) is required"}), 400
 
-    lesson_progress.set_lock(lesson_id, bool(data["locked"]))
-    return jsonify({"success": True, "lesson_id": lesson_id, "locked": bool(data["locked"])})
+    locked = bool(data["locked"])
+    lesson_progress.set_lock(lesson_id, locked)
+
+    # Real trigger, not a decorative toggle: notify students who already
+    # completed this lesson's live class (and opted in) that they can now
+    # take the quiz - best-effort, never blocks the unlock action itself.
+    if not locked:
+        lesson = get_lesson(lesson_id)
+        completed_students = lesson_progress.get_completed_students(lesson_id)
+        user_management_bridge.notify_quiz_unlocked_async(
+            completed_students, lesson["title"] if lesson else lesson_id
+        )
+
+    return jsonify({"success": True, "lesson_id": lesson_id, "locked": locked})
 
 
 @app.route("/api/lessons/<lesson_id>/quiz", methods=["GET"])

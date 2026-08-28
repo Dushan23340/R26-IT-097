@@ -1463,7 +1463,7 @@ function TeacherDashboard() {
                   <span className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-primary/10 text-primary">
                     {(rec.insight_type || "insight").replace(/_/g, " ")}
                   </span>
-                  <span className="text-xs text-muted-foreground">Student {rec.student_id}</span>
+                  <span className="text-xs text-muted-foreground">{rec.student_name || `Student ${rec.student_id}`}</span>
                 </div>
                 {editingId === rec.id ? (
                   <textarea

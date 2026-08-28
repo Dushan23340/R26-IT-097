@@ -34,15 +34,22 @@ def _post(path: str, payload: dict) -> Optional[dict]:
         return None
 
 
-def create_session(student_id: str, subject: Optional[str]) -> Optional[str]:
+def create_session(student_id: str, subject: Optional[str], student_name: Optional[str] = None) -> Optional[str]:
     """Upserts the student profile then creates one analytics-service
     learning_sessions row representing this student's entire live-class
     attendance - every emotion reading forwarded during the class attaches
     to this same session_id. Called once per student per class (cached by
-    class_session_store), not once per reading."""
+    class_session_store), not once per reading.
+
+    student_name falls back to student_id only if no real name was ever
+    passed - upsert_student's ON CONFLICT DO UPDATE means a later call with
+    a real name (e.g. this same student later submitting a quiz) still
+    self-heals a student_profiles row created here without one, but this
+    should always have a real name available now (the caller already has
+    the student's real display name for the Teacher Console roster)."""
     _post("/students", {
         "student_id": student_id,
-        "full_name": student_id,
+        "full_name": student_name or student_id,
         "email": f"{student_id}@unknown.local",
         "enrollment_date": datetime.utcnow().date().isoformat(),
         "grade_level": "Grade 9",

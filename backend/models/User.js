@@ -48,6 +48,22 @@ const userSchema = new Schema(
     lastOtpRequest: {
       type: Date,
     },
+    // Compact base64 JPEG data URI (client resizes to ~128x128 before
+    // upload) - no object storage needed at this size, see routes/users.js
+    // for the size cap enforced on write.
+    avatarDataUrl: {
+      type: String,
+    },
+    notificationPreferences: {
+      // Only real, wired trigger today: adaptive-learning/backend's
+      // teacher-unlock action notifies students who completed that
+      // lesson's live class and have this on. See routes/users.js's
+      // POST /notify/quiz-unlocked.
+      quizUnlocked: {
+        type: Boolean,
+        default: true,
+      },
+    },
   },
   {
     timestamps: true,

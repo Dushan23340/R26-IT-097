@@ -183,8 +183,17 @@ class ClassSessionStore:
             # Synchronous but local/fast (analytics-service on localhost);
             # only happens once per student per class, not per reading, so
             # the added latency on the Join button click is negligible.
-            # Real ID passed deliberately - see module docstring.
-            analytics_session_id = student_profile_bridge.create_session(student_id, self.subject)
+            # Real ID and name passed deliberately - see module docstring.
+            # student_name was previously dropped here even though it's
+            # right there in scope, so analytics-service permanently
+            # recorded full_name=student_id for any student whose first
+            # analytics-service contact was joining a live class (as
+            # opposed to submitting a quiz, the other path that upserts
+            # this row) - self._names above already got this right, this
+            # call just wasn't using the same value.
+            analytics_session_id = student_profile_bridge.create_session(
+                student_id, self.subject, student_name=self._names[pseudonym]
+            )
             if analytics_session_id:
                 self._analytics_sessions[pseudonym] = analytics_session_id
 

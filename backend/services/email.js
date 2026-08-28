@@ -83,6 +83,59 @@ export async function sendOtpEmail(email, otp, purpose) {
   }
 }
 
+// Generic notification email (as opposed to sendOtpEmail's fixed OTP
+// template) - first real caller is routes/users.js's quiz-unlocked
+// notification. Same graceful degrade as sendOtpEmail: SMTP creds are
+// blank by default in this project's .env, so this logs to console
+// instead of throwing/silently dropping the notification.
+export async function sendNotificationEmail(to, subject, message) {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 30px; text-align: center; border-radius: 10px 10px 0 0; }
+        .content { background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px; }
+        .footer { text-align: center; margin-top: 20px; color: #666; font-size: 12px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🎓 AdaptiveMind</h1>
+        </div>
+        <div class="content">
+          <p>${message}</p>
+        </div>
+        <div class="footer">
+          <p>You're receiving this because notifications are enabled in your AdaptiveMind account settings.</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+
+  try {
+    await transporter.sendMail({
+      from: `"AdaptiveMind" <${process.env.SMTP_FROM || "noreply@adaptivemind.com"}>`,
+      to,
+      subject,
+      html,
+      text: message,
+    });
+    console.log(`✅ Notification email sent to ${to}`);
+  } catch (error) {
+    console.error("❌ Error sending notification email:", error);
+    console.log(`\n${"=".repeat(60)}`);
+    console.log(`📧 [DEVELOPMENT MODE] Notification for: ${to}`);
+    console.log(`📝 Subject: ${subject}`);
+    console.log(`💬 Message: ${message}`);
+    console.log(`${"=".repeat(60)}\n`);
+  }
+}
+
 export async function sendTestEmail(to) {
   try {
     await transporter.sendMail({
