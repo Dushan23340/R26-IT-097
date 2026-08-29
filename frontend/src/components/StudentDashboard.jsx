@@ -13,7 +13,6 @@ import {
   Mic,
   MicOff,
   PhoneOff,
-  Maximize2,
   X,
   CheckCircle2,
   Clock,
@@ -27,6 +26,8 @@ import {
 } from "lucide-react";
 import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
+import { useStudentScreenShare } from "@/hooks/useStudentScreenShare";
+import ClassChat from "@/components/ClassChat";
 import { adaptiveApiService } from "@/lib/adaptiveApi";
 import { studentProfileApi } from "@/lib/studentProfileApi";
 import { emotionApi } from "@/lib/emotionApi";
@@ -55,7 +56,12 @@ function StudentDashboard() {
   const [engagement, setEngagement] = useState(92);
   const [inLiveClass, setInLiveClass] = useState(false);
   const [currentLiveClass, setCurrentLiveClass] = useState(null);
-  const [isMuted, setIsMuted] = useState(false);
+  const screenShare = useStudentScreenShare({
+    sessionId: currentLiveClass?.sessionId,
+    studentId,
+    name: user?.name,
+    enabled: inLiveClass && Boolean(currentLiveClass?.sessionId),
+  });
   const [showNotifications, setShowNotifications] = useState(false);
 
   // Real lessons (adaptive-learning backend) and real weak-LO resource
@@ -175,7 +181,7 @@ function StudentDashboard() {
       // best-effort - joining the UI still works even if the join call fails
     });
     setInLiveClass(true);
-    setCurrentLiveClass({ subject: classSession.subject, teacher: classSession.started_by });
+    setCurrentLiveClass({ subject: classSession.subject, teacher: classSession.started_by, sessionId: classSession.session_id });
   }
 
   // Real "Start Quiz" broadcast (Teacher Console Quick Actions) - same poll
@@ -304,26 +310,10 @@ function StudentDashboard() {
     if (s.includes("angry")) return "angry";
     return "neutral";
   };
-  const notifications = [
-    {
-      id: "1",
-      message: "Great job on your last quiz! \u{1F389}",
-      type: "success",
-      time: "2 hours ago"
-    },
-    {
-      id: "2",
-      message: "You need to improve in Chemistry - try the recommended practice",
-      type: "warning",
-      time: "5 hours ago"
-    },
-    {
-      id: "3",
-      message: "New live class scheduled for tomorrow at 10 AM",
-      type: "info",
-      time: "1 day ago"
-    }
-  ];
+  // No notification backend exists yet - this used to be 3 hardcoded fake
+  // items shown to every student regardless of their real activity. Left
+  // empty (with a real empty state below) rather than fabricated content.
+  const notifications = [];
   const currentEmotion = EMOTIONS[emotion];
   if (inLiveClass && currentLiveClass) {
     return <div className="min-h-screen bg-background">
@@ -360,35 +350,35 @@ function StudentDashboard() {
             {
       /* Main Screen Share */
     }
-            <div className="lg:col-span-3">
+            <div className="lg:col-span-3 space-y-4">
               <div className="glass rounded-2xl overflow-hidden aspect-video relative">
-                <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary/50 to-background">
-                  <div className="text-center">
-                    <Monitor className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
-                    <p className="text-lg font-medium mb-2">Teacher's Screen</p>
-                    <p className="text-sm text-muted-foreground">Screen sharing in progress...</p>
+                {screenShare.isSharing ? (
+                  <video
+                    ref={screenShare.videoRef}
+                    autoPlay
+                    playsInline
+                    className="absolute inset-0 w-full h-full object-contain bg-black"
+                  />
+                ) : (
+                  <div className="absolute inset-0 flex items-center justify-center bg-gradient-to-br from-secondary/50 to-background">
+                    <div className="text-center">
+                      <Monitor className="h-16 w-16 text-muted-foreground mx-auto mb-4" />
+                      <p className="text-lg font-medium mb-2">Waiting for teacher</p>
+                      <p className="text-sm text-muted-foreground">The teacher hasn't shared their screen yet.</p>
+                    </div>
                   </div>
-                </div>
-                
+                )}
+
                 {
       /* Controls */
     }
                 <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-3">
                   <button
-      onClick={() => setIsMuted(!isMuted)}
-      className="p-3 rounded-full glass hover:scale-105 transition-transform"
+      onClick={screenShare.toggleMute}
+      disabled={!screenShare.isSharing}
+      className="p-3 rounded-full glass hover:scale-105 transition-transform disabled:opacity-40"
     >
-                    {isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
-                  </button>
-                  <button
-      className="p-3 rounded-full glass hover:scale-105 transition-transform"
-    >
-                    <Video className="h-5 w-5" />
-                  </button>
-                  <button
-      className="p-3 rounded-full glass hover:scale-105 transition-transform"
-    >
-                    <Maximize2 className="h-5 w-5" />
+                    {screenShare.isMuted ? <MicOff className="h-5 w-5" /> : <Mic className="h-5 w-5" />}
                   </button>
                   <button
       onClick={() => {
@@ -401,6 +391,12 @@ function StudentDashboard() {
                   </button>
                 </div>
               </div>
+
+              <ClassChat
+                messages={screenShare.chatMessages}
+                onSend={screenShare.sendChat}
+                isSelf={(msg) => Boolean(msg.self)}
+              />
             </div>
 
             {
@@ -490,7 +486,9 @@ function StudentDashboard() {
             </button>
           </div>
           <div className="max-h-96 overflow-y-auto">
-            {notifications.map((notif) => <div key={notif.id} className="p-4 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors">
+            {notifications.length === 0 ? <div className="p-6 text-center text-sm text-muted-foreground">
+                You're all caught up - no notifications yet.
+              </div> : notifications.map((notif) => <div key={notif.id} className="p-4 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors">
                 <div className="flex gap-3">
                   {notif.type === "success" && <CheckCircle2 className="h-5 w-5 text-emotion-happy flex-shrink-0 mt-0.5" />}
                   {notif.type === "warning" && <AlertCircle className="h-5 w-5 text-emotion-confused flex-shrink-0 mt-0.5" />}

@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     # must be listed here explicitly, not just localhost/127.0.0.1.
     # Update the IP if the demo machine's LAN IP changes on a different
     # network (find it with `ipconfig getifaddr en0` on macOS).
-    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3002,http://localhost:3003,http://localhost:5173,http://localhost:8080,http://localhost:8081,http://192.168.8.182:3002"
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:3002,http://localhost:3003,http://localhost:5173,http://localhost:8080,http://localhost:8081,http://192.168.8.106:3002"
 
     # Analytics
     WINDOW_SECONDS: int = 60

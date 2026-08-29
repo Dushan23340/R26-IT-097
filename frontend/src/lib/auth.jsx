@@ -37,6 +37,9 @@ function AuthProvider({ children }) {
       if (response.success && response.user) {
         setUser(response.user);
         localStorage.setItem("user", JSON.stringify(response.user));
+        if (response.token) {
+          localStorage.setItem("token", response.token);
+        }
       }
       return response;
     } catch (error) {
@@ -50,6 +53,9 @@ function AuthProvider({ children }) {
       if (response.success && response.user) {
         setUser(response.user);
         localStorage.setItem("user", JSON.stringify(response.user));
+        if (response.token) {
+          localStorage.setItem("token", response.token);
+        }
       }
       return response;
     } catch (error) {

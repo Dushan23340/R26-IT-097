@@ -11,7 +11,6 @@ from data import (
     get_resources_for_lo,
     get_quiz_template
 )
-from semantic_recommender import recommend_resources
 
 
 # ───────────────────────────────────────────────
@@ -103,14 +102,27 @@ def classify_support_level(score, weak_count, total_count):
 
 def get_recommendations(weak_los, support_level_config=None, emotion=None):
     """
-    Generate personalized resource recommendations for weak areas using
-    Sentence-BERT semantic matching (proposal 3.2), re-weighted by the
-    student's current emotional state when provided.
+    Generate resource recommendations for weak areas from this engine's
+    own generic resource pool (data.py's RESOURCES).
+
+    This is the legacy, generic Bloom-taxonomy engine (used by
+    /api/recommendations, /api/full-report, /api/quiz/submit) - it only
+    ever has an LO name like "remember"/"analyze", never a real lesson_id,
+    so it cannot call semantic_recommender.recommend_resources(), which
+    requires one (that function is for the real per-lesson flow instead,
+    see app.py's /api/lessons/<id>/quiz/submit). A prior change wired this
+    function to call it anyway, passing the LO name where a lesson_id was
+    expected and omitting the now-required lo_name entirely - a TypeError
+    on every call. Restored to get_resources_for_lo(), the same generic
+    lookup generate_adaptive_path() below already uses for this exact
+    "no lesson context" case.
 
     Args:
         weak_los: list of weak learning outcome names
         support_level_config: dict from classify_support_level()
-        emotion: optional current emotional state (confused/frustrated/bored/...)
+        emotion: accepted for API compatibility; not applied here - there's
+            no lesson-scoped resource pool for this generic engine to
+            re-weight by emotion the way the real per-lesson flow does
 
     Returns:
         dict: {lo_name: [recommended_resources]}
@@ -121,7 +133,7 @@ def get_recommendations(weak_los, support_level_config=None, emotion=None):
     max_resources = support_level_config.get("max_resources_per_lo", 3)
 
     return {
-        lo: recommend_resources(lo, emotion=emotion, top_k=max_resources)
+        lo: get_resources_for_lo(lo, max_count=max_resources)
         for lo in weak_los
     }
 

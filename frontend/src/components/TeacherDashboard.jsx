@@ -61,6 +61,8 @@ const INVALID_REASON_DISPLAY = {
   looking_away: { emoji: "\u{1F440}", label: "Looking Away", color: "var(--muted-foreground)" },
 };
 import { useAuth } from "@/lib/auth";
+import { useTeacherScreenShare } from "@/hooks/useTeacherScreenShare";
+import ClassChat from "@/components/ClassChat";
 import { emotionApi } from "@/lib/emotionApi";
 import { adaptiveApiService } from "@/lib/adaptiveApi";
 import { getStudents as getLiveStudents } from "@/services/emotionApi";
@@ -79,9 +81,9 @@ function TeacherDashboard() {
   const router = useRouter();
   const { user } = useAuth();
   const [isLive, setIsLive] = useState(false);
-  const [isSharingScreen, setIsSharingScreen] = useState(false);
   const [studentsJoined, setStudentsJoined] = useState(0);
   const [sessionId, setSessionId] = useState(null);
+  const screenShare = useTeacherScreenShare({ sessionId, enabled: isLive });
   const [showAlerts, setShowAlerts] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState("Mathematics");
   // Optional real-lesson narrowing for the Game Recommendation Engine -
@@ -639,7 +641,9 @@ function TeacherDashboard() {
       // best-effort - still drop the local live state below either way
     }
     setIsLive(false);
-    setIsSharingScreen(false);
+    if (screenShare.isSharing) {
+      screenShare.stopSharing();
+    }
     setStudentsJoined(0);
     setSessionId(null);
   };
@@ -781,7 +785,11 @@ function TeacherDashboard() {
   }, []);
 
   const handleShareScreen = () => {
-    setIsSharingScreen(!isSharingScreen);
+    if (screenShare.isSharing) {
+      screenShare.stopSharing();
+    } else {
+      screenShare.startSharing();
+    }
   };
   // Real roster (joinedStudents, from class_session_store.get_joined_students -
   // who actually clicked Join for THIS class) cross-referenced with real,
@@ -921,31 +929,6 @@ function TeacherDashboard() {
     return Array.from(new Set(trend.snapshots.flatMap((s) => Object.keys(s.distribution || {}))));
   }, [trend]);
 
-  const smartSuggestions = [
-    {
-      id: "1",
-      message: "20% of students are confused - Explain the concept again with examples",
-      action: "Show Recap Material",
-      icon: "alert"
-    },
-    {
-      id: "2",
-      message: "Engagement is dropping - Start an interactive quiz to re-engage",
-      action: "Launch Quick Quiz",
-      icon: "game"
-    },
-    {
-      id: "3",
-      message: "Most students are doing well - Introduce advanced challenge",
-      action: "Add Challenge Question",
-      icon: "lightbulb"
-    }
-  ];
-  const classStats = {
-    averageScore: 74,
-    weakTopics: ["Quadratic Equations", "Newton's Third Law", "Chemical Bonding"],
-    overallProgress: 68
-  };
   return <div className="space-y-6 stagger-children max-w-7xl mx-auto">
       {
     /* Alerts Panel */
@@ -1047,10 +1030,10 @@ function TeacherDashboard() {
                 </button> : <>
                   <button
     onClick={handleShareScreen}
-    className={`px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all hover:scale-105 ${isSharingScreen ? "bg-primary/20 text-primary" : "bg-secondary text-foreground"}`}
+    className={`px-5 py-3 rounded-xl font-semibold text-sm flex items-center gap-2 transition-all hover:scale-105 ${screenShare.isSharing ? "bg-primary/20 text-primary" : "bg-secondary text-foreground"}`}
   >
                     <Monitor className="h-4 w-4" />
-                    {isSharingScreen ? "Sharing Screen" : "Share Screen"}
+                    {screenShare.isSharing ? "Sharing Screen" : "Share Screen"}
                   </button>
                   <button
     onClick={handleEndClass}
@@ -1075,6 +1058,38 @@ function TeacherDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Screen Share + Chat (live class only) */}
+      {isLive && (screenShare.isSharing || screenShare.error || screenShare.connectedStudents.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 glass rounded-2xl p-4">
+            <div className="flex items-center justify-between mb-2">
+              <h3 className="text-sm font-semibold flex items-center gap-2">
+                <Monitor className="h-4 w-4" />
+                Your Screen {screenShare.isSharing ? "(sharing live)" : "(not sharing)"}
+              </h3>
+              <span className="text-xs text-muted-foreground">
+                {screenShare.connectedStudents.length} student{screenShare.connectedStudents.length === 1 ? "" : "s"} connected
+              </span>
+            </div>
+            {screenShare.error && (
+              <p className="text-sm text-destructive mb-2">{screenShare.error}</p>
+            )}
+            <div className="aspect-video rounded-xl overflow-hidden bg-secondary/40 flex items-center justify-center">
+              {screenShare.isSharing ? (
+                <video ref={screenShare.localVideoRef} autoPlay muted playsInline className="w-full h-full object-contain" />
+              ) : (
+                <p className="text-sm text-muted-foreground">Click "Share Screen" to start</p>
+              )}
+            </div>
+          </div>
+          <ClassChat
+            messages={screenShare.chatMessages}
+            onSend={(text) => screenShare.sendChat(text, user?.name || "Teacher")}
+            isSelf={(msg) => Boolean(msg.self)}
+          />
+        </div>
+      )}
 
       {/* Error Banner */}
       {error && (

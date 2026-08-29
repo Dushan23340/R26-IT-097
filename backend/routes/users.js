@@ -1,13 +1,15 @@
 import express from "express";
 import User from "../models/User.js";
 import { sendNotificationEmail } from "../services/email.js";
+import { requireSelf } from "../middleware/auth.js";
 
 const router = express.Router();
 
-// No route in this platform verifies a token today (documented, intentional
-// - see the analytics-service/emotion-service audit) - these trust the
-// client-supplied :id the same way every other route already does, not a
-// new gap specific to this file.
+// Every route below that mutates a specific user's own data requires a
+// valid JWT for that same user (requireSelf, middleware/auth.js).
+// POST /notify/quiz-unlocked is the one exception - it's an internal
+// service-to-service call from adaptive-learning/backend, not a
+// logged-in user's own request, so there's no user token to check there.
 
 const AVATAR_MAX_BYTES = 500 * 1024; // decoded size, keeps the Mongo document small
 
@@ -23,7 +25,7 @@ function userData(user) {
   };
 }
 
-router.put("/:id", async (req, res) => {
+router.put("/:id", requireSelf, async (req, res) => {
   try {
     const { name, email } = req.body;
     if (!name && !email) {
@@ -52,7 +54,7 @@ router.put("/:id", async (req, res) => {
   }
 });
 
-router.post("/:id/change-password", async (req, res) => {
+router.post("/:id/change-password", requireSelf, async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
     if (!currentPassword || !newPassword) {
@@ -84,7 +86,7 @@ router.post("/:id/change-password", async (req, res) => {
   }
 });
 
-router.put("/:id/avatar", async (req, res) => {
+router.put("/:id/avatar", requireSelf, async (req, res) => {
   try {
     const { avatarDataUrl } = req.body;
     if (!avatarDataUrl || !/^data:image\/(png|jpe?g|webp);base64,/.test(avatarDataUrl)) {
@@ -110,7 +112,7 @@ router.put("/:id/avatar", async (req, res) => {
   }
 });
 
-router.delete("/:id/avatar", async (req, res) => {
+router.delete("/:id/avatar", requireSelf, async (req, res) => {
   try {
     const user = await User.findById(req.params.id);
     if (!user) {
@@ -126,7 +128,7 @@ router.delete("/:id/avatar", async (req, res) => {
   }
 });
 
-router.put("/:id/notifications", async (req, res) => {
+router.put("/:id/notifications", requireSelf, async (req, res) => {
   try {
     const { quizUnlocked } = req.body;
     if (typeof quizUnlocked !== "boolean") {

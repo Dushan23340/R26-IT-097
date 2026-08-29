@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routes import analytics, recommendations, emotions, class_session, quiz_broadcast, message_broadcast
+from app.routes import analytics, recommendations, emotions, class_session, quiz_broadcast, message_broadcast, class_ws
 
 app = FastAPI(
     title=settings.APP_NAME,
@@ -46,6 +46,7 @@ app.include_router(recommendations.router)
 app.include_router(class_session.router)
 app.include_router(quiz_broadcast.router)
 app.include_router(message_broadcast.router)
+app.include_router(class_ws.router)
 
 
 @app.get("/")

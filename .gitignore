@@ -35,6 +35,13 @@ emotion-service/debug_frames/
 emotion-service/session_logs/
 emotion-service/*.log
 emotion-backend/*.log
+adaptive-learning/backend/*.log
+analytics-service/*.log
+/*.log
+payload.json
+
+# Local process supervision (start-all.sh / stop-all.sh)
+.run/
 
 # macOS
 .DS_Store
