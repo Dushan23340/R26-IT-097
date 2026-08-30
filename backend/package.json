@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node --watch index.js",
     "start": "node index.js",
-    "build": "node --check index.js && node --check routes/auth.js && node --check models/User.js"
+    "build": "node --check index.js && node --check routes/auth.js && node --check models/userRepository.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
@@ -15,7 +15,7 @@
     "express-rate-limit": "^8.4.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
-    "mongoose": "^9.5.0",
+    "pg": "^8.13.1",
     "nodemailer": "^8.0.0"
   }
 }

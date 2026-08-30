@@ -1,6 +1,10 @@
+import json
 from datetime import datetime
 from typing import Dict, Optional, List
 
+from app.redis_client import redis_client
+
+STATE_KEY = "pattern_detector:history"
 
 # Threshold rules for pattern detection
 PATTERN_THRESHOLDS = {
@@ -13,7 +17,9 @@ PATTERN_THRESHOLDS = {
 class PatternDetector:
     """
     Detects dominant emotional patterns that persist across
-    consecutive aggregation cycles.
+    consecutive aggregation cycles. State now lives in Redis instead of
+    process memory (target production architecture: Redis = temporary /
+    real-time state).
     """
 
     def __init__(self):
@@ -21,11 +27,19 @@ class PatternDetector:
         self.aggregation_history: List[Dict] = []
         self.max_history = 2
 
+    def _load(self) -> None:
+        raw = redis_client.get(STATE_KEY)
+        self.aggregation_history = json.loads(raw) if raw else []
+
+    def _save(self) -> None:
+        redis_client.set(STATE_KEY, json.dumps(self.aggregation_history))
+
     def store_aggregation_result(self, distribution: Dict[str, float]) -> None:
         """
         Store the latest aggregation result.
         Keeps only the last 2 results for consecutive cycle checks.
         """
+        self._load()
         self.aggregation_history.append({
             "timestamp": datetime.utcnow().isoformat(),
             "distribution": distribution
@@ -33,6 +47,7 @@ class PatternDetector:
         # Keep only last 2
         if len(self.aggregation_history) > self.max_history:
             self.aggregation_history.pop(0)
+        self._save()
 
     def detect_dominant_pattern(self) -> Optional[str]:
         """
@@ -68,6 +83,7 @@ class PatternDetector:
         """
         Get full pattern detection status for API response.
         """
+        self._load()
         detected = self.detect_dominant_pattern()
 
         return {

@@ -163,7 +163,17 @@ function LessonsPage() {
     hydrationRanRef.current = true;
     const saved = loadProgress(studentId);
     if (saved) {
-      setScreen(saved.screen ?? "select");
+      // A saved "quiz"/"results" screen with no matching quiz/result object
+      // (e.g. a partial/corrupted write, or a schema from an older version
+      // of this page) would otherwise restore a screen value none of the
+      // three render branches below match - select/quiz/results are all
+      // gated on their own data being present, so the page would render
+      // nothing at all rather than falling back to something visible.
+      const restoredScreen =
+        (saved.screen === "quiz" && saved.quiz) || (saved.screen === "results" && saved.result)
+          ? saved.screen
+          : "select";
+      setScreen(restoredScreen);
       setQuiz(saved.quiz ?? null);
       setAnswers(saved.answers ?? {});
       setResult(saved.result ?? null);

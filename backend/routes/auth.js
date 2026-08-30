@@ -1,5 +1,5 @@
 import express from "express";
-import User from "../models/User.js";
+import * as userRepo from "../models/userRepository.js";
 import { generateToken } from "../utils/jwt.js";
 
 const router = express.Router();
@@ -10,14 +10,12 @@ router.post("/signup", async (req, res) => {
 
     console.log("📝 Signup attempt:", { email, name, role });
 
-    if (!email || !password || !name || !role) {
-      return res.status(400).json({
-        success: false,
-        message: "All fields are required",
-      });
+    const validationError = userRepo.validateSignupFields({ name, email, password, role });
+    if (validationError) {
+      return res.status(400).json({ success: false, message: validationError });
     }
 
-    const existingUser = await User.findOne({ email });
+    const existingUser = await userRepo.findByEmail(email);
     if (existingUser) {
       console.log("⚠️  User already exists:", email);
       return res.status(400).json({
@@ -26,37 +24,26 @@ router.post("/signup", async (req, res) => {
       });
     }
 
-    const user = new User({
-      email,
-      password,
-      name,
-      role,
-      isEmailVerified: true,
-    });
-
-    console.log("💾 Saving user to MongoDB...");
-    await user.save();
-    console.log("✅ User saved successfully:", user._id);
+    console.log("💾 Saving user to PostgreSQL...");
+    const user = await userRepo.create({ email, password, name, role });
+    console.log("✅ User saved successfully:", user.id);
 
     const token = generateToken(user);
-
-    const userData = {
-      id: user._id.toString(),
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      createdAt: user.createdAt,
-      avatarDataUrl: user.avatarDataUrl || null,
-      notificationPreferences: user.notificationPreferences,
-    };
 
     res.status(201).json({
       success: true,
       message: "Account created successfully",
-      user: userData,
+      user: userRepo.toPublicUser(user),
       token,
     });
   } catch (error) {
+    if (error.code === "23505") {
+      // unique_violation — a concurrent signup won the race for this email
+      return res.status(400).json({
+        success: false,
+        message: "An account with this email already exists",
+      });
+    }
     console.error("❌ Signup error:", error);
     res.status(500).json({
       success: false,
@@ -76,7 +63,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const user = await User.findOne({ email }).select("+password");
+    const user = await userRepo.findByEmail(email);
     if (!user) {
       return res.status(401).json({
         success: false,
@@ -84,7 +71,7 @@ router.post("/login", async (req, res) => {
       });
     }
 
-    const isPasswordValid = await user.comparePassword(password);
+    const isPasswordValid = await userRepo.comparePassword(password, user.password_hash);
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
@@ -94,20 +81,10 @@ router.post("/login", async (req, res) => {
 
     const token = generateToken(user);
 
-    const userData = {
-      id: user._id.toString(),
-      email: user.email,
-      name: user.name,
-      role: user.role,
-      createdAt: user.createdAt,
-      avatarDataUrl: user.avatarDataUrl || null,
-      notificationPreferences: user.notificationPreferences,
-    };
-
     res.json({
       success: true,
       message: "Login successful",
-      user: userData,
+      user: userRepo.toPublicUser(user),
       token,
     });
   } catch (error) {

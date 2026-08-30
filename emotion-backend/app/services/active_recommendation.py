@@ -10,11 +10,18 @@ Each broadcast is a "session" (session_id) so join/finish events can be
 scoped to *this* run of the game - a student's stale join/finish call from
 a previous session (or after the teacher ended it) doesn't pollute the
 current one, and re-broadcasting the same game starts a fresh count.
+
+State now lives in Redis instead of process memory (target production
+architecture: Redis = temporary / real-time state). GAME_LIBRARY is a
+static catalog, not session state, so it stays a plain Python constant.
 """
 
+import json
+import uuid
 from datetime import datetime
 from typing import Dict, List, Optional
-import uuid
+
+from app.redis_client import redis_client
 
 GAME_LIBRARY: Dict[str, Dict[str, str]] = {
     "fraction_room": {"route": "/fraction-room", "label": "Fraction Room", "badge": "Game 1"},
@@ -32,6 +39,8 @@ GAME_LIBRARY: Dict[str, Dict[str, str]] = {
     "fraction_chef_recipe_rescue": {"route": "/fraction-chef-recipe-rescue", "label": "Fraction Chef: The Recipe Rescue", "badge": "Game 13"},
 }
 
+STATE_KEY = "active_recommendation:state"
+
 
 class ActiveRecommendationStore:
     def __init__(self) -> None:
@@ -41,6 +50,24 @@ class ActiveRecommendationStore:
         self.joined_students: set = set()
         self.results: List[Dict] = []
 
+    def _load(self) -> None:
+        raw = redis_client.get(STATE_KEY)
+        data = json.loads(raw) if raw else {}
+        self.active_game = data.get("active_game")
+        self.updated_at = datetime.fromisoformat(data["updated_at"]) if data.get("updated_at") else None
+        self.session_id = data.get("session_id")
+        self.joined_students = set(data.get("joined_students", []))
+        self.results = data.get("results", [])
+
+    def _save(self) -> None:
+        redis_client.set(STATE_KEY, json.dumps({
+            "active_game": self.active_game,
+            "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+            "session_id": self.session_id,
+            "joined_students": list(self.joined_students),
+            "results": self.results,
+        }))
+
     def set_active(self, game_key: str) -> None:
         if game_key not in GAME_LIBRARY:
             raise ValueError(f"Unknown game_key '{game_key}'. Known keys: {list(GAME_LIBRARY)}")
@@ -49,6 +76,7 @@ class ActiveRecommendationStore:
         self.session_id = str(uuid.uuid4())[:8]
         self.joined_students = set()
         self.results = []
+        self._save()
 
     def end_active(self) -> None:
         self.active_game = None
@@ -56,8 +84,10 @@ class ActiveRecommendationStore:
         self.session_id = None
         self.joined_students = set()
         self.results = []
+        self._save()
 
     def get_active(self) -> Dict:
+        self._load()
         if not self.active_game:
             return {"active_game": None}
         return {
@@ -72,9 +102,11 @@ class ActiveRecommendationStore:
         game. Returns False (no-op) if session_id doesn't match the
         current session - e.g. the teacher ended or switched games between
         the student loading the banner and clicking Play Now."""
+        self._load()
         if not self.active_game or session_id != self.session_id:
             return False
         self.joined_students.add(student_id)
+        self._save()
         return True
 
     def record_result(
@@ -88,6 +120,7 @@ class ActiveRecommendationStore:
         total_count: Optional[int] = None,
         duration_seconds: Optional[float] = None,
     ) -> bool:
+        self._load()
         if not self.active_game or session_id != self.session_id:
             return False
         self.results.append({
@@ -100,9 +133,11 @@ class ActiveRecommendationStore:
             "duration_seconds": duration_seconds,
             "timestamp": datetime.utcnow().isoformat(),
         })
+        self._save()
         return True
 
     def get_stats(self) -> Dict:
+        self._load()
         if not self.active_game:
             return {"active_game": None, "session_id": None, "joined_count": 0, "finished_count": 0, "results": []}
         return {

@@ -1,55 +1,46 @@
-import mongoose from "mongoose";
+import pg from "pg";
 
-const DEFAULT_URI = "mongodb://127.0.0.1:27017/test";
+const { Pool } = pg;
 
-/**
- * True when the URI already names a database (path after host), e.g.
- * mongodb://127.0.0.1:27017/test or mongodb+srv://host/mydb?...
- * Atlas URIs like ...mongodb.net/?appName=... have NO db segment — we then use MONGODB_DB_NAME or "test".
- */
-function uriSpecifiesDatabase(uri) {
-  const base = uri.split("?")[0];
-  const stripped = base.replace(/^mongodb(\+srv)?:\/\/[^/]+/, "");
-  if (!stripped || stripped === "/") return false;
-  const segment = stripped.replace(/^\//, "").split("/")[0];
-  return segment.length > 0;
+// Shared PostgreSQL instance — the same database analytics-service already
+// uses (adaptive_learning_analytics). User records live in the "core"
+// schema (see db/migrations/001_core_users_and_resources.sql) so this
+// service doesn't need — and doesn't get — its own database.
+const pool = new Pool({
+  host: process.env.PGHOST || "127.0.0.1",
+  port: Number(process.env.PGPORT) || 5432,
+  database: process.env.PGDATABASE || "adaptive_learning_analytics",
+  user: process.env.PGUSER || "postgres",
+  password: process.env.PGPASSWORD || "postgres",
+  max: Number(process.env.PGPOOL_MAX) || 10,
+});
+
+pool.on("error", (err) => {
+  console.error("❌ Unexpected PostgreSQL pool error:", err);
+});
+
+export async function query(text, params) {
+  return pool.query(text, params);
 }
 
 export async function connectToDatabase() {
-  const MONGODB_URI = process.env.MONGODB_URI || DEFAULT_URI;
-  const dbNameOverride = process.env.MONGODB_DB_NAME || "test";
-
   console.log(
-    "🔍 Database config - MONGODB_URI:",
-    process.env.MONGODB_URI ? "SET (from .env)" : "NOT SET — using default local URI",
+    "🔍 Database config - PGHOST/PGDATABASE:",
+    `${process.env.PGHOST || "127.0.0.1"}/${process.env.PGDATABASE || "adaptive_learning_analytics"}`,
   );
-  if (process.env.MONGODB_URI) {
-    console.log("🔍 Database config - Value:", MONGODB_URI.replace(/\/\/[^@]+@/, "//***:***@"));
-  } else {
-    console.log("💡 Tip: run `docker compose up -d` from the repo root for local MongoDB.");
-  }
-
-  const connectOptions = {};
-  if (!uriSpecifiesDatabase(MONGODB_URI)) {
-    connectOptions.dbName = dbNameOverride;
-    console.log(
-      `📌 No database name in MONGODB_URI — Mongoose will use dbName="${dbNameOverride}" (set MONGODB_DB_NAME to override).`,
-    );
-    console.log(
-      '💡 Or add the DB to your URI, e.g. ...mongodb.net/test?retryWrites=true&w=majority',
-    );
-  }
 
   try {
-    await mongoose.connect(MONGODB_URI, connectOptions);
-    console.log("✅ MongoDB connected successfully");
-    console.log(`📊 Active database: "${mongoose.connection.name}"`);
-    console.log(`📂 User documents use collection "users" in that database.`);
+    const { rows } = await pool.query("SELECT current_database() AS db, now() AS ts");
+    console.log("✅ PostgreSQL connected successfully");
+    console.log(`📊 Active database: "${rows[0].db}"`);
+    console.log('📂 User records live in schema "core", table "users" (was MongoDB\'s "users" collection).');
   } catch (error) {
-    console.error("❌ MongoDB connection error:", error);
-    console.error("💡 Start local DB: docker compose up -d   ·  Or fix MONGODB_URI for Atlas.");
+    console.error("❌ PostgreSQL connection error:", error);
+    console.error(
+      "💡 Start Postgres locally (brew services start postgresql@16) and run db/migrations/001_core_users_and_resources.sql once.",
+    );
     process.exit(1);
   }
 }
 
-export default mongoose;
+export default pool;

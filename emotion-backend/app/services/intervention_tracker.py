@@ -1,23 +1,48 @@
-from datetime import datetime, timedelta
+import json
+from datetime import datetime
 from typing import Dict, List, Optional
 from collections import deque
 import uuid
 
 from app.models.schemas import GameRecommendation
-
+from app.redis_client import redis_client
 
 NEGATIVE_EMOTIONS = {"CONFUSED", "BORED", "FRUSTRATED", "ANGRY"}
+STATE_KEY = "intervention:history"
+
+
+def _serialize(record: Dict) -> Dict:
+    """A plain dict is JSON-safe except recommended_game, which is a
+    GameRecommendation pydantic model."""
+    out = dict(record)
+    out["recommended_game"] = record["recommended_game"].model_dump(mode="json")
+    return out
+
+
+def _deserialize(record: Dict) -> Dict:
+    out = dict(record)
+    out["recommended_game"] = GameRecommendation(**record["recommended_game"])
+    return out
 
 
 class InterventionTracker:
     """
-    Tracks game interventions and measures their effectiveness
-    at reducing class-level negative emotions.
+    Redis-backed tracker for game interventions and their effectiveness at
+    reducing class-level negative emotions (state now lives in Redis
+    instead of process memory — see the target production architecture).
     """
 
     def __init__(self, max_history: int = 50):
         self.interventions: deque = deque(maxlen=max_history)
         self.max_history = max_history
+
+    def _load(self) -> None:
+        raw = redis_client.get(STATE_KEY)
+        records = [_deserialize(r) for r in json.loads(raw)] if raw else []
+        self.interventions = deque(records, maxlen=self.max_history)
+
+    def _save(self) -> None:
+        redis_client.set(STATE_KEY, json.dumps([_serialize(r) for r in self.interventions]))
 
     def start_intervention(
         self,
@@ -29,6 +54,7 @@ class InterventionTracker:
         Start tracking a new intervention.
         Records pre-intervention emotion distribution.
         """
+        self._load()
         intervention_id = str(uuid.uuid4())[:8]
         record = {
             "intervention_id": intervention_id,
@@ -41,6 +67,7 @@ class InterventionTracker:
             "status": "pending",
         }
         self.interventions.append(record)
+        self._save()
         return intervention_id
 
     def record_post_emotions(
@@ -52,6 +79,7 @@ class InterventionTracker:
         Record post-intervention emotions and compute reduction percentage.
         Returns the updated record or None if not found.
         """
+        self._load()
         for record in self.interventions:
             if record["intervention_id"] == intervention_id:
                 record["post_emotions"] = dict(post_distribution)
@@ -61,6 +89,7 @@ class InterventionTracker:
                 )
                 record["negative_emotion_reduction_pct"] = reduction
                 record["status"] = "completed"
+                self._save()
                 return dict(record)
         return None
 
@@ -86,6 +115,7 @@ class InterventionTracker:
         """
         Return overall effectiveness metrics.
         """
+        self._load()
         completed = [
             rec for rec in self.interventions
             if rec["status"] == "completed" and rec["negative_emotion_reduction_pct"] is not None
@@ -128,6 +158,7 @@ class InterventionTracker:
 
     def get_pending_interventions(self) -> List[Dict]:
         """Return all pending interventions waiting for post-emotion feedback."""
+        self._load()
         return [
             {
                 "intervention_id": r["intervention_id"],
@@ -142,6 +173,7 @@ class InterventionTracker:
 
     def get_intervention_by_id(self, intervention_id: str) -> Optional[Dict]:
         """Get a single intervention record by ID."""
+        self._load()
         for record in self.interventions:
             if record["intervention_id"] == intervention_id:
                 return dict(record)

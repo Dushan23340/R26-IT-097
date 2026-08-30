@@ -5,7 +5,7 @@ const JWT_EXPIRATION = 7 * 24 * 60 * 60;
 
 export function generateToken(user) {
   const payload = {
-    userId: user._id.toString(),
+    userId: user.id,
     email: user.email,
     role: user.role,
   };

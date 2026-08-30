@@ -1,5 +1,5 @@
 import express from "express";
-import User from "../models/User.js";
+import * as userRepo from "../models/userRepository.js";
 import { sendNotificationEmail } from "../services/email.js";
 import { requireSelf } from "../middleware/auth.js";
 
@@ -11,19 +11,7 @@ const router = express.Router();
 // service-to-service call from adaptive-learning/backend, not a
 // logged-in user's own request, so there's no user token to check there.
 
-const AVATAR_MAX_BYTES = 500 * 1024; // decoded size, keeps the Mongo document small
-
-function userData(user) {
-  return {
-    id: user._id.toString(),
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    createdAt: user.createdAt,
-    avatarDataUrl: user.avatarDataUrl || null,
-    notificationPreferences: user.notificationPreferences,
-  };
-}
+const AVATAR_MAX_BYTES = 500 * 1024; // decoded size, keeps the Postgres row small
 
 router.put("/:id", requireSelf, async (req, res) => {
   try {
@@ -32,22 +20,20 @@ router.put("/:id", requireSelf, async (req, res) => {
       return res.status(400).json({ success: false, message: "name or email is required" });
     }
 
-    const user = await User.findById(req.params.id);
-    if (!user) {
+    const existing = await userRepo.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    if (email && email !== user.email) {
-      const existing = await User.findOne({ email });
-      if (existing) {
+    if (email && email.toLowerCase().trim() !== existing.email) {
+      const emailTaken = await userRepo.findByEmail(email);
+      if (emailTaken) {
         return res.status(400).json({ success: false, message: "An account with this email already exists" });
       }
-      user.email = email;
     }
-    if (name) user.name = name;
 
-    await user.save();
-    res.json({ success: true, user: userData(user) });
+    const updated = await userRepo.updateProfile(req.params.id, { name, email });
+    res.json({ success: true, user: userRepo.toPublicUser(updated) });
   } catch (error) {
     console.error("❌ Update profile error:", error);
     res.status(500).json({ success: false, message: error.message || "Failed to update profile" });
@@ -64,20 +50,17 @@ router.post("/:id/change-password", requireSelf, async (req, res) => {
       return res.status(400).json({ success: false, message: "New password must be at least 6 characters" });
     }
 
-    const user = await User.findById(req.params.id).select("+password");
+    const user = await userRepo.findById(req.params.id);
     if (!user) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
 
-    const isCurrentValid = await user.comparePassword(currentPassword);
+    const isCurrentValid = await userRepo.comparePassword(currentPassword, user.password_hash);
     if (!isCurrentValid) {
       return res.status(401).json({ success: false, message: "Current password is incorrect" });
     }
 
-    // Assignment (not a raw update) so the model's existing pre("save")
-    // hook re-hashes it - same mechanism signup/login already rely on.
-    user.password = newPassword;
-    await user.save();
+    await userRepo.updatePassword(req.params.id, newPassword);
 
     res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {
@@ -98,14 +81,13 @@ router.put("/:id/avatar", requireSelf, async (req, res) => {
       return res.status(400).json({ success: false, message: "Avatar image is too large - resize it smaller" });
     }
 
-    const user = await User.findById(req.params.id);
-    if (!user) {
+    const existing = await userRepo.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    user.avatarDataUrl = avatarDataUrl;
-    await user.save();
 
-    res.json({ success: true, user: userData(user) });
+    const updated = await userRepo.updateAvatar(req.params.id, avatarDataUrl);
+    res.json({ success: true, user: userRepo.toPublicUser(updated) });
   } catch (error) {
     console.error("❌ Update avatar error:", error);
     res.status(500).json({ success: false, message: error.message || "Failed to update avatar" });
@@ -114,14 +96,13 @@ router.put("/:id/avatar", requireSelf, async (req, res) => {
 
 router.delete("/:id/avatar", requireSelf, async (req, res) => {
   try {
-    const user = await User.findById(req.params.id);
-    if (!user) {
+    const existing = await userRepo.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    user.avatarDataUrl = undefined;
-    await user.save();
 
-    res.json({ success: true, user: userData(user) });
+    const updated = await userRepo.updateAvatar(req.params.id, null);
+    res.json({ success: true, user: userRepo.toPublicUser(updated) });
   } catch (error) {
     console.error("❌ Remove avatar error:", error);
     res.status(500).json({ success: false, message: error.message || "Failed to remove avatar" });
@@ -135,14 +116,13 @@ router.put("/:id/notifications", requireSelf, async (req, res) => {
       return res.status(400).json({ success: false, message: "quizUnlocked (boolean) is required" });
     }
 
-    const user = await User.findById(req.params.id);
-    if (!user) {
+    const existing = await userRepo.findById(req.params.id);
+    if (!existing) {
       return res.status(404).json({ success: false, message: "User not found" });
     }
-    user.notificationPreferences = { ...user.notificationPreferences, quizUnlocked };
-    await user.save();
 
-    res.json({ success: true, user: userData(user) });
+    const updated = await userRepo.updateNotificationPrefs(req.params.id, { quizUnlocked });
+    res.json({ success: true, user: userRepo.toPublicUser(updated) });
   } catch (error) {
     console.error("❌ Update notification preferences error:", error);
     res.status(500).json({ success: false, message: error.message || "Failed to update notification preferences" });
@@ -152,8 +132,10 @@ router.put("/:id/notifications", requireSelf, async (req, res) => {
 // Internal ingestion point, called by adaptive-learning/backend's teacher
 // unlock action (POST /api/lessons/<id>/lock) - best-effort, fire-and-
 // forget from that side, same bridge pattern as analytics_bridge.py /
-// adaptive_learning_bridge.py. student_ids are the platform's real Mongo
-// _ids (the same value used as student_id everywhere else in this app).
+// adaptive_learning_bridge.py. student_ids are the platform's real
+// PostgreSQL user ids (the same value used as student_id everywhere else
+// in this app — was a Mongo ObjectId string before this migration, and
+// still is that exact same string value for every pre-existing account).
 router.post("/notify/quiz-unlocked", async (req, res) => {
   try {
     const { student_ids: studentIds, lesson_title: lessonTitle } = req.body;
@@ -161,10 +143,7 @@ router.post("/notify/quiz-unlocked", async (req, res) => {
       return res.status(400).json({ success: false, message: "student_ids (array) and lesson_title are required" });
     }
 
-    const users = await User.find({
-      _id: { $in: studentIds },
-      "notificationPreferences.quizUnlocked": true,
-    });
+    const users = await userRepo.findManyByIdsWithQuizNotificationsOn(studentIds);
 
     let sent = 0;
     for (const user of users) {

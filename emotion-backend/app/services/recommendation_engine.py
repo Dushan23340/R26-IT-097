@@ -1,9 +1,13 @@
+import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 import random
 
 from app.models.schemas import GameRecommendation, RecommendationResponse
 from app.services.game_catalog import get_all_games_for, get_games_for, get_games_for_lesson
+from app.redis_client import redis_client
+
+STATE_KEY = "recommendation:history"
 
 # Emotion->game mapping is intentionally OFF for now (explicit instruction:
 # "don't map games with emotions still... only do when teacher click
@@ -25,6 +29,13 @@ class RecommendationEngine:
     def __init__(self, variation_window_minutes: int = 30):
         self.variation_window_minutes = variation_window_minutes
         self.recommendation_history: List[Dict] = []
+
+    def _load(self) -> None:
+        raw = redis_client.get(STATE_KEY)
+        self.recommendation_history = json.loads(raw) if raw else []
+
+    def _save(self) -> None:
+        redis_client.set(STATE_KEY, json.dumps(self.recommendation_history))
 
     def generate_recommendation(
         self,
@@ -50,6 +61,7 @@ class RecommendationEngine:
         Returns:
             Dict with recommended game, alternatives, and metadata.
         """
+        self._load()
         emotion = dominant_emotion.upper()
         subject = subject.strip() or "General"
         lesson_id = (lesson_id or "").strip() or None
@@ -92,6 +104,7 @@ class RecommendationEngine:
 
         # Step 6: Store in history
         self._add_to_history(primary.game_id, primary.game_type, emotion, subject)
+        self._save()
 
         return {
             "timestamp": datetime.utcnow().isoformat(),
@@ -176,6 +189,7 @@ class RecommendationEngine:
         """
         Return recommendation history, optionally filtered by time window.
         """
+        self._load()
         if since_minutes is None:
             return list(self.recommendation_history)
 
@@ -198,6 +212,7 @@ class RecommendationEngine:
 
     def can_recommend(self, game_id: str) -> bool:
         """Check if a game was recently recommended (within variation window)."""
+        self._load()
         cutoff = datetime.utcnow() - timedelta(minutes=self.variation_window_minutes)
         for rec in self.recommendation_history:
             if rec["game_id"] == game_id:

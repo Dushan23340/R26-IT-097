@@ -1,30 +1,54 @@
+import json
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Dict
 from collections import defaultdict
 
 from app.models.schemas import EmotionEvent, EmotionType, EmotionDistribution
+from app.redis_client import redis_client
+
+EVENTS_KEY = "emotion:events"
+INVALID_KEY = "emotion:invalid_students"
 
 
 class EmotionStore:
     """
-    In-memory emotion storage with sliding window support.
-    Stores emotion events and provides aggregated analytics.
+    Redis-backed emotion storage with sliding window support (state now
+    lives in Redis instead of process memory — see the target production
+    architecture; nothing here is meant to survive as permanent history,
+    that's PostgreSQL's job via analytics-service).
+
+    `events` and `invalid_students` are properties, not plain attributes:
+    every read goes straight to Redis and every assignment writes straight
+    back. This matters because other modules (routes/analytics.py) read
+    `emotion_store.events` directly as a bare attribute, not through a
+    method — a plain cached attribute would go stale the moment this
+    process wasn't the one that last wrote it.
     """
 
     def __init__(self, window_seconds: int = 60):
-        self.events: List[EmotionEvent] = []
         self.window_seconds = window_seconds
-        # Face-validity tracking (mark_invalid), mirroring emotion-service's
-        # own tracker.py: a student whose camera currently can't produce a
-        # real classification (occluded/looking away/no face at all) still
-        # counts as present (active_students), but their stale last-known
-        # emotion must not keep being counted in the distribution/dominant-
-        # emotion chart - see get_current_distribution.
-        self.invalid_students: Dict[str, datetime] = {}
+
+    @property
+    def events(self) -> List[EmotionEvent]:
+        raw = redis_client.get(EVENTS_KEY)
+        return [EmotionEvent(**item) for item in json.loads(raw)] if raw else []
+
+    @events.setter
+    def events(self, value: List[EmotionEvent]) -> None:
+        redis_client.set(EVENTS_KEY, json.dumps([e.model_dump(mode="json") for e in value]))
+
+    @property
+    def invalid_students(self) -> Dict[str, datetime]:
+        raw = redis_client.get(INVALID_KEY)
+        return {sid: datetime.fromisoformat(ts) for sid, ts in json.loads(raw).items()} if raw else {}
+
+    @invalid_students.setter
+    def invalid_students(self, value: Dict[str, datetime]) -> None:
+        redis_client.set(INVALID_KEY, json.dumps({sid: ts.isoformat() for sid, ts in value.items()}))
 
     def add_event(self, event: EmotionEvent) -> None:
         """Add a new emotion event."""
-        self.events.append(event)
+        self.events = self.events + [event]
         self._cleanup_old_events()
 
     def mark_invalid(self, student_id: str, reason: str) -> None:
@@ -33,13 +57,15 @@ class EmotionStore:
         the possible reasons). Deliberately does NOT create an EmotionEvent
         - this student's real emotion trend/distribution must not be
         polluted by a frame where no real classification happened."""
-        self.invalid_students[student_id] = datetime.utcnow()
+        invalid = self.invalid_students
+        invalid[student_id] = datetime.utcnow()
+        self.invalid_students = invalid
         self._cleanup_old_events()
 
     def _cleanup_old_events(self) -> None:
         """Remove events/invalid-markers outside the sliding window."""
         cutoff = datetime.utcnow() - timedelta(seconds=self.window_seconds)
-        self.events = [e for e in self.events if e.timestamp >= cutoff]
+        self.events = [e for e in self.events if e.timestamp and e.timestamp >= cutoff]
         self.invalid_students = {
             student_id: ts for student_id, ts in self.invalid_students.items() if ts >= cutoff
         }
@@ -50,8 +76,10 @@ class EmotionStore:
         Returns percentages and counts for chart visualization.
         """
         self._cleanup_old_events()
+        events = self.events
+        invalid_students = self.invalid_students
 
-        if not self.events and not self.invalid_students:
+        if not events and not invalid_students:
             return self._empty_distribution()
 
         # Each student's most-recent reading within the window is their
@@ -62,7 +90,7 @@ class EmotionStore:
         # window, showing up as "11 students Neutral, 2 students Frustrated"
         # in the UI when only 1 student was ever actually present.
         latest_by_student: Dict[str, EmotionEvent] = {}
-        for event in self.events:
+        for event in events:
             existing = latest_by_student.get(event.student_id)
             if existing is None or event.timestamp > existing.timestamp:
                 latest_by_student[event.student_id] = event
@@ -74,7 +102,7 @@ class EmotionStore:
         # as emotion-service's EmotionTracker._face_detected.
         currently_invalid = {
             student_id
-            for student_id, invalid_ts in self.invalid_students.items()
+            for student_id, invalid_ts in invalid_students.items()
             if student_id not in latest_by_student or latest_by_student[student_id].timestamp < invalid_ts
         }
 
@@ -152,6 +180,7 @@ class EmotionStore:
         Get emotion trend data over time for chart visualization.
         Returns time-bucketed counts for each emotion.
         """
+        events = self.events
         now = datetime.utcnow()
         bucket_size = self.window_seconds // points
         if bucket_size < 1:
@@ -165,8 +194,8 @@ class EmotionStore:
             start_time = end_time - timedelta(seconds=bucket_size)
 
             bucket_events = [
-                e for e in self.events
-                if start_time <= e.timestamp < end_time
+                e for e in events
+                if e.timestamp and start_time <= e.timestamp < end_time
             ]
 
             emotion_counts = defaultdict(int)
@@ -188,5 +217,6 @@ class EmotionStore:
         return result["dominant_emotion"]
 
 
-# Global store instance
+# Global store instance (state lives in Redis; every attribute access on
+# this object hits Redis live, see the events/invalid_students properties)
 emotion_store = EmotionStore(window_seconds=60)

@@ -38,13 +38,38 @@ from semantic_recommender import recommend_resources
 from analytics_bridge import push_quiz_result_async, get_latest_weak_los, get_live_emotion, get_class_dominant_emotion
 from quiz_gen.generator import generate_quiz, strip_answers, SUPPORTED_LESSONS as QUIZ_GEN_LESSONS
 from quiz_gen import store as quiz_store
+import db as core_db
+import object_storage
 
 # ───────────────────────────────────────────────
 # Flask App Setup
 # ───────────────────────────────────────────────
 
-app = Flask(__name__)
+# static_folder=None: notes PDFs now live in Object Storage, not
+# static/notes/ on disk - see the /static/notes/<lesson_id>/<lo_name>.pdf
+# route below, which replaces Flask's default static file serving for
+# this one path with a PostgreSQL-metadata + Object Storage lookup
+# (target production architecture, item 4: PostgreSQL stores object_key +
+# metadata, Object Storage holds the actual file).
+app = Flask(__name__, static_folder=None)
 CORS(app)  # Enable CORS for frontend integration
+
+
+@app.route("/static/notes/<lesson_id>/<lo_name>.pdf", methods=["GET"])
+def serve_lesson_note(lesson_id: str, lo_name: str):
+    row = core_db.fetch_one(
+        "SELECT object_key, content_type FROM core.resources WHERE lesson_id = %s AND bloom_level = %s",
+        (lesson_id, lo_name),
+    )
+    if not row:
+        return jsonify({"success": False, "error": "Resource not found"}), 404
+
+    try:
+        data = object_storage.get_object_bytes(row["object_key"])
+    except Exception:
+        return jsonify({"success": False, "error": "Resource not found in object storage"}), 404
+
+    return app.response_class(data, mimetype=row["content_type"])
 
 
 def _quiz_locked_response(access: dict):
@@ -473,8 +498,22 @@ def submit_lesson_quiz(lesson_id):
     # If quiz_set is a quiz_gen instance_id (a string handed out by the GET
     # route above, not the legacy int 1/2), score against that generated
     # instance's real answer key instead of the static LESSONS content.
-    generated_instance = quiz_store.get(quiz_set) if isinstance(quiz_set, str) else None
-    if generated_instance:
+    # quiz_store is in-memory only - a service restart (or the instance's
+    # own 6h TTL) can make a previously-issued instance_id unresolvable.
+    # Falling through to score_submission() in that case used to compare
+    # this string against lessons.py's integer "set" field, which can
+    # never match anything - silently scoring against zero real questions
+    # (or the wrong static set) instead of failing loudly. A student mid-
+    # quiz across a backend restart deserves a clear "start over" message,
+    # not a quiz that silently reports everything as wrong.
+    if isinstance(quiz_set, str):
+        generated_instance = quiz_store.get(quiz_set)
+        if not generated_instance:
+            return jsonify({
+                "success": False,
+                "error": "This quiz has expired (the server may have restarted). Please go back and start the quiz again.",
+                "reason": "quiz_instance_expired",
+            }), 410
         result = score_generated_submission(lesson_id, generated_instance["questions"], answers, quiz_set)
     else:
         result = score_submission(lesson_id, answers, quiz_set=quiz_set)

@@ -8,41 +8,42 @@ accessible once BOTH:
      dominant emotion captured throughout that class), AND
   2. a teacher has explicitly unlocked that lesson's quiz.
 
-Same in-memory dict + threading.Lock pattern as quiz_gen/store.py and
-advisor_recommendations.py - this service has no database of its own, and
-this doesn't need to be the first thing to add one.
+State now lives in Redis instead of process memory (target production
+architecture: Redis = temporary / real-time state) - completion/lock
+status isn't an academic record that needs PostgreSQL's durability
+guarantees, but it does need to survive this process restarting, which a
+plain in-memory dict never could.
 """
 
 from __future__ import annotations
 
-import threading
+import json
 import time
 
-_LOCK = threading.Lock()
+from redis_client import redis_client
 
-# (student_id, lesson_id) -> {"completed_at": float, "dominant_emotion": str | None}
-_COMPLETION: dict[tuple[str, str], dict] = {}
-
-# lesson_id -> locked (True) / unlocked (False). Any lesson not yet
-# explicitly touched by a teacher defaults to locked - a live class ending
-# marks students as having completed it, but a teacher still has to
-# deliberately publish the quiz before anyone can take it.
-_LOCK_STATE: dict[str, bool] = {}
+_COMPLETION_KEY = "lesson_progress:completion"  # hash: "student_id|lesson_id" -> json
+_COMPLETED_SET_PREFIX = "lesson_progress:completed:"  # set per lesson_id: student_ids
+_LOCKS_KEY = "lesson_progress:locks"  # hash: lesson_id -> "1" (locked) / "0" (unlocked)
 _DEFAULT_LOCKED = True
 
 
+def _completion_field(student_id: str, lesson_id: str) -> str:
+    return f"{student_id}|{lesson_id}"
+
+
 def mark_completed(student_id: str, lesson_id: str, dominant_emotion: str | None) -> None:
-    with _LOCK:
-        _COMPLETION[(student_id, lesson_id)] = {
-            "completed_at": time.time(),
-            "dominant_emotion": dominant_emotion,
-        }
+    record = {"completed_at": time.time(), "dominant_emotion": dominant_emotion}
+    redis_client.hset(_COMPLETION_KEY, _completion_field(student_id, lesson_id), json.dumps(record))
+    redis_client.sadd(f"{_COMPLETED_SET_PREFIX}{lesson_id}", student_id)
 
 
 def get_access(student_id: str, lesson_id: str) -> dict:
-    with _LOCK:
-        completion = _COMPLETION.get((student_id, lesson_id))
-        locked = _LOCK_STATE.get(lesson_id, _DEFAULT_LOCKED)
+    raw = redis_client.hget(_COMPLETION_KEY, _completion_field(student_id, lesson_id))
+    completion = json.loads(raw) if raw else None
+
+    lock_raw = redis_client.hget(_LOCKS_KEY, lesson_id)
+    locked = (lock_raw == "1") if lock_raw is not None else _DEFAULT_LOCKED
 
     completed = completion is not None
     quiz_unlocked = not locked
@@ -56,8 +57,7 @@ def get_access(student_id: str, lesson_id: str) -> dict:
 
 
 def set_lock(lesson_id: str, locked: bool) -> None:
-    with _LOCK:
-        _LOCK_STATE[lesson_id] = bool(locked)
+    redis_client.hset(_LOCKS_KEY, lesson_id, "1" if locked else "0")
 
 
 def get_all_locks() -> dict[str, bool]:
@@ -65,8 +65,8 @@ def get_all_locks() -> dict[str, bool]:
     locked state. A lesson never touched by a teacher is simply absent
     here (caller should treat any missing lesson_id as locked, the same
     default get_access() applies)."""
-    with _LOCK:
-        return dict(_LOCK_STATE)
+    raw = redis_client.hgetall(_LOCKS_KEY)
+    return {lesson_id: (value == "1") for lesson_id, value in raw.items()}
 
 
 def get_completed_students(lesson_id: str) -> list[str]:
@@ -74,5 +74,4 @@ def get_completed_students(lesson_id: str) -> list[str]:
     regardless of current lock state - used when a teacher unlocks a
     lesson to know who to notify (backend/'s POST /api/notify/quiz-unlocked),
     not just who currently has access."""
-    with _LOCK:
-        return [sid for (sid, lid) in _COMPLETION if lid == lesson_id]
+    return list(redis_client.smembers(f"{_COMPLETED_SET_PREFIX}{lesson_id}"))

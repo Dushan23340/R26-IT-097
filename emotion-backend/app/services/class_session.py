@@ -29,8 +29,14 @@ links up with their quiz-submission history under the same identity
 profiles). join() receives the real ID (from the frontend, same as
 before), derives the pseudonym for the matching structures, and keeps the
 real ID only in _real_ids, solely to pass to student_profile_bridge calls.
+
+State now lives in Redis instead of process memory (target production
+architecture: Redis = temporary / real-time / active-session state — none
+of this is meant to survive as permanent history, that's PostgreSQL's job
+via analytics-service).
 """
 
+import json
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import time
@@ -38,6 +44,7 @@ import uuid
 
 from app.services import student_profile_bridge
 from app.services.anonymize import anonymize_student_id
+from app.redis_client import redis_client
 
 # Emotion readings arrive from the browser every ~2.5s; forwarding every
 # single one to analytics-service would be excessive request volume over a
@@ -45,6 +52,7 @@ from app.services.anonymize import anonymize_student_id
 # service's own tracker already uses (emotion_tracker.py), for consistency.
 FORWARD_INTERVAL_SECONDS = 5.0
 _ENGAGED_STATES = {"HAPPY", "NORMAL"}
+STATE_KEY = "class_session:state"
 
 
 class ClassSessionStore:
@@ -85,6 +93,44 @@ class ClassSessionStore:
         # compute a real per-student dominant_emotion for lesson completion.
         self._emotion_label_counts: Dict[str, Dict[str, int]] = {}
 
+    def _load(self) -> None:
+        raw = redis_client.get(STATE_KEY)
+        data = json.loads(raw) if raw else {}
+        self.is_live = data.get("is_live", False)
+        self.subject = data.get("subject")
+        self.started_by = data.get("started_by")
+        self.started_at = datetime.fromisoformat(data["started_at"]) if data.get("started_at") else None
+        self.session_id = data.get("session_id")
+        self.lesson_id = data.get("lesson_id")
+        self.joined_students = set(data.get("joined_students", []))
+        self._analytics_sessions = data.get("analytics_sessions", {})
+        self._real_ids = data.get("real_ids", {})
+        self._names = data.get("names", {})
+        self._join_times = data.get("join_times", {})
+        self._last_forward_time = data.get("last_forward_time", {})
+        self._reading_counts = data.get("reading_counts", {})
+        self._engaged_counts = data.get("engaged_counts", {})
+        self._emotion_label_counts = data.get("emotion_label_counts", {})
+
+    def _save(self) -> None:
+        redis_client.set(STATE_KEY, json.dumps({
+            "is_live": self.is_live,
+            "subject": self.subject,
+            "started_by": self.started_by,
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "session_id": self.session_id,
+            "lesson_id": self.lesson_id,
+            "joined_students": list(self.joined_students),
+            "analytics_sessions": self._analytics_sessions,
+            "real_ids": self._real_ids,
+            "names": self._names,
+            "join_times": self._join_times,
+            "last_forward_time": self._last_forward_time,
+            "reading_counts": self._reading_counts,
+            "engaged_counts": self._engaged_counts,
+            "emotion_label_counts": self._emotion_label_counts,
+        }))
+
     def start(self, subject: Optional[str], started_by: Optional[str], lesson_id: Optional[str] = None) -> None:
         self.is_live = True
         self.subject = subject or "Live Class"
@@ -101,6 +147,7 @@ class ClassSessionStore:
         self._reading_counts = {}
         self._engaged_counts = {}
         self._emotion_label_counts = {}
+        self._save()
 
     def end(self) -> Dict:
         """Computes everything BEFORE the reset below, since end() is also
@@ -118,6 +165,7 @@ class ClassSessionStore:
             briefly unreachable at join time), with dominant_emotion being
             the modal label from _emotion_label_counts, or None if this
             student never produced a countable reading."""
+        self._load()
         now = time.time()
         engagement_summaries = []
         for pseudonym, session_id in self._analytics_sessions.items():
@@ -156,6 +204,7 @@ class ClassSessionStore:
         self._reading_counts = {}
         self._engaged_counts = {}
         self._emotion_label_counts = {}
+        self._save()
         return {
             "engagement_summaries": engagement_summaries,
             "lesson_id": lesson_id,
@@ -170,6 +219,7 @@ class ClassSessionStore:
         auth user.name) - kept only in-memory, pseudonym-keyed, solely so
         the Teacher Console can show a real name next to each joined
         student's live emotion instead of their pseudonym or raw id."""
+        self._load()
         if not self.is_live or session_id != self.session_id:
             return False
 
@@ -197,6 +247,7 @@ class ClassSessionStore:
             if analytics_session_id:
                 self._analytics_sessions[pseudonym] = analytics_session_id
 
+        self._save()
         return True
 
     def record_emotion_for_bridge(self, pseudonym: str, emotion_label: str) -> Optional[Tuple[str, str]]:
@@ -211,6 +262,7 @@ class ClassSessionStore:
         link exists, so lesson-completion tracking (end()) still gets a
         real dominant emotion even if that sibling service was briefly
         unreachable at join time."""
+        self._load()
         if not self.is_live or pseudonym not in self.joined_students:
             return None
 
@@ -229,11 +281,13 @@ class ClassSessionStore:
 
         session_id = self._analytics_sessions.get(pseudonym)
         real_id = self._real_ids.get(pseudonym)
+        self._save()
         if not session_id or not real_id:
             return None
         return session_id, real_id
 
     def get_state(self) -> Dict:
+        self._load()
         if not self.is_live:
             return {"is_live": False}
         return {
@@ -252,6 +306,7 @@ class ClassSessionStore:
         with emotion-service's live tracker (matched on pseudonym) to show
         each joined student's name next to their current emotion, instead
         of showing every pseudonym emotion-service has ever tracked."""
+        self._load()
         if not self.is_live:
             return []
         return [
