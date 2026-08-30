@@ -560,20 +560,39 @@ def student_dashboard_recommendations(student_id):
     latest = get_latest_weak_los(student_id)
     lesson_id = latest["lesson_id"] if latest else None
     resources = []
+    # Set only when this student's most recent quiz session exists but has
+    # no weak LOs left - lets the frontend tell "just mastered everything"
+    # apart from "hasn't taken a quiz yet" (both would otherwise look like
+    # the same empty `recommendations` list).
+    mastered_lesson_title = None
     if latest:
         lesson = get_lesson(latest["lesson_id"])
-        emotion = None
-        if student_id != "anonymous":
-            emotion = get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
-        for lo in latest["weak_los"]:
-            for res in recommend_resources(latest["lesson_id"], lo, emotion=emotion, top_k=2):
-                resources.append({**res, "lo_level": lo, "lesson_title": lesson["title"] if lesson else latest["lesson_id"]})
+        if latest["weak_los"]:
+            emotion = None
+            if student_id != "anonymous":
+                emotion = get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
+            # get_validated_video() (called inside recommend_resources) is
+            # keyed only by (lesson_id, emotion), not by Bloom level - so a
+            # student weak in multiple LOs of the same lesson gets the
+            # identical video back on every iteration below. Dedupe by id so
+            # it surfaces once, while each LO's distinct note (keyed by
+            # Bloom level) still shows.
+            seen_resource_ids = set()
+            for lo in latest["weak_los"]:
+                for res in recommend_resources(latest["lesson_id"], lo, emotion=emotion, top_k=2):
+                    if res["id"] in seen_resource_ids:
+                        continue
+                    seen_resource_ids.add(res["id"])
+                    resources.append({**res, "lo_level": lo, "lesson_title": lesson["title"] if lesson else latest["lesson_id"]})
+        else:
+            mastered_lesson_title = lesson["title"] if lesson else latest["lesson_id"]
 
     return jsonify({
         "success": True,
         "data": {
             "lesson_id": lesson_id,
             "recommendations": resources,
+            "mastered_lesson_title": mastered_lesson_title,
             "advisor_recommendations": advisor_recommendations.get_for_student(student_id),
         },
     })

@@ -71,6 +71,10 @@ function StudentDashboard() {
   const [loadingLessons, setLoadingLessons] = useState(true);
   const [recommendations, setRecommendations] = useState([]);
   const [loadingRecommendations, setLoadingRecommendations] = useState(true);
+  // Set only when the student's most recent quiz session has zero weak
+  // LOs left - distinguishes "just mastered this lesson" from "hasn't
+  // taken a quiz yet" in the empty-recommendations state below.
+  const [masteredLessonTitle, setMasteredLessonTitle] = useState(null);
   // Statistically-grounded recommendations a teacher/advisor approved via
   // analytics-service's expert-in-the-loop queue (IT22197146 SO5/Figure 3) -
   // distinct from the weak-LO resource links above.
@@ -94,10 +98,12 @@ function StudentDashboard() {
       .then((res) => {
         setRecommendations(res.data?.recommendations || []);
         setAdvisorRecommendations(res.data?.advisor_recommendations || []);
+        setMasteredLessonTitle(res.data?.mastered_lesson_title || null);
       })
       .catch(() => {
         setRecommendations([]);
         setAdvisorRecommendations([]);
+        setMasteredLessonTitle(null);
       })
       .finally(() => setLoadingRecommendations(false));
 
@@ -830,6 +836,18 @@ function StudentDashboard() {
         {loadingRecommendations ? (
           <div className="py-8 flex justify-center text-muted-foreground">
             <RefreshCw className="h-5 w-5 animate-spin" />
+          </div>
+        ) : recommendations.length === 0 && masteredLessonTitle ? (
+          <div className="text-center py-8">
+            <p className="text-sm text-muted-foreground mb-3">
+              🎉 You've mastered every learning outcome in "{masteredLessonTitle}" - no weak areas right now.
+            </p>
+            <Link
+              to="/lessons"
+              className="inline-block px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors"
+            >
+              Try Another Lesson
+            </Link>
           </div>
         ) : recommendations.length === 0 ? (
           <div className="text-center py-8">

@@ -110,7 +110,12 @@ def get_latest_weak_los(student_id: str) -> dict | None:
     GET request handler, not fire-and-forget. Looks up this student's most
     recent lesson session in analytics-service and returns any LOs still
     below mastery for it, so the dashboard can show real "recommended for
-    you" resources without requiring a fresh quiz submission first."""
+    you" resources without requiring a fresh quiz submission first.
+
+    Returns None only when this student has no quiz history at all - once
+    a session exists, a dict is always returned (with an empty weak_los
+    list once every LO in that session has reached mastery), so callers can
+    tell "never taken a quiz" apart from "just mastered everything"."""
     history = _get(f"/students/{student_id}/history")
     if not history or not history.get("lo_history"):
         return None
@@ -124,8 +129,6 @@ def get_latest_weak_los(student_id: str) -> dict | None:
         for row in lo_history
         if row["session_id"] == latest_session_id and float(row["score"]) < MASTERY_THRESHOLD
     ]
-    if not weak_los:
-        return None
 
     return {"lesson_id": latest_lesson_id, "weak_los": weak_los}
 

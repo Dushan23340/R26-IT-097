@@ -73,6 +73,67 @@ def _normalize_fraction(value: str):
     return None
 
 
+# Semantic-similarity fallback for free-text answers that don't literally
+# match `answer` or any `accepted_answers` entry the content author wrote -
+# catches a student who typed a genuinely correct answer in words the
+# author didn't anticipate. Reuses the exact Sentence-BERT model
+# semantic_recommender.py already loads for resource ranking (same
+# lru_cache'd singleton - no second model in memory, no extra dependency).
+#
+# Calibrated empirically against this lesson content (paraphrase vs.
+# plausible-wrong-answer pairs for set-theory/percentage/commission
+# definitions): every wrong-answer similarity observed stayed below 0.76,
+# so 0.80 sits with a safety margin above the highest false positive found,
+# at the cost of also rejecting some genuine paraphrases whose similarity
+# fell short of it (~0.70-0.78) - a deliberate precision-over-recall
+# choice, since in this system a false positive (crediting a wrong answer)
+# is worse than a false negative (a correct paraphrase marked wrong still
+# only trips a recommendation, not an incorrect mastery signal).
+_SEMANTIC_SIMILARITY_THRESHOLD = 0.80
+
+# Sentence embeddings are known to be largely insensitive to negation and
+# clause order - calibration testing found a student who swapped the two
+# halves of a finite-vs-infinite-set definition (definitively WRONG) scored
+# HIGHER (0.92) against the canonical answer than an honestly correct
+# paraphrase of the same question (0.78). Any canonical answer with
+# contrastive structure is excluded from the semantic fallback entirely,
+# falling back to exact/accepted_answers matching only for those questions.
+_CONTRAST_MARKERS = (";", " while ", " whereas ", " but ", " versus ", " vs ", " compared to ")
+
+
+def _is_comparison_answer(text: str) -> bool:
+    lowered = f" {str(text).lower()} "
+    return any(marker in lowered for marker in _CONTRAST_MARKERS)
+
+
+def _is_conceptual_answer(text: str) -> bool:
+    """Semantic similarity is only reliable for concept/definition answers
+    ("Brackets", "A set with no elements") - not bare numbers, fractions,
+    or short symbolic answers ("6/11", "45%", "x"), where two embeddings
+    can look deceptively similar despite representing different values.
+    Those are already covered by exact matching (or, for real fractions,
+    _normalize_fraction's mathematical equivalence check above)."""
+    stripped = str(text).strip()
+    return len(stripped) >= 4 and bool(re.search(r"[a-zA-Z]{3,}", stripped))
+
+
+def _is_semantically_correct(selected: str, candidates: list[str]) -> bool:
+    selected = str(selected).strip()
+    if not selected:
+        return False
+    try:
+        from semantic_recommender import _get_model
+        from sentence_transformers import util
+    except Exception:
+        return False  # sentence-transformers unavailable - fail closed, no unearned credit
+
+    model = _get_model()
+    selected_embedding = model.encode(selected, convert_to_tensor=True)
+    candidate_embeddings = model.encode(candidates, convert_to_tensor=True)
+    similarities = util.cos_sim(selected_embedding, candidate_embeddings)[0].tolist()
+    return max(similarities) >= _SEMANTIC_SIMILARITY_THRESHOLD
+
+
 def _is_correct(question: dict, selected) -> bool:
     if selected is None:
         return False
@@ -84,7 +145,14 @@ def _is_correct(question: dict, selected) -> bool:
 
     candidates = [question["answer"], *question.get("accepted_answers", [])]
     normalized_selected = _normalize_text(selected)
-    return any(normalized_selected == _normalize_text(c) for c in candidates)
+    if any(normalized_selected == _normalize_text(c) for c in candidates):
+        return True
+
+    canonical_answer = question["answer"]
+    if not _is_conceptual_answer(canonical_answer) or _is_comparison_answer(canonical_answer):
+        return False
+
+    return _is_semantically_correct(str(selected), candidates)
 
 
 def _tier_for(correct_count: int, total_count: int) -> str:
