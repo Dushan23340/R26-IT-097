@@ -35,6 +35,31 @@ const Route = createFileRoute("/profile")({
 
 const NEGATIVE_EMOTIONS = new Set(["bored", "confused", "frustrated", "angry"]);
 
+// recommendation_text (analytics-service/services/validation_service.py) is
+// written for a TEACHER reviewing raw statistical evidence (std_dev,
+// p-values, the student's own raw database id interpolated into the
+// sentence) before Approve/Modify/Reject - appropriate there, but a teacher
+// clicking plain "Approve" (as opposed to "Modify") forwards that same raw
+// sentence unchanged, and this page is the STUDENT's own view of it. A
+// teacher's genuine "Modify" rewrite (modified_text) is safe to show as-is
+// since it was written for the student - only the un-modified fallback
+// needs replacing, with a plain-language message keyed by insight_type
+// instead of ever surfacing std_dev/p-values/the raw id to a student.
+const INSIGHT_TYPE_STUDENT_MESSAGE = {
+  trend: "Your quiz scores have been trending downward over your last few lessons. Talk to your teacher about extra support before it becomes harder to catch up.",
+  stability: "Your quiz scores have been changing a lot between lessons. It might help to talk to your teacher about what's making some sessions harder than others.",
+  emotion_correlation: "Your scores tend to be lower on days you're feeling less positive during class. Managing how you're feeling before a quiz may help your results.",
+  engagement_comparison: "You perform noticeably better in lessons where you're more actively engaged. Staying involved (asking questions, taking notes) is likely to help your scores.",
+};
+
+function studentFacingRecommendationText(recommendation) {
+  return (
+    recommendation.modified_text ||
+    INSIGHT_TYPE_STUDENT_MESSAGE[recommendation.insight_type] ||
+    "Your teacher has a recommendation for you - check with them for details."
+  );
+}
+
 // The backend exposes std-dev directly (a stats engine, not a UI metric) -
 // this is a display-only conversion to the 0-100 ring MasteryRing expects.
 // std_dev of 0 -> 100% stability, std_dev >= 50 -> 0%. Not a backend value.
@@ -914,7 +939,7 @@ function StudentAnalyticsView() {
             {recommendations.map((r) => (
               <div key={r.id} className="p-3 rounded-lg border border-border/60 text-sm">
                 <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{r.insight_type}</span>
-                <p className="mt-1">{r.modified_text || r.recommendation_text}</p>
+                <p className="mt-1">{studentFacingRecommendationText(r)}</p>
                 <p className="text-xs text-muted-foreground mt-1">Reviewed by {r.reviewed_by}</p>
               </div>
             ))}

@@ -108,6 +108,26 @@ def record_lo_score():
     return jsonify({"success": True}), 201
 
 
+@bp.route("/sessions/<session_id>/copy-emotional-states", methods=["POST"])
+def copy_emotional_states(session_id: str):
+    """Copies a live-class session's emotional_states rows onto a quiz
+    session for the same lesson - see profile_service.copy_emotional_states
+    docstring. `session_id` here is the destination (the quiz's own
+    session); `from_session_id` in the body is the live class's."""
+    data = request.get_json(force=True) or {}
+    required = ["from_session_id", "student_id"]
+    missing = [f for f in required if not data.get(f)]
+    if missing:
+        return jsonify({"error": f"missing fields: {missing}"}), 400
+
+    copied = profile_service.copy_emotional_states(
+        from_session_id=data["from_session_id"],
+        to_session_id=session_id,
+        student_id=data["student_id"],
+    )
+    return jsonify({"success": True, "copied": copied}), 201
+
+
 @bp.route("/emotional-states", methods=["POST"])
 def record_emotional_state():
     """Ingestion point for real-time emotion data from IT22140784's

@@ -359,7 +359,9 @@ def complete_lesson(lesson_id):
         student_id = entry.get("student_id")
         if not student_id:
             continue
-        lesson_progress.mark_completed(student_id, lesson_id, entry.get("dominant_emotion"))
+        lesson_progress.mark_completed(
+            student_id, lesson_id, entry.get("dominant_emotion"), entry.get("analytics_session_id")
+        )
         count += 1
 
     return jsonify({"success": True, "marked_completed": count}), 201
@@ -530,6 +532,7 @@ def submit_lesson_quiz(lesson_id):
             answered_count=len(answers), total_questions=sum(len(v["items"]) for v in result["lo_scores"].values()),
             duration_seconds=duration_seconds,
             difficulty=get_lesson_difficulty(lesson_id),
+            live_class_session_id=access.get("analytics_session_id"),
         )
 
     return jsonify({

@@ -119,6 +119,33 @@ def record_emotional_state(
         )
 
 
+def copy_emotional_states(from_session_id: str, to_session_id: str, student_id: str) -> int:
+    """Duplicates every emotional_states row from a live-class session onto
+    a quiz-submission session for the same student and lesson - the two
+    are otherwise permanently disconnected sessions (a live class's
+    lesson_id is always "live-class", a quiz's session is created fresh
+    per submission with its own accurate start/end/duration for its own
+    engagement metrics, so the live class's session can't just BE the quiz
+    session). Called from adaptive_bridge's quiz-submit push when
+    lesson_progress recorded a live-class analytics_session_id for this
+    lesson - lets "negative emotion % vs performance" correlate a real
+    session's readings against that lesson's real quiz score instead of
+    every session showing up as emotion-only or score-only. Returns the
+    number of rows copied (0 if the source session had none, e.g. it was
+    already used for an earlier quiz retake of the same lesson)."""
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO emotional_states (session_id, student_id, timestamp, emotion_label, confidence)
+            SELECT %s, student_id, timestamp, emotion_label, confidence
+            FROM emotional_states
+            WHERE session_id = %s AND student_id = %s
+            """,
+            (to_session_id, from_session_id, student_id),
+        )
+        return cur.rowcount
+
+
 def record_engagement_metrics(
     session_id: str,
     student_id: str,

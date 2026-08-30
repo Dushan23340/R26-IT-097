@@ -32,8 +32,21 @@ def _completion_field(student_id: str, lesson_id: str) -> str:
     return f"{student_id}|{lesson_id}"
 
 
-def mark_completed(student_id: str, lesson_id: str, dominant_emotion: str | None) -> None:
-    record = {"completed_at": time.time(), "dominant_emotion": dominant_emotion}
+def mark_completed(
+    student_id: str, lesson_id: str, dominant_emotion: str | None, analytics_session_id: str | None = None
+) -> None:
+    # analytics_session_id is the emotion-backend live class's own
+    # analytics-service learning_sessions row (student_profile_bridge.py) -
+    # carried through so a later quiz submission for this exact lesson_id
+    # can copy that class's real emotion readings onto its own analytics
+    # session, letting "negative emotion % vs performance" correlate two
+    # things that would otherwise sit in permanently disconnected sessions
+    # (see analytics_bridge.py's push_quiz_result_async).
+    record = {
+        "completed_at": time.time(),
+        "dominant_emotion": dominant_emotion,
+        "analytics_session_id": analytics_session_id,
+    }
     redis_client.hset(_COMPLETION_KEY, _completion_field(student_id, lesson_id), json.dumps(record))
     redis_client.sadd(f"{_COMPLETED_SET_PREFIX}{lesson_id}", student_id)
 
@@ -51,6 +64,7 @@ def get_access(student_id: str, lesson_id: str) -> dict:
         "completed": completed,
         "completed_at": completion["completed_at"] if completion else None,
         "dominant_emotion": completion["dominant_emotion"] if completion else None,
+        "analytics_session_id": completion.get("analytics_session_id") if completion else None,
         "quiz_unlocked": quiz_unlocked,
         "can_take_quiz": completed and quiz_unlocked,
     }

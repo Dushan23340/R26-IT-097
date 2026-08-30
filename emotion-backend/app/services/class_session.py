@@ -158,13 +158,17 @@ class ClassSessionStore:
             class - unchanged from before, still consumed by the route
             handler to push a final engagement_metrics row per student.
           - "lesson_id": the real lesson_id this class was for, or None.
-          - "lesson_completions": [{"student_id", "dominant_emotion"}, ...]
-            for every student on the joined roster (NOT gated on having an
-            analytics-service link, unlike engagement_summaries - a lesson
-            still gets marked complete even if that sibling service was
-            briefly unreachable at join time), with dominant_emotion being
-            the modal label from _emotion_label_counts, or None if this
-            student never produced a countable reading."""
+          - "lesson_completions": [{"student_id", "dominant_emotion",
+            "analytics_session_id"}, ...] for every student on the joined
+            roster (dominant_emotion/analytics_session_id are NOT gated on
+            having an analytics-service link, unlike engagement_summaries -
+            a lesson still gets marked complete even if that sibling
+            service was briefly unreachable at join time), with
+            dominant_emotion being the modal label from
+            _emotion_label_counts (or None if this student never produced
+            a countable reading), and analytics_session_id being that
+            student's live-class analytics-service session (or None if one
+            was never created)."""
         self._load()
         now = time.time()
         engagement_summaries = []
@@ -187,7 +191,20 @@ class ClassSessionStore:
                     continue
                 label_counts = self._emotion_label_counts.get(pseudonym) or {}
                 dominant_emotion = max(label_counts, key=label_counts.get) if label_counts else None
-                lesson_completions.append({"student_id": real_id, "dominant_emotion": dominant_emotion})
+                lesson_completions.append({
+                    "student_id": real_id,
+                    "dominant_emotion": dominant_emotion,
+                    # This class's own analytics-service session_id (set in
+                    # join(), below) - every individual emotion reading this
+                    # student produced during the class is already stored
+                    # under it (record_emotion_for_bridge). Carried through
+                    # so adaptive-learning/backend can later copy those
+                    # readings onto the quiz session for this same
+                    # lesson_id, letting "negative emotion % vs performance"
+                    # correlate real data instead of two permanently
+                    # disconnected sessions.
+                    "analytics_session_id": self._analytics_sessions.get(pseudonym),
+                })
 
         self.is_live = False
         self.subject = None

@@ -144,6 +144,7 @@ def _push(
     total_questions: int = 0,
     duration_seconds: int | None = None,
     difficulty: str | None = None,
+    live_class_session_id: str | None = None,
 ) -> None:
     # learning_sessions.student_id is a foreign key into student_profiles -
     # a real logged-in student has never had a profile row created for
@@ -183,6 +184,19 @@ def _push(
     if not session_id:
         return
 
+    # This quiz's own session needs its own accurate start/end/duration
+    # for the engagement-metrics push below, so it can't just reuse the
+    # live class's session_id outright - instead, copy that class's real
+    # emotion readings onto this session, so "negative emotion % vs
+    # performance" (profile.jsx) has a session where both a real score and
+    # real emotion data coexist, instead of two permanently separate rows
+    # (see lesson_progress.mark_completed / class_session.py's end()).
+    if live_class_session_id:
+        _post(f"/sessions/{session_id}/copy-emotional-states", {
+            "from_session_id": live_class_session_id,
+            "student_id": student_id,
+        })
+
     for lo_level, lo_data in mastery_result.get("lo_scores", {}).items():
         _post("/lo-scores", {
             "session_id": session_id,
@@ -217,6 +231,7 @@ def push_quiz_result_async(
     total_questions: int = 0,
     duration_seconds: int | None = None,
     difficulty: str | None = None,
+    live_class_session_id: str | None = None,
 ) -> None:
     threading.Thread(
         target=_push,
@@ -226,6 +241,7 @@ def push_quiz_result_async(
             "total_questions": total_questions,
             "duration_seconds": duration_seconds,
             "difficulty": difficulty,
+            "live_class_session_id": live_class_session_id,
         },
         daemon=True,
     ).start()
