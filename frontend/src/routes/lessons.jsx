@@ -17,6 +17,8 @@ import {
   Circle,
   TrendingUp,
   Lock,
+  Monitor,
+  MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
 import { adaptiveApiService } from "@/lib/adaptiveApi";
@@ -115,6 +117,11 @@ function LessonsPage() {
   // Set right before a same-lesson retake, so the results screen can show
   // a before/after comparison instead of just the flat LO grid.
   const [previousResult, setPreviousResult] = useState(null);
+  // How many times this lesson has been attempted (1 = first attempt, +1
+  // per retake). Persisted alongside the rest of the progress blob so the
+  // "you've tried N times, get help" escalation survives a refresh /
+  // re-login. Reset when the student switches to a different lesson.
+  const [attemptCount, setAttemptCount] = useState(0);
   const [hydrated, setHydrated] = useState(false);
   const hydrationRanRef = useRef(false);
   const studentId = String(user?.id ?? user?._id ?? user?.email ?? "anonymous");
@@ -158,46 +165,127 @@ function LessonsPage() {
 
   // Restore any saved quiz/results/resource-completion progress once the
   // real student id is known, so a refresh doesn't drop back to "select".
+  // localStorage is the fast path (also the only one that can resume a
+  // half-finished quiz); if it has nothing usable we fall back to the
+  // server copy (adaptiveApiService.getAttemptState), which is what
+  // survives logging back in on a different laptop or a cleared cache.
   useEffect(() => {
     if (!user || hydrationRanRef.current) return;
     hydrationRanRef.current = true;
     const saved = loadProgress(studentId);
-    if (saved) {
-      // A saved "quiz"/"results" screen with no matching quiz/result object
-      // (e.g. a partial/corrupted write, or a schema from an older version
-      // of this page) would otherwise restore a screen value none of the
-      // three render branches below match - select/quiz/results are all
-      // gated on their own data being present, so the page would render
-      // nothing at all rather than falling back to something visible.
-      const restoredScreen =
-        (saved.screen === "quiz" && saved.quiz) || (saved.screen === "results" && saved.result)
-          ? saved.screen
-          : "select";
-      setScreen(restoredScreen);
+    // A saved "quiz"/"results" screen with no matching quiz/result object
+    // (e.g. a partial/corrupted write, or a schema from an older version
+    // of this page) isn't usable - select/quiz/results render branches are
+    // each gated on their own data being present, so restoring a bare
+    // screen value would render nothing at all.
+    const localUsable =
+      saved && ((saved.screen === "quiz" && saved.quiz) || (saved.screen === "results" && saved.result));
+    if (localUsable) {
+      setScreen(saved.screen);
       setQuiz(saved.quiz ?? null);
       setAnswers(saved.answers ?? {});
       setResult(saved.result ?? null);
       setPreviousResult(saved.previousResult ?? null);
       setCompletedResourceIds(saved.completedResourceIds ?? new Set());
+      setAttemptCount(saved.attemptCount ?? 0);
+      setHydrated(true);
+      return;
     }
-    setHydrated(true);
+    // No usable local progress - try the server copy. Only the completed
+    // results screen is stored there (a mid-quiz attempt can't be resumed
+    // cross-device anyway).
+    adaptiveApiService
+      .getAttemptState(studentId)
+      .then((res) => {
+        const remote = res?.data;
+        if (remote && remote.screen === "results" && remote.result) {
+          setScreen("results");
+          setResult(remote.result);
+          setPreviousResult(remote.previous_result ?? null);
+          setCompletedResourceIds(new Set(remote.completed_resource_ids ?? []));
+          setAttemptCount(remote.attempt_count ?? 0);
+          // Stub so "Retake Quiz" (retakeLesson -> startLesson(quiz.lesson_id, 2))
+          // still works after a cross-device restore, where the full quiz
+          // object was never persisted. startLesson replaces it with the
+          // real fetched quiz.
+          if (remote.lesson_id) setQuiz({ lesson_id: remote.lesson_id });
+        }
+      })
+      .catch(() => {})
+      .finally(() => setHydrated(true));
   }, [user, studentId]);
 
   // Only persist once hydration has run (and applied) so we never overwrite
   // saved progress with the pre-hydration default/empty state.
   useEffect(() => {
     if (!hydrated) return;
-    if (screen === "select") {
+
+    // "Back to Lessons" from either the quiz or the results screen is a
+    // *pause*, not an abandon - the student keeps their place so
+    // re-opening the lesson resumes it (a half-finished quiz, or a results
+    // screen whose recommended resources aren't all ticked off yet).
+    const hasResults = !!result && !!quiz; // finished attempt + its recs
+    const hasPausedQuiz = !!quiz && !result; // mid-quiz, not submitted
+
+    if (screen === "select" && !hasResults && !hasPausedQuiz) {
       clearProgress(studentId);
+      adaptiveApiService.clearAttemptState(studentId).catch(() => {});
       return;
     }
-    saveProgress(studentId, { screen, quiz, answers, result, previousResult, completedResourceIds });
-  }, [hydrated, studentId, screen, quiz, answers, result, previousResult, completedResourceIds]);
+
+    // localStorage always stores a *resumable* screen, never bare "select".
+    const resumableScreen = screen !== "select" ? screen : hasResults ? "results" : "quiz";
+    saveProgress(studentId, {
+      screen: resumableScreen,
+      quiz,
+      answers,
+      result,
+      previousResult,
+      completedResourceIds,
+      attemptCount,
+    });
+
+    // Server copy - only the results screen is worth syncing cross-device
+    // (a mid-quiz attempt can't be resumed on another device anyway).
+    if (hasResults) {
+      adaptiveApiService
+        .saveAttemptState(studentId, {
+          screen: "results",
+          lesson_id: quiz?.lesson_id ?? result?.lesson_id ?? null,
+          result,
+          previous_result: previousResult,
+          completed_resource_ids: Array.from(completedResourceIds),
+          attempt_count: attemptCount,
+        })
+        .catch(() => {});
+    }
+  }, [hydrated, studentId, screen, quiz, answers, result, previousResult, completedResourceIds, attemptCount]);
 
   // quizSet 1 = first attempt at this lesson; 2 = every retake thereafter
   // (retakeLesson always requests 2 - a different set of questions per LO
   // so answers can't just be remembered from the first attempt).
   async function startLesson(lessonId, quizSet = 1) {
+    // Re-opening a lesson the student has paused work on (via "Back to
+    // Lessons") resumes where they left off instead of restarting:
+    //   - a finished attempt with unfinished recommendations -> results
+    //   - a half-answered quiz                                -> quiz
+    // quizSet === 1 only; a retake (set 2, from the results screen) always
+    // pulls fresh questions.
+    if (quizSet === 1 && screen === "select" && quiz?.lesson_id === lessonId) {
+      setScreen(result ? "results" : "quiz");
+      return;
+    }
+    // Any other lesson (or a forced fresh start) - drop the paused work
+    // for the previous lesson first, since only one slot is tracked.
+    if (quizSet === 1 && (quiz || result)) {
+      setQuiz(null);
+      setResult(null);
+      setPreviousResult(null);
+      setCompletedResourceIds(new Set());
+      setAttemptCount(0);
+      clearProgress(studentId);
+      adaptiveApiService.clearAttemptState(studentId).catch(() => {});
+    }
     setError(null);
     setLoadingQuiz(true);
     setAnswers({});
@@ -281,6 +369,10 @@ function LessonsPage() {
       });
       announceRetakeProgress(res.data);
       setResult(res.data);
+      // First-ever submission for this lesson counts as attempt 1. Retakes
+      // are counted in retakeLesson() (quiz.quiz_set can't be trusted -
+      // quiz-gen lessons return a string instance id there, not 1/2).
+      setAttemptCount((c) => (c < 1 ? 1 : c));
       setScreen("results");
     } catch (e) {
       setError(e.message || "Failed to submit quiz");
@@ -290,13 +382,11 @@ function LessonsPage() {
   }
 
   function backToLessons() {
+    // Pause, don't abandon. Whether the student is mid-quiz or on the
+    // results screen with unfinished recommendations, their place is kept
+    // (persist effect + startLesson handle resume). Switching to a
+    // different lesson from the list is what actually clears it.
     setScreen("select");
-    setQuiz(null);
-    setResult(null);
-    setAnswers({});
-    setPreviousResult(null);
-    setCompletedResourceIds(new Set());
-    clearProgress(studentId);
   }
 
   function toggleResourceComplete(resourceId) {
@@ -314,6 +404,12 @@ function LessonsPage() {
   async function retakeLesson() {
     setPreviousResult(result);
     setCompletedResourceIds(new Set());
+    // Each retake is one more attempt - counted here, not in submitQuiz,
+    // since the quiz object can't tell a retake from a first attempt for
+    // quiz-gen lessons.
+    setAttemptCount((c) => c + 1);
+    // The stored results copy is about to be superseded by this retake.
+    adaptiveApiService.clearAttemptState(studentId).catch(() => {});
     await startLesson(quiz.lesson_id, 2);
   }
 
@@ -331,6 +427,33 @@ function LessonsPage() {
     : [];
   const allResourcesCompleted =
     allResourceIds.length > 0 && allResourceIds.every((id) => completedResourceIds.has(id));
+
+  // Trend-aware escalation: after a few attempts, if a weak LO is still
+  // weak AND hasn't meaningfully improved since the previous attempt,
+  // another quiz cycle won't move it - the student needs re-teaching or
+  // their teacher, not another quiz. An LO that's still climbing keeps the
+  // normal retake loop.
+  const ESCALATE_AFTER_ATTEMPTS = 2;
+  const STALL_GAIN_THRESHOLD = 10; // <10 mastery-% gain vs last attempt = stalled
+  const stalledWeakLOs = result
+    ? (result.weak_los || []).filter((lo) => {
+        const cur = result.lo_scores?.[lo];
+        if (!cur) return false;
+        const prev = previousResult?.lo_scores?.[lo];
+        if (!prev) return true; // no comparison point this deep in - treat as stalled
+        const gain = (cur.percentile_mastery_score ?? 0) - (prev.percentile_mastery_score ?? 0);
+        return cur.mastery_tier === prev.mastery_tier && gain < STALL_GAIN_THRESHOLD;
+      })
+    : [];
+  const shouldEscalate =
+    !!result &&
+    (result.weak_los?.length ?? 0) > 0 &&
+    attemptCount >= ESCALATE_AFTER_ATTEMPTS &&
+    stalledWeakLOs.length > 0;
+  const resultLesson = lessons.find(
+    (l) => l.lesson_id === (quiz?.lesson_id ?? result?.lesson_id)
+  );
+  const resultLessonTitle = resultLesson?.title ?? "this lesson";
 
   return (
     <div className="space-y-6">
@@ -366,6 +489,13 @@ function LessonsPage() {
               {lessons.map((lesson) => {
                 const lessonAccess = access[lesson.lesson_id];
                 const canTake = lessonAccess?.can_take_quiz ?? false;
+                // Paused work for this lesson (a half-answered quiz, or a
+                // results screen with recommendations still to finish) -
+                // offered as "Resume" and kept clickable even if the lesson
+                // has since been re-locked (the student legitimately
+                // started it).
+                const resumable = quiz?.lesson_id === lesson.lesson_id;
+                const resumeLabel = result ? "Resume — finish recommendations" : "Resume attempt";
                 const lockReason = !lessonAccess
                   ? "Checking access..."
                   : !lessonAccess.completed
@@ -375,13 +505,17 @@ function LessonsPage() {
                   <button
                     key={lesson.lesson_id}
                     type="button"
-                    onClick={() => canTake && startLesson(lesson.lesson_id)}
-                    disabled={loadingQuiz || !canTake}
+                    onClick={() => (canTake || resumable) && startLesson(lesson.lesson_id)}
+                    disabled={loadingQuiz || (!canTake && !resumable)}
                     className="text-left p-4 rounded-xl border border-border/60 hover:border-primary/60 transition-colors disabled:opacity-50 disabled:hover:border-border/60"
                   >
                     <div className="text-xs uppercase tracking-widest text-muted-foreground">{lesson.subject}</div>
                     <div className="font-semibold mt-1">{lesson.title}</div>
-                    {canTake ? (
+                    {resumable ? (
+                      <div className="text-xs text-primary mt-2 flex items-center gap-1 font-medium">
+                        <RefreshCw className="h-3 w-3" /> {resumeLabel} <ArrowRight className="h-3 w-3" />
+                      </div>
+                    ) : canTake ? (
                       <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
                         {lesson.question_count} questions <ArrowRight className="h-3 w-3" />
                       </div>
@@ -629,8 +763,79 @@ function LessonsPage() {
             </div>
           )}
 
+          {shouldEscalate && (
+            <div className="glass rounded-2xl p-6 border border-amber/40">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="h-4 w-4 text-amber" />
+                <h2 className="text-sm font-semibold">Extra help needed</h2>
+              </div>
+              <p className="text-sm text-muted-foreground">
+                You've attempted {resultLessonTitle} {attemptCount} times and{" "}
+                {stalledWeakLOs.map((lo) => LO_LABELS[lo] || lo).join(", ")}{" "}
+                {stalledWeakLOs.length === 1 ? "is" : "are"} still not there (
+                {stalledWeakLOs
+                  .map(
+                    (lo) =>
+                      `${LO_LABELS[lo] || lo} ${Math.round(result.lo_scores?.[lo]?.percentile_mastery_score ?? 0)}%`
+                  )
+                  .join(", ")}
+                ). Another quiz on its own probably won't move this — the concept needs another
+                explanation.
+              </p>
+              <div className="flex flex-wrap gap-3 mt-4">
+                <button
+                  type="button"
+                  onClick={() => navigate({ to: "/" })}
+                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-2"
+                >
+                  <Monitor className="h-4 w-4" /> Rejoin the live class
+                </button>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      await adaptiveApiService.requestHelp(quiz?.lesson_id ?? result?.lesson_id, {
+                        studentId,
+                        studentName: user?.name ?? "",
+                        stuckLos: stalledWeakLOs.map((lo) => ({
+                          lo,
+                          score: Math.round(result.lo_scores?.[lo]?.percentile_mastery_score ?? 0),
+                        })),
+                        attemptCount,
+                      });
+                      toast.success(
+                        "Your teacher has been notified — they'll follow up in your next live class."
+                      );
+                    } catch {
+                      toast.info(
+                        "Couldn't reach your teacher's dashboard — please raise this in your next live class."
+                      );
+                    }
+                  }}
+                  className="px-4 py-2 rounded-lg text-sm font-medium border border-border/60 hover:bg-secondary transition-colors flex items-center gap-2"
+                >
+                  <MessageSquare className="h-4 w-4" /> Ask your teacher for help
+                </button>
+                {allResourcesCompleted && (
+                  <button
+                    type="button"
+                    onClick={retakeLesson}
+                    disabled={loadingQuiz}
+                    className="px-2 py-2 text-xs font-medium text-muted-foreground hover:text-primary transition-colors underline disabled:opacity-50"
+                  >
+                    Retake anyway
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3">
-            {result.weak_los.length > 0 ? (
+            {result.weak_los.length === 0 ? (
+              <div className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-emotion-happy/10 text-emotion-happy border border-emotion-happy/30 flex items-center gap-2">
+                <CheckCircle2 className="h-4 w-4" /> All Learning Outcomes mastered
+              </div>
+            ) : shouldEscalate ? null : (
               <button
                 type="button"
                 onClick={retakeLesson}
@@ -643,10 +848,6 @@ function LessonsPage() {
                   ({completedResourceIds.size}/{allResourceIds.length} resources completed)
                 </span>
               </button>
-            ) : (
-              <div className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-emotion-happy/10 text-emotion-happy border border-emotion-happy/30 flex items-center gap-2">
-                <CheckCircle2 className="h-4 w-4" /> All Learning Outcomes mastered
-              </div>
             )}
             <button
               type="button"

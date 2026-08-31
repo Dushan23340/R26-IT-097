@@ -30,9 +30,16 @@ import os
 
 # The frontend (localhost:3002) has no proxy for this backend's /static -
 # a bare "/static/..." path would resolve against the FRONTEND's own
-# origin and 404, so this needs the backend's own absolute origin, same
-# PORT default app.py itself uses.
-_SELF_URL = os.environ.get("ADAPTIVE_LEARNING_SELF_URL", f"http://127.0.0.1:{os.environ.get('PORT', 5005)}")
+# origin and 404, so this needs the backend's own absolute origin.
+#
+# The 127.0.0.1 default is only right for a single-machine run: opened from
+# another device on the LAN (a live-class laptop hitting this machine by
+# IP), a 127.0.0.1 note link resolves to THAT device's own localhost and
+# fails. scripts/start-all.sh sets ADAPTIVE_LEARNING_SELF_URL to this
+# machine's LAN IP explicitly, and scripts/set-lan-ip.sh rewrites the IP
+# literal below (same as it does for emotion-backend's CORS config) for a
+# manual restart without that env var.
+_SELF_URL = os.environ.get("ADAPTIVE_LEARNING_SELF_URL", "http://127.0.0.1:5005")
 
 
 def _note_url(lesson_id: str, lo_name: str) -> str:

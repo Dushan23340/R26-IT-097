@@ -202,6 +202,30 @@ function TeacherDashboard() {
   // negative-emotion alert, which only reflects the current moment).
   const [classOverview, setClassOverview] = useState(null);
 
+  // Student "I'm stuck" requests raised from the lesson results screen's
+  // escalation panel (adaptive-learning /api/help-requests).
+  const [helpRequests, setHelpRequests] = useState([]);
+
+  async function fetchHelpRequests() {
+    try {
+      const data = await adaptiveApiService.getHelpRequests();
+      setHelpRequests(data?.data || []);
+    } catch (e) {
+      // silent — best-effort
+    }
+  }
+
+  async function resolveHelp(studentId, lessonId) {
+    try {
+      await adaptiveApiService.resolveHelpRequest(studentId, lessonId);
+      setHelpRequests((prev) =>
+        prev.filter((r) => !(r.student_id === studentId && r.lesson_id === lessonId))
+      );
+    } catch (e) {
+      toast.error("Couldn't mark that resolved — try again.");
+    }
+  }
+
   async function fetchPendingRecommendations() {
     try {
       const data = await studentProfileApi.getPendingRecommendations();
@@ -223,9 +247,11 @@ function TeacherDashboard() {
   useEffect(() => {
     fetchPendingRecommendations();
     fetchClassOverview();
+    fetchHelpRequests();
     const interval = setInterval(() => {
       fetchPendingRecommendations();
       fetchClassOverview();
+      fetchHelpRequests();
     }, 20000);
     return () => clearInterval(interval);
   }, []);
@@ -875,6 +901,14 @@ function TeacherDashboard() {
       time: "Analytics",
     });
   }
+  if (helpRequests.length > 0) {
+    alerts.push({
+      id: "help-requests",
+      message: `${helpRequests.length} student${helpRequests.length > 1 ? "s" : ""} stuck on a lesson after several attempts — asked for help`,
+      type: helpRequests.length >= 3 ? "danger" : "warning",
+      time: "Adaptive",
+    });
+  }
 
   // Proactive notification for attention drops - previously alerts only
   // ever showed up as a passive red dot on the bell icon, so a teacher
@@ -1438,6 +1472,63 @@ function TeacherDashboard() {
                 </p>
               </div>;
   })}
+          </div>
+        )}
+      </div>
+
+      {/* 4a. Students Needing Help (lessons.jsx escalation panel -> here) */}
+      <div className="glass rounded-2xl p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-display text-xl font-bold flex items-center gap-2">
+            <ShieldAlert className="h-5 w-5 text-amber" />
+            Students Needing Help
+          </h2>
+          <span className="text-sm text-muted-foreground">{helpRequests.length} open</span>
+        </div>
+        {helpRequests.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground text-sm">
+            <ShieldAlert className="h-8 w-8 mx-auto mb-2 opacity-30" />
+            No open requests. A student raises one from the lesson results screen after several
+            attempts where a Learning Outcome is still stuck.
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {helpRequests.map((req) => (
+              <div
+                key={`${req.student_id}|${req.lesson_id}`}
+                className="p-4 rounded-xl border border-amber/40 bg-amber/5"
+              >
+                <div className="flex items-start justify-between gap-2 flex-wrap">
+                  <div>
+                    <div className="font-semibold text-sm">
+                      {req.student_name || `Student ${req.student_id}`}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      {req.lesson_title} · {req.attempt_count} attempt{req.attempt_count === 1 ? "" : "s"}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => resolveHelp(req.student_id, req.lesson_id)}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emotion-happy/10 text-emotion-happy hover:bg-emotion-happy/20 transition-colors flex items-center gap-1.5"
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Mark handled
+                  </button>
+                </div>
+                {req.stuck_los?.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {req.stuck_los.map((s) => (
+                      <span
+                        key={s.lo}
+                        className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-amber/15 text-amber"
+                      >
+                        {s.lo} {s.score}%
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </div>

@@ -38,8 +38,15 @@ echo "  updated .env (FRONTEND_URL)"
 sed -i '' -E "s#http://${IP_PATTERN}:3002#http://${IP}:3002#g" "$ROOT_DIR/emotion-backend/app/config.py"
 echo "  updated emotion-backend/app/config.py (ALLOWED_ORIGINS)"
 
+# adaptive-learning self-URL default - the origin baked into the "Short
+# Notes" PDF links it hands the frontend. Must be this machine's IP or the
+# links break when opened from another device on the LAN. start-all.sh
+# also passes this as an env var; this rewrite covers a manual restart.
+sed -i '' -E "s#http://${IP_PATTERN}:5005#http://${IP}:5005#g" "$ROOT_DIR/adaptive-learning/backend/lesson_resources.py"
+echo "  updated adaptive-learning/backend/lesson_resources.py (_SELF_URL)"
+
 echo ""
-echo "Done. Restart backend, emotion-backend, and frontend for this to take effect"
+echo "Done. Restart backend, emotion-backend, adaptive-learning, and frontend for this to take effect"
 echo "(./scripts/start-all.sh does this from scratch if you'd rather just re-run everything)."
 echo ""
 echo "Present at: http://$IP:3002"

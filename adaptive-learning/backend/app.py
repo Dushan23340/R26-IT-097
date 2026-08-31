@@ -32,6 +32,8 @@ from recommendation import (
 from lessons import list_lessons, get_lesson, get_quiz_for_lesson, get_lesson_difficulty
 import advisor_recommendations
 import lesson_progress
+import attempt_state
+import help_requests
 import user_management_bridge
 from mastery import score_submission, score_generated_submission
 from semantic_recommender import recommend_resources
@@ -525,6 +527,12 @@ def submit_lesson_quiz(lesson_id):
         for lo in result["weak_los"]
     }
 
+    # Auto-resolve any open "needs help" request once the student clears
+    # the lesson (no weak LOs left) - keeps the teacher's panel honest
+    # without needing them to tick it off.
+    if student_id != "anonymous" and not result["weak_los"]:
+        help_requests.resolve(student_id, lesson_id)
+
     if student_id != "anonymous":
         lesson = get_lesson(lesson_id)
         push_quiz_result_async(
@@ -546,6 +554,73 @@ def submit_lesson_quiz(lesson_id):
 # GET Student Dashboard Recommendations (real, derived from the student's
 # most recent quiz performance via analytics-service - not static/fake)
 # ───────────────────────────────────────────────
+
+@app.route("/api/students/<student_id>/attempt-state", methods=["GET"])
+def get_attempt_state(student_id):
+    """Cross-device fallback for lessons.jsx's post-quiz results /
+    recommendations screen (see attempt_state.py). lessons.jsx tries
+    localStorage first and only calls this when that's empty - e.g. the
+    student logged back in on a different laptop, or cleared their cache.
+    Returns {} when nothing is stored."""
+    return jsonify({"success": True, "data": attempt_state.load(student_id) or {}})
+
+
+@app.route("/api/students/<student_id>/attempt-state", methods=["PUT"])
+def put_attempt_state(student_id):
+    """Body: the lessons.jsx progress blob for the completed results screen
+    - { screen, lesson_id, result, previous_result, completed_resource_ids }.
+    Stored opaquely in Redis with a 30-day TTL. Fired best-effort by the
+    frontend on each change, so a store failure still returns 200."""
+    data = request.get_json(force=True) or {}
+    return jsonify({"success": attempt_state.save(student_id, data)})
+
+
+@app.route("/api/students/<student_id>/attempt-state", methods=["DELETE"])
+def delete_attempt_state(student_id):
+    """Called when the student returns to the lesson list / starts over,
+    mirroring lessons.jsx's clearProgress()."""
+    attempt_state.clear(student_id)
+    return jsonify({"success": True})
+
+
+@app.route("/api/lessons/<lesson_id>/help-request", methods=["POST"])
+def create_help_request(lesson_id):
+    """Raised by lessons.jsx's "Ask your teacher for help" escalation panel
+    (a student still stuck on a Learning Outcome after several attempts).
+    Surfaces in the Teacher Console's "Students needing help" panel. One
+    open request per (student, lesson) - a repeat raise just refreshes it.
+    Body: { student_id, student_name, stuck_los: [{lo, score}], attempt_count }."""
+    if not get_lesson(lesson_id):
+        return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
+    data = request.get_json(force=True) or {}
+    student_id = data.get("student_id")
+    if not student_id:
+        return jsonify({"success": False, "error": "student_id is required"}), 400
+    lesson = get_lesson(lesson_id)
+    record = help_requests.create(
+        student_id=student_id,
+        student_name=data.get("student_name", ""),
+        lesson_id=lesson_id,
+        lesson_title=(lesson or {}).get("title", lesson_id),
+        stuck_los=data.get("stuck_los", []),
+        attempt_count=int(data.get("attempt_count", 0) or 0),
+    )
+    return jsonify({"success": True, "data": record}), 201
+
+
+@app.route("/api/help-requests", methods=["GET"])
+def get_help_requests():
+    """Teacher Console: all open student help requests, newest first."""
+    return jsonify({"success": True, "data": help_requests.list_open()})
+
+
+@app.route("/api/help-requests/<student_id>/<lesson_id>/resolve", methods=["POST"])
+def resolve_help_request(student_id, lesson_id):
+    """Teacher marks a help request handled (it also auto-resolves when the
+    student later submits this lesson's quiz with no weak LOs left)."""
+    help_requests.resolve(student_id, lesson_id)
+    return jsonify({"success": True})
+
 
 @app.route("/api/students/<student_id>/recommendations", methods=["GET"])
 def student_dashboard_recommendations(student_id):

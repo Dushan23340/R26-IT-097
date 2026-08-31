@@ -18,6 +18,13 @@ mkdir -p "$RUN_DIR"
 "$ROOT_DIR/scripts/set-lan-ip.sh"
 echo ""
 
+# This machine's LAN IP - passed to adaptive-learning as
+# ADAPTIVE_LEARNING_SELF_URL so the "Short Notes" PDF links it hands back
+# (lesson_resources.py) point at THIS machine, not 127.0.0.1. Opened from
+# another laptop on the network, a 127.0.0.1 link resolves to that
+# laptop's own localhost (nothing on :5005 there) and fails to load.
+LAN_IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "127.0.0.1")"
+
 is_listening() {
   lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
 }
@@ -50,7 +57,7 @@ start_service emotion-service    5002 "$ROOT_DIR/emotion-service" \
 start_service emotion-backend    8000 "$ROOT_DIR/emotion-backend" \
   env DEBUG=false .venv/bin/python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
 start_service adaptive-learning  5005 "$ROOT_DIR/adaptive-learning/backend" \
-  env FLASK_DEBUG=false .venv/bin/python app.py
+  env FLASK_DEBUG=false ADAPTIVE_LEARNING_SELF_URL="http://$LAN_IP:5005" .venv/bin/python app.py
 start_service analytics-service 5010 "$ROOT_DIR/analytics-service" \
   env ANALYTICS_SERVICE_DEBUG=false .venv/bin/python app.py
 start_service frontend           3002 "$ROOT_DIR/frontend" \
@@ -77,7 +84,6 @@ check adaptive-learning  "http://localhost:5005/api/health"
 check analytics-service  "http://localhost:5010/health"
 check frontend           "http://localhost:3002/"
 
-IP="$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "127.0.0.1")"
 echo ""
-echo "Present at: http://$IP:3002"
+echo "Present at: http://$LAN_IP:3002"
 echo "Stop everything with: ./scripts/stop-all.sh"
