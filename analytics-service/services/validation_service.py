@@ -97,8 +97,8 @@ def analyze_student_and_queue_recommendations(
         and not _has_open_recommendation(student_id, "trend")
     ):
         text = (
-            f"Student {student_id}'s learning-outcome scores show a statistically significant "
-            f"declining trend across {trend['session_count']} sessions "
+            f"Learning-outcome scores show a statistically significant declining trend "
+            f"across {trend['session_count']} sessions "
             f"(slope={trend['slope']}, p={trend['p_value']}). Consider a check-in or "
             "targeted review of recent lesson content."
         )
@@ -112,7 +112,7 @@ def analyze_student_and_queue_recommendations(
             and not _has_open_recommendation(student_id, "stability")
         ):
             text = (
-                f"Student {student_id}'s scores are unusually volatile across sessions "
+                f"Scores are unusually volatile across sessions "
                 f"(std_dev={stability['std_dev']}, class at-risk threshold={stability_baseline['at_risk_threshold']}). "
                 "High variance in performance is a stronger dropout/disengagement predictor than low "
                 "average performance alone - recommend individual follow-up."
@@ -123,8 +123,21 @@ def analyze_student_and_queue_recommendations(
     if not _has_open_recommendation(student_id, "emotion_correlation"):
         for emotion, result in correlations.items():
             if result.get("available") and result["meaningful"] and result["direction"] == "negative":
+                # "meaningful" here is an EFFECT-SIZE gate (|r| >= 0.3,
+                # CORRELATION_THRESHOLD in statistics_service.py) - it says
+                # nothing about p_value, unlike the trend/engagement
+                # branches above/below which do gate on real significance.
+                # With n as small as 3, |r| can clear 0.3 while p stays far
+                # above 0.05 - claiming "significantly" unconditionally
+                # here overstated the finding's statistical rigor whenever
+                # that happened. Only call it "statistically significant"
+                # when p_value actually says so.
+                strength_phrase = (
+                    "a statistically significant" if result["p_value"] < 0.05
+                    else "a notable (though not yet statistically significant)"
+                )
                 text = (
-                    f"Student {student_id}'s sessions with higher {emotion} show significantly lower LO scores "
+                    f"Sessions with higher {emotion} show {strength_phrase} negative correlation with LO scores "
                     f"(r={result['r']}, p={result['p_value']}, n={result['n']}). Consider addressing {emotion.lower()} "
                     "triggers directly (pacing, content difficulty, or a check-in)."
                 )
@@ -138,7 +151,7 @@ def analyze_student_and_queue_recommendations(
         and not _has_open_recommendation(student_id, "engagement_comparison")
     ):
         text = (
-            f"Student {student_id} scores significantly higher in high-engagement sessions "
+            f"Scores are significantly higher in high-engagement sessions "
             f"(median {engagement_result['high_median']}) than low-engagement ones "
             f"(median {engagement_result['low_median']}, p={engagement_result['p_value']}). "
             "Engagement-boosting interventions (e.g. interactive activities) are likely to translate "
