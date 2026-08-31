@@ -27,6 +27,8 @@ async function request(endpoint, options = {}) {
 const adaptiveApi = {
   get: (endpoint) => request(endpoint, { method: "GET" }),
   post: (endpoint, body) => request(endpoint, { method: "POST", body: JSON.stringify(body) }),
+  put: (endpoint, body) => request(endpoint, { method: "PUT", body: JSON.stringify(body) }),
+  delete: (endpoint) => request(endpoint, { method: "DELETE" }),
 };
 
 export const adaptiveApiService = {
@@ -79,4 +81,32 @@ export const adaptiveApiService = {
     adaptiveApi.get(`/lessons/${lessonId}/access?student_id=${encodeURIComponent(studentId)}`),
   getLessonLocks: () => adaptiveApi.get("/lessons/locks"),
   setLessonLock: (lessonId, locked) => adaptiveApi.post(`/lessons/${lessonId}/lock`, { locked }),
+
+  // Cross-device fallback for the post-quiz results / recommendations
+  // screen. lessons.jsx keeps this in localStorage for same-device
+  // refreshes; this copy (keyed by student, Redis, 30-day TTL) survives
+  // logging back in on another laptop or a cleared cache, so a student
+  // who logged out mid-review isn't forced to retake a now-locked quiz.
+  getAttemptState: (studentId) =>
+    adaptiveApi.get(`/students/${encodeURIComponent(studentId)}/attempt-state`),
+  saveAttemptState: (studentId, state) =>
+    adaptiveApi.put(`/students/${encodeURIComponent(studentId)}/attempt-state`, state),
+  clearAttemptState: (studentId) =>
+    adaptiveApi.delete(`/students/${encodeURIComponent(studentId)}/attempt-state`),
+
+  // "I'm stuck" escalation: raised from the lesson results screen after
+  // several attempts where an LO is still stuck; shown in the Teacher
+  // Console's "Students Needing Help" panel.
+  requestHelp: (lessonId, { studentId, studentName, stuckLos, attemptCount }) =>
+    adaptiveApi.post(`/lessons/${encodeURIComponent(lessonId)}/help-request`, {
+      student_id: studentId,
+      student_name: studentName,
+      stuck_los: stuckLos,
+      attempt_count: attemptCount,
+    }),
+  getHelpRequests: () => adaptiveApi.get("/help-requests"),
+  resolveHelpRequest: (studentId, lessonId) =>
+    adaptiveApi.post(
+      `/help-requests/${encodeURIComponent(studentId)}/${encodeURIComponent(lessonId)}/resolve`
+    ),
 };
