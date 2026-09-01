@@ -22,6 +22,20 @@ class Settings(BaseSettings):
     ENGAGEMENT_THRESHOLD: float = 60.0
     ALERT_THRESHOLD: float = 20.0
 
+    # Pattern detection: a negative-emotion threshold (BORED > 30% /
+    # CONFUSED > 25% / FRUSTRATED > 20% of the class) must stay exceeded,
+    # unbroken, for at least this long before the teacher gets a
+    # "recommend a game" nudge. 600s (10 min) by design - long enough that
+    # it's a real, settled problem, not a transient dip. Set it low
+    # (e.g. PATTERN_SUSTAINED_SECONDS=60) for a live demo where you can't
+    # wait 10 minutes on stage.
+    PATTERN_SUSTAINED_SECONDS: float = 600.0
+    # How often the class emotion distribution is re-aggregated and the
+    # pattern streak re-checked by the background tick (so "sustained for
+    # 10 min" is actually measured even when nothing is hitting
+    # /analytics/*). Should divide PATTERN_SUSTAINED_SECONDS comfortably.
+    AGGREGATION_INTERVAL_SECONDS: float = 30.0
+
     @property
     def cors_origins(self) -> list[str]:
         return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]

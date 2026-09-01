@@ -5,9 +5,32 @@ from collections import defaultdict
 from app.models.schemas import EmotionEvent, EmotionType
 from app.services.pattern_detection_service import pattern_detector
 from app.services.dashboard_store import dashboard_store
+from app.services.emotion_store import emotion_store
 
 
 WINDOW_SECONDS = 60
+
+
+def aggregate_and_store() -> Dict[str, float]:
+    """Single feeder for the pattern detector + dashboard trend, called on
+    a fixed cadence by main.py's background tick.
+
+    Uses emotion_store.get_current_distribution() - the SAME per-student
+    (latest-reading-per-student) distribution the teacher dashboard shows
+    via /analytics/current - so what triggers a pattern is exactly what
+    the teacher sees, not a raw per-event count that over-weights whoever
+    polls most often. An empty class feeds {} through, which resets every
+    streak (no data -> no pattern)."""
+    snapshot = emotion_store.get_current_distribution()
+    distribution = {
+        d.emotion: d.percentage
+        for d in snapshot["distribution"]
+        if d.percentage > 0
+    }
+    pattern_detector.store_aggregation_result(distribution)
+    dominant = snapshot.get("dominant_emotion") if distribution else None
+    dashboard_store.add_snapshot(distribution, dominant)
+    return distribution
 
 
 def calculate_emotion_distribution(
@@ -47,13 +70,9 @@ def calculate_emotion_distribution(
         percentage = round((count / total) * 100, 1)
         distribution[emotion_name] = percentage
 
-    # Store result for pattern detection (last 2 cycles)
-    pattern_detector.store_aggregation_result(distribution)
-
-    # Store snapshot for dashboard trend
-    dominant = max(distribution, key=distribution.get) if distribution else None
-    dashboard_store.add_snapshot(distribution, dominant)
-
+    # Pure now - the pattern detector + dashboard trend are fed only by
+    # aggregate_and_store() above, on a fixed cadence, so "sustained for N
+    # minutes" isn't distorted by how often this route happens to be hit.
     return distribution
 
 

@@ -1,15 +1,44 @@
+import asyncio
 import time
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.routes import analytics, recommendations, emotions, class_session, quiz_broadcast, message_broadcast, class_ws
+from app.services.analytics_service import aggregate_and_store
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Background aggregation tick: re-computes the class emotion
+    distribution every AGGREGATION_INTERVAL_SECONDS so the pattern
+    detector's "sustained for N minutes" streak advances on its own, even
+    when nothing is hitting /analytics/*. Without this the pattern streak
+    only moved when a client happened to call /analytics/distribution."""
+
+    async def _tick():
+        while True:
+            try:
+                aggregate_and_store()
+            except Exception as exc:  # never let the loop die
+                print(f"[aggregation-tick] error: {exc}")
+            await asyncio.sleep(settings.AGGREGATION_INTERVAL_SECONDS)
+
+    task = asyncio.create_task(_tick())
+    try:
+        yield
+    finally:
+        task.cancel()
+
 
 app = FastAPI(
     title=settings.APP_NAME,
     description="AI-Powered Adaptive Learning Platform - Emotion Processing & Game Recommendation API",
-    version=settings.APP_VERSION
+    version=settings.APP_VERSION,
+    lifespan=lifespan,
 )
 
 # CORS configuration for frontend integration

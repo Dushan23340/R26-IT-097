@@ -1,103 +1,113 @@
-import json
 from datetime import datetime
 from typing import Dict, Optional, List
 
-from app.redis_client import redis_client
+from app.config import settings
 
-STATE_KEY = "pattern_detector:history"
 
-# Threshold rules for pattern detection
+# Threshold rules for pattern detection - a negative emotion must exceed
+# its percentage of the class...
 PATTERN_THRESHOLDS = {
     "BORED": 30.0,
     "CONFUSED": 25.0,
     "FRUSTRATED": 20.0,
 }
 
+# ...AND stay above it, unbroken, for this long before it counts as a
+# real pattern the teacher should act on (config-driven: 10 min by
+# default, lower it for a demo). A single over-threshold aggregation, or
+# a threshold that keeps flickering on and off, never fires.
+SUSTAINED_SECONDS = settings.PATTERN_SUSTAINED_SECONDS
+
+# Most-severe-first, used to pick one emotion when several have each been
+# sustained past the bar at the same time.
+_PRIORITY = ["FRUSTRATED", "CONFUSED", "BORED"]
+
 
 class PatternDetector:
     """
-    Detects dominant emotional patterns that persist across
-    consecutive aggregation cycles. State now lives in Redis instead of
-    process memory (target production architecture: Redis = temporary /
-    real-time state).
+    Detects a dominant negative emotional pattern that has persisted above
+    its threshold for a sustained period (SUSTAINED_SECONDS), rather than
+    just across two back-to-back aggregation cycles.
     """
 
     def __init__(self):
-        # Store last two aggregation cycle results
+        # emotion -> datetime the current unbroken over-threshold run began
+        # (None = not currently over threshold).
+        self.streak_start: Dict[str, Optional[datetime]] = {e: None for e in PATTERN_THRESHOLDS}
+        # Rolling log of recent aggregation snapshots, for the /analytics/
+        # pattern response's "history" field (visibility only).
         self.aggregation_history: List[Dict] = []
-        self.max_history = 2
-
-    def _load(self) -> None:
-        raw = redis_client.get(STATE_KEY)
-        self.aggregation_history = json.loads(raw) if raw else []
-
-    def _save(self) -> None:
-        redis_client.set(STATE_KEY, json.dumps(self.aggregation_history))
+        self.max_history = 20
 
     def store_aggregation_result(self, distribution: Dict[str, float]) -> None:
         """
-        Store the latest aggregation result.
-        Keeps only the last 2 results for consecutive cycle checks.
+        Feed one aggregation snapshot in. Extends or breaks each emotion's
+        over-threshold streak accordingly. Called by the background
+        aggregation tick (every AGGREGATION_INTERVAL_SECONDS) and by the
+        /analytics/distribution + /analytics/window-stats routes.
         """
-        self._load()
+        now = datetime.utcnow()
+
+        for emotion, threshold in PATTERN_THRESHOLDS.items():
+            if distribution.get(emotion, 0.0) > threshold:
+                if self.streak_start[emotion] is None:
+                    self.streak_start[emotion] = now
+            else:
+                self.streak_start[emotion] = None
+
         self.aggregation_history.append({
-            "timestamp": datetime.utcnow().isoformat(),
-            "distribution": distribution
+            "timestamp": now.isoformat(),
+            "distribution": distribution,
         })
-        # Keep only last 2
         if len(self.aggregation_history) > self.max_history:
             self.aggregation_history.pop(0)
-        self._save()
+
+    def _streak_seconds(self, emotion: str, now: Optional[datetime] = None) -> float:
+        start = self.streak_start.get(emotion)
+        if start is None:
+            return 0.0
+        return ((now or datetime.utcnow()) - start).total_seconds()
 
     def detect_dominant_pattern(self) -> Optional[str]:
         """
-        Detect if an emotional pattern persists for 2 consecutive cycles.
-
-        Rules:
-            - BORED > 30%
-            - CONFUSED > 25%
-            - FRUSTRATED > 20%
-
-        Returns:
-            Detected emotion string (e.g., "BORED") or None if no pattern.
+        Return the emotion whose over-threshold streak has lasted at least
+        SUSTAINED_SECONDS, or None. If several qualify, the most severe one
+        (FRUSTRATED > CONFUSED > BORED) wins.
         """
-        # Need at least 2 consecutive results
-        if len(self.aggregation_history) < 2:
+        now = datetime.utcnow()
+        qualifying = [e for e in PATTERN_THRESHOLDS if self._streak_seconds(e, now) >= SUSTAINED_SECONDS]
+        if not qualifying:
             return None
-
-        # Get the last two distributions
-        prev = self.aggregation_history[-2]["distribution"]
-        curr = self.aggregation_history[-1]["distribution"]
-
-        # Check each rule against both cycles
-        for emotion, threshold in PATTERN_THRESHOLDS.items():
-            prev_value = prev.get(emotion, 0.0)
-            curr_value = curr.get(emotion, 0.0)
-
-            if prev_value > threshold and curr_value > threshold:
+        for emotion in _PRIORITY:
+            if emotion in qualifying:
                 return emotion
-
-        return None
+        return qualifying[0]
 
     def get_pattern_status(self) -> Dict:
         """
-        Get full pattern detection status for API response.
+        Full pattern-detection status for the API response, including how
+        far along each emotion's streak is so the dashboard can show
+        "bored 7m 30s - alerts at 10m".
         """
-        self._load()
+        now = datetime.utcnow()
         detected = self.detect_dominant_pattern()
+        streaks = {
+            emotion: round(self._streak_seconds(emotion, now), 1)
+            for emotion in PATTERN_THRESHOLDS
+        }
 
         return {
             "detected": detected is not None,
             "emotion": detected,
             "thresholds": PATTERN_THRESHOLDS,
+            "sustained_seconds": SUSTAINED_SECONDS,
+            "streak_seconds": streaks,
+            "detected_streak_seconds": streaks.get(detected) if detected else 0.0,
             "cycles_checked": len(self.aggregation_history),
             "history": [
-                {
-                    "timestamp": h["timestamp"],
-                    "distribution": h["distribution"]
-                }
+                {"timestamp": h["timestamp"], "distribution": h["distribution"]}
                 for h in self.aggregation_history
-            ]
+            ],
         }
 
 
