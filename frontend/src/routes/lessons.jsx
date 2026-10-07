@@ -375,6 +375,26 @@ function LessonsPage() {
       setAttemptCount((c) => (c < 1 ? 1 : c));
       setScreen("results");
     } catch (e) {
+      // The generated question-set behind this attempt aged out server-side
+      // (quiz_gen instances have a 6h Redis TTL) - almost always a student
+      // resuming a quiz they left open overnight. Recover in place: pull a
+      // fresh set for the same lesson and let them re-answer, rather than
+      // dead-ending on an error they can't clear from the UI.
+      if (e.reason === "quiz_instance_expired" || e.status === 410) {
+        const lessonId = quiz.lesson_id;
+        try {
+          const fresh = await adaptiveApiService.getLessonQuiz(lessonId, 1, studentId);
+          setAnswers({});
+          setResult(null);
+          setQuiz(fresh.data);
+          setScreen("quiz");
+          quizStartedAtRef.current = Date.now();
+          toast.warning("This quiz set expired while it was left open - here's a fresh one. Your previous answers were cleared.");
+        } catch {
+          setError("This quiz expired and a fresh one couldn't be loaded. Go back to Lessons and start it again.");
+        }
+        return;
+      }
       setError(e.message || "Failed to submit quiz");
     } finally {
       setSubmitting(false);
@@ -413,7 +433,11 @@ function LessonsPage() {
     await startLesson(quiz.lesson_id, 2);
   }
 
-  const answeredCount = quiz
+  // quiz can be a bare { lesson_id } stub (hydration restoring a "results"
+  // screen from server attempt-state, where the full question list was
+  // never persisted) - it has no .questions until startLesson() fetches
+  // the real quiz, so guard the field, not just the object.
+  const answeredCount = quiz?.questions
     ? quiz.questions.filter((q) => answers[q.id] != null && String(answers[q.id]).trim() !== "").length
     : 0;
 
@@ -422,7 +446,7 @@ function LessonsPage() {
   // counting per-LO would demand completing the same card several times.
   const allResourceIds = result
     ? Array.from(
-        new Set((result.weak_los || []).flatMap((lo) => (result.recommendations[lo] || []).map((r) => r.id)))
+        new Set((result.weak_los || []).flatMap((lo) => (result.recommendations?.[lo] || []).map((r) => r.id)))
       )
     : [];
   const allResourcesCompleted =
@@ -615,14 +639,16 @@ function LessonsPage() {
                   {result.overall_percentile_mastery}% overall mastery
                 </h2>
                 <p className="text-xs text-muted-foreground">
-                  {result.lo_scores[Object.keys(result.lo_scores)[0]]?.total_count === 3
-                    ? "3 questions per Learning Outcome - all 3 correct is Good, 2 is Average, 0-1 is Weak"
-                    : "Percentage of questions answered correctly per Learning Outcome"}
+                  {result.lo_scores.remember?.total_count === 5
+                    ? "Remember & Understand: 5 questions each - 4-5 correct is Good, 3 is Average, 0-2 is Weak. Apply: 2 questions - 2 is Good, 1 is Average, 0 is Weak"
+                    : result.lo_scores[Object.keys(result.lo_scores)[0]]?.total_count === 3
+                      ? "3 questions per Learning Outcome - all 3 correct is Good, 2 is Average, 0-1 is Weak"
+                      : "Percentage of questions answered correctly per Learning Outcome"}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {Object.entries(result.lo_scores).map(([lo, data]) => (
                 <div
                   key={lo}
@@ -707,8 +733,8 @@ function LessonsPage() {
                 // or mastery tier) - group by resource id instead of repeating an
                 // identical card under every LO heading.
                 const byResource = new Map();
-                for (const lo of result.weak_los) {
-                  for (const res of result.recommendations[lo] || []) {
+                for (const lo of result.weak_los || []) {
+                  for (const res of result.recommendations?.[lo] || []) {
                     if (!byResource.has(res.id)) byResource.set(res.id, { res, los: [] });
                     byResource.get(res.id).los.push(lo);
                   }

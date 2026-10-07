@@ -29,6 +29,14 @@ def discount_amount(marked: int, pct: int) -> Fraction:
     return Fraction(marked * pct, 100)
 
 
+def sp_after_discount(marked: int, pct: int) -> Fraction:
+    return marked - discount_amount(marked, pct)
+
+
+def commission_amount(value: int, pct: int) -> Fraction:
+    return Fraction(value * pct, 100)
+
+
 def cp_from_sp_and_profit_pct(sp: int, pct: int) -> Fraction:
     return Fraction(sp * 100, 100 + pct)
 
@@ -36,10 +44,6 @@ def cp_from_sp_and_profit_pct(sp: int, pct: int) -> Fraction:
 def selling_price_after_pct(cp: int, pct: int, is_profit: bool) -> Fraction:
     change = Fraction(cp * pct, 100)
     return cp + change if is_profit else cp - change
-
-
-def price_for_no_profit_no_loss(cp: int, w1: int, sp: int, w2: int, w3: int) -> Fraction:
-    return Fraction(cp * w1 - sp * w2, w3)
 
 
 def format_money(value: Fraction) -> str:

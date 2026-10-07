@@ -108,6 +108,11 @@ def bodmas_fraction_combo(a: int, b: int, c: int, d: int, e: int, f: int, g: int
     return result
 
 
+def add_then_multiply(a: int, b: int, c: int, d: int, e: int, f: int) -> Fraction:
+    """a/b + c/d x e/f — BODMAS: the multiplication before the addition."""
+    return Fraction(a, b) + Fraction(c, d) * Fraction(e, f)
+
+
 def savings_fraction(a: int, b: int, c: int, d: int) -> Fraction:
     return 1 - (Fraction(a, b) + Fraction(c, d))
 
@@ -128,6 +133,10 @@ def fraction_to_answer_string(value: Fraction) -> str:
 
 
 # ───────────────────────────── binary-numbers ─────────────────────────────
+
+
+def power_of_two(k: int) -> int:
+    return 2 ** k
 
 
 def dec_to_bin(n: int) -> str:
@@ -157,7 +166,3 @@ def expand_powers_string(binstr: str) -> str:
     n = len(binstr)
     terms = [f"{digit}x2^{n - 1 - i}" for i, digit in enumerate(binstr)]
     return " + ".join(terms)
-
-
-def next_binary(binstr: str) -> str:
-    return dec_to_bin(int(binstr, 2) + 1)

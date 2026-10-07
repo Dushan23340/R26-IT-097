@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts the full stack (frontend + all 5 backend services) for a demo /
+# Starts the full stack (frontend + all 5 backend services + MinIO) for a demo /
 # presentation, with debug mode off (no Werkzeug debugger exposed on the
 # shared network, no stack traces leaked to other devices on a live class).
 #
@@ -49,7 +49,17 @@ start_service() {
   echo "  [start] $name -> :$port (log: .run/$name.log)"
 }
 
+# Object Storage for the Learning Outcome short-notes PDFs: adaptive-
+# learning serves /static/notes/... from MinIO (+ metadata in PostgreSQL's
+# core.resources), not from disk - without it every notes link 404s.
+# Credentials match object_storage.py's defaults; the data dir defaults to
+# the minio-data/ folder next to this repo (override with MINIO_DATA_DIR).
+MINIO_DATA_DIR="${MINIO_DATA_DIR:-$(dirname "$ROOT_DIR")/minio-data}"
+
 echo "Starting services (debug mode off)..."
+start_service minio              9000 "$ROOT_DIR" \
+  env MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin123 \
+  minio server "$MINIO_DATA_DIR" --address :9000 --console-address :9001
 start_service backend            3001 "$ROOT_DIR/backend" \
   node index.js
 start_service emotion-service    5002 "$ROOT_DIR/emotion-service" \
@@ -77,6 +87,7 @@ check() {
     echo "  [FAIL] $name - $url (check .run/$name.log)"
   fi
 }
+check minio              "http://localhost:9000/minio/health/live"
 check backend            "http://localhost:3001/api/health"
 check emotion-service    "http://localhost:5002/health"
 check emotion-backend    "http://localhost:8000/health"

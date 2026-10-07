@@ -28,6 +28,13 @@ def fetch_one(query: str, params: tuple = ()):
             return cur.fetchone()
 
 
+def fetch_all(query: str, params: tuple = ()):
+    with get_connection() as conn:
+        with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+            cur.execute(query, params)
+            return cur.fetchall()
+
+
 def execute(query: str, params: tuple = ()):
     with get_connection() as conn:
         with conn.cursor() as cur:

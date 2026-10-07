@@ -20,6 +20,7 @@ emotion-service/dataset/engagement_eval/
 emotion-service/dataset/facial_features.npz
 emotion-service/dataset/facial_features_v2.npz
 emotion-service/dataset/facial_features_v3.npz
+emotion-service/dataset/final_dataset.zip
 
 # Optional raw datasets
 emotion-service/dataset/raw/

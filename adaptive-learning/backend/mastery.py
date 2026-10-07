@@ -1,9 +1,13 @@
 """
 mastery.py — Raw-correct-count mastery tiers per Learning Outcome.
 
-    Per-LO tier: all correct -> "good", 2 fewer than the max -> "average",
-    everything else -> "weak" (proportional for LOs that don't have exactly
-    3 items - see PROPORTIONAL_TIER_THRESHOLDS below).
+    Per-LO tier, as set by the Learning Outcome quizzes (5 remember + 5
+    understand + 2 apply questions):
+      remember / understand (5 items): 4-5 correct -> "good",
+                                       3 -> "average", 0-2 -> "weak"
+      apply (2 items):                 2 -> "good", 1 -> "average", 0 -> "weak"
+    (legacy 3-item LOs keep 3 -> good, 2 -> average, 0-1 -> weak; any other
+    count is scored proportionally - see TIER_THRESHOLDS below).
 
 Replaces the previous difficulty x cognitive-level weighted percentile
 model (75% threshold): that formula is gone, but `percentile_mastery_score`,
@@ -14,10 +18,7 @@ primary signal is `mastery_tier` ("good"/"average"/"weak") per LO.
 
 Quizzes are versioned via `quiz_set` (1 or 2) so a retake quiz can use a
 different set of questions per LO than the first attempt - questions are
-tagged `"set": 1|2` in lessons.py. Lessons not yet migrated to the new
-3-per-LO/free-text format have no "set" field at all; those are treated as
-set 1 implicitly and scored proportionally (see PROPORTIONAL_TIER_THRESHOLDS)
-since they don't have exactly 3 items per LO.
+tagged `"set": 1|2` in lessons.py (Quiz 1 / Quiz 2 of the LO quizzes).
 """
 
 from __future__ import annotations
@@ -26,8 +27,13 @@ import re
 
 from lessons import get_lesson
 
-# correct/total ratio thresholds for LOs that don't have exactly 3 items
-# (i.e. lessons not yet migrated to the 3-question-per-LO pilot format).
+# Exact (good_min, average_min) correct-count thresholds per LO item count:
+# 5 and 2 are the LO quizzes' remember/understand and apply sizes, 3 the
+# previous 3-per-level format (kept so older stored attempts re-score the
+# same). Any other count falls back to the proportional ratios below.
+TIER_THRESHOLDS = {5: (4, 3), 3: (3, 2), 2: (2, 1)}
+
+# correct/total ratio thresholds for any other LO size.
 # >= 0.9 -> good (e.g. 2/2, 5/5), >= 0.5 -> average (e.g. 1/2, 3/5), else weak.
 PROPORTIONAL_GOOD_RATIO = 0.9
 PROPORTIONAL_AVERAGE_RATIO = 0.5
@@ -134,19 +140,89 @@ def _is_semantically_correct(selected: str, candidates: list[str]) -> bool:
     return max(similarities) >= _SEMANTIC_SIMILARITY_THRESHOLD
 
 
+# Same symbol typed several ways ("×" / "x" / "*", "²" / "^2", "π" / "pi",
+# unicode minus) - folded together, with all whitespace removed, before
+# comparing formula-style answers like "1/2 × (a + b) × h" or "3n - 2".
+_SYMBOL_FOLDS = {"×": "x", "*": "x", "·": "x", "−": "-", "–": "-", "²": "^2", "½": "1/2", "π": "pi", "ₙ": "n"}
+
+
+def _compact(value: str) -> str:
+    text = str(value).strip().lower()
+    for symbol, replacement in _SYMBOL_FOLDS.items():
+        text = text.replace(symbol, replacement)
+    return re.sub(r"\s+", "", text).rstrip(".")
+
+
+# A plain number, optionally with "Rs"/"Rs." in front and a unit, % or
+# ordinal after it - so "Rs. 23,750", "68 cm²", "20 %" and "25th term" all
+# grade against a bare numeric answer key ("23750", "68", "20%", "25").
+_NUMERIC_ANSWER = re.compile(
+    r"(?:rs\.?|rupees)?(-?\d+(?:\.\d+)?)"
+    r"(?:%|percent|(?:st|nd|rd|th)(?:term)?|cm\^2|m\^2|cm2|m2|sqcm|cm|km|m|kg|g|metres|meters|seats|rupees|rs)?"
+)
+
+
+def _numeric_value(value: str):
+    match = _NUMERIC_ANSWER.fullmatch(_compact(value).replace(",", ""))
+    return float(match.group(1)) if match else None
+
+
+def _parse_set(text: str):
+    """"{1, 3, 5}" -> frozenset({"1", "3", "5"}); also accepts the bare
+    element list ("1, 3, 5") and φ / ∅ / "{ }" for the empty set. Order and
+    spacing never matter - {3, 1} and {1,3} are the same set."""
+    cleaned = str(text).strip().replace("φ", "{}").replace("∅", "{}")
+    if cleaned.startswith("{") and cleaned.endswith("}"):
+        cleaned = cleaned[1:-1]
+    elif "{" in cleaned or "}" in cleaned:
+        return None
+    elements = [e.strip().lower() for e in cleaned.split(",") if e.strip()]
+    return frozenset(elements)
+
+
+def _parse_set_list(text: str):
+    """"{}, {1}, {2}, {1, 2}" -> {frozenset(), {"1"}, {"2"}, {"1","2"}} -
+    for "write all the subsets" answers, in any order."""
+    cleaned = str(text).replace("φ", "{}").replace("∅", "{}")
+    groups = re.findall(r"\{[^{}]*\}", cleaned)
+    if not groups:
+        return None
+    parsed = [_parse_set(g) for g in groups]
+    return parsed if None not in parsed else None
+
+
 def _is_correct(question: dict, selected) -> bool:
     if selected is None:
         return False
 
-    if question.get("answer_type") == "fraction":
+    answer_type = question.get("answer_type")
+    if answer_type == "fraction":
         parsed = _normalize_fraction(selected)
         target = _normalize_fraction(question["answer"])
         return parsed is not None and parsed == target
+
+    if answer_type == "set":
+        parsed = _parse_set(selected)
+        return parsed is not None and parsed == _parse_set(question["answer"])
+
+    if answer_type == "set_list":
+        parsed = _parse_set_list(selected)
+        target = _parse_set_list(question["answer"])
+        return parsed is not None and len(parsed) == len(set(parsed)) and set(parsed) == set(target)
 
     candidates = [question["answer"], *question.get("accepted_answers", [])]
     normalized_selected = _normalize_text(selected)
     if any(normalized_selected == _normalize_text(c) for c in candidates):
         return True
+
+    compact_selected = _compact(selected)
+    if compact_selected and any(compact_selected == _compact(c) for c in candidates):
+        return True
+
+    target_number = _numeric_value(question["answer"])
+    if target_number is not None:
+        selected_number = _numeric_value(selected)
+        return selected_number is not None and selected_number == target_number
 
     canonical_answer = question["answer"]
     if not _is_conceptual_answer(canonical_answer) or _is_comparison_answer(canonical_answer):
@@ -156,12 +232,13 @@ def _is_correct(question: dict, selected) -> bool:
 
 
 def _tier_for(correct_count: int, total_count: int) -> str:
-    if total_count == 3:
-        if correct_count == 3:
+    if total_count in TIER_THRESHOLDS:
+        good_min, average_min = TIER_THRESHOLDS[total_count]
+        if correct_count >= good_min:
             return "good"
-        if correct_count == 2:
+        if correct_count >= average_min:
             return "average"
-        return "weak"  # 0 or 1 of 3
+        return "weak"
 
     if total_count == 0:
         return "weak"

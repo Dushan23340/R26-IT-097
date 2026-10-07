@@ -432,25 +432,25 @@ def get_lesson_quiz(lesson_id):
     if not access["can_take_quiz"]:
         return _quiz_locked_response(access)
 
-    # Pilot lessons: every request (first attempt AND every retake) gets a
-    # freshly generated 18-question instance instead of picking between 2
-    # static sets - the `set` query param is ignored for these, since
-    # "always different" supersedes "1 of 2 fixed variants". Falls back to
-    # the static PDF content (set 1) if generation raises for any reason,
-    # so a bug in quiz_gen never takes the lesson offline.
+    # Every request (first attempt AND every retake) gets a freshly
+    # generated 12-question instance (5 remember + 5 understand + 2 apply).
+    # `set` picks which of the LO owner's two quizzes the generator may draw
+    # its bank questions from: 1 = first attempt (Quiz 1), 2 = retake
+    # (Quiz 2). Falls back to that static quiz set if generation raises for
+    # any reason, so a bug in quiz_gen never takes the lesson offline.
+    quiz_set = request.args.get("set", default=1, type=int)
     if lesson_id in QUIZ_GEN_LESSONS:
         lesson = get_lesson(lesson_id)
         if lesson:
             try:
-                quiz = generate_quiz(lesson_id, lesson["title"], lesson["subject"])
+                quiz = generate_quiz(lesson_id, lesson["title"], lesson["subject"], quiz_set=quiz_set)
                 instance_id = quiz_store.save(quiz)
                 response = strip_answers(quiz)
                 response["quiz_set"] = instance_id
                 return jsonify({"success": True, "data": response})
             except Exception:
-                app.logger.exception(f"quiz_gen failed for {lesson_id}, falling back to static set 1")
+                app.logger.exception(f"quiz_gen failed for {lesson_id}, falling back to static set {quiz_set}")
 
-    quiz_set = request.args.get("set", default=1, type=int)
     quiz = get_quiz_for_lesson(lesson_id, quiz_set=quiz_set)
     if not quiz:
         return jsonify({"success": False, "error": f"Unknown lesson: {lesson_id}"}), 404
@@ -649,7 +649,7 @@ def student_dashboard_recommendations(student_id):
             emotion = None
             if student_id != "anonymous":
                 emotion = get_class_dominant_emotion(student_id) or get_live_emotion(student_id)
-            # get_validated_video() (called inside recommend_resources) is
+            # get_validated_videos() (called inside recommend_resources) is
             # keyed only by (lesson_id, emotion), not by Bloom level - so a
             # student weak in multiple LOs of the same lesson gets the
             # identical video back on every iteration below. Dedupe by id so
