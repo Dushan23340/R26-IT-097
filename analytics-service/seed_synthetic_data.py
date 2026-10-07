@@ -21,7 +21,7 @@ random.seed(42)
 
 DEMOGRAPHIC_GROUPS = ["GroupA", "GroupB", "GroupC"]
 GRADE_LEVELS = ["Grade 9", "Grade 10", "Grade 11"]
-LO_LEVELS = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+LO_LEVELS = ["remember", "understand", "apply"]
 EMOTIONS_BY_PERFORMANCE = {
     "high": ["happy", "normal"],
     "low": ["bored", "confused", "frustrated"],

@@ -18,7 +18,16 @@ emotion is fixed - the document's 6-Bloom-level x 2-mastery-tier rows
 never actually differ - so the effective, faithful lookup here is
 (lesson_id x emotion), not a real 4-dimensional table.
 
-The original quiz.pdf only exposed each video's title, not its href -
+Current source: the LO owner's "recomandation type 9-27" document, whose
+hyperlinks were extracted directly from the .docx (document.xml +
+relationship targets, not guessed). It agrees on exactly one link set per
+(lesson, emotion) across every remember/understand/apply x weak/average
+row. Two cells list two links each (fractions-bodmas/confused: the
+"Lesson 3" video and a Khan Academy page; area-of-shapes/angry: Area
+lesson parts P 05 and P 04) - both are served, the first as the primary
+video and the second via "also".
+
+History: the original quiz.pdf only exposed each video's title, not its href -
 "url" was a YouTube search-query built from that title as a fallback (a
 search page can surface ads/unrelated results first, but a search is
 never a dead link). recomandation_type__1__updated.pdf added real
@@ -34,12 +43,11 @@ also literally names two "P 05"/"P 04" video parts; only "P 05"'s link
 resolved unambiguously, so it's used alone rather than picking one of a
 pair with no way to tell which is right without asking the source).
 
-This fully REPLACES lesson_resources.py's Bloom-level-keyed generic pool
-for the lessons it covers - it isn't blended with it. See
-semantic_recommender.recommend_resources(), which checks here first and
-short-circuits the semantic-similarity ranking when a match exists,
-since a teacher-validated answer is more authoritative than a re-ranked
-generic search-query guess.
+semantic_recommender.recommend_resources() checks here first and, when a
+match exists, skips the semantic-similarity ranking (a teacher-validated
+answer is more authoritative than a re-ranked guess) - returning these
+videos together with lesson_resources.py's short-notes PDF for the Bloom
+level being recommended for.
 """
 
 from __future__ import annotations
@@ -50,23 +58,20 @@ def _youtube_search(query: str) -> str:
     return f"https://www.youtube.com/results?search_query={quote_plus(query)}"
 
 
-# lesson_id -> emotion -> {"title": ..., "url": ...}. "url" is optional -
-# only present once the real direct link has been confirmed (extracted
-# from the source PDF's own hyperlink annotations, or given directly);
-# the two entries without one still fall back to a search-query URL
-# built from the title, because the source document itself is ambiguous
-# for those two cells (see module docstring). Both mastery tiers
-# (weak/average) and all 6 Bloom levels point to this same title/url in
-# the source document.
-VALIDATED_VIDEOS: dict[str, dict[str, dict[str, str]]] = {
+# lesson_id -> emotion -> {"title", "url", optional "also": [{"title", "url"}]}.
+# Every link is extracted from the source document's own hyperlinks; both
+# mastery tiers (weak/average) and all 3 Bloom levels point to the same
+# link(s) for a given (lesson, emotion) there. "url" stays optional - an
+# entry without one falls back to a search-query URL built from its title.
+VALIDATED_VIDEOS: dict[str, dict[str, dict]] = {
     "number-patterns": {
         "happy": {
-            "title": "Math Antics - Number Patterns",
-            "url": "https://www.youtube.com/watch?v=vV7C7bXm4VI",
+            "title": "Patterns Grade 9",
+            "url": "https://www.youtube.com/watch?v=1k9P4snpX9I",
         },
         "normal": {
             "title": "Grade 09 - Maths - English Medium - Number Patterns - Unit 01 | Begining of 2025 Online Maths Class",
-            "url": "https://www.youtube.com/live/XYNP2IRf8aA?si=UjxFFLwHsw33-RIu",
+            "url": "https://www.youtube.com/watch?v=XYNP2IRf8aA&t=732s",
         },
         "confused": {
             "title": "Lesson 1. Number Patterns | Maths Session for Grade 09",
@@ -94,11 +99,14 @@ VALIDATED_VIDEOS: dict[str, dict[str, dict[str, str]]] = {
             "title": "Fractions on the number line (practice) | Khan Academy",
             "url": "https://www.khanacademy.org/math/arithmetic-home/arith-review-fractions/fractions-on-the-number-line/e/fractions_on_the_number_line_1",
         },
-        # Ambiguous in the source: rows cite "Lesson 3. Fractions..." AND
-        # "Understand fractions... Khan Academy" together for some Bloom
-        # levels, but only the Khan Academy one alone for others - no
-        # single answer to extract with confidence. Search-query fallback.
-        "confused": {"title": "Understand fractions | Arithmetic | Math | Khan Academy"},
+        "confused": {
+            "title": "Lesson 3. Fractions | Maths Session for Grade 09",
+            "url": "https://www.youtube.com/watch?v=IAa5_qwUC48",
+            "also": [{
+                "title": "Understand fractions | Arithmetic | Math | Khan Academy",
+                "url": "https://www.khanacademy.org/math/arithmetic/fraction-arithmetic",
+            }],
+        },
         "bored": {
             "title": "Fractions Are Parts",
             "url": "https://www.mathantics.com/lesson/fractions-are-parts",
@@ -159,12 +167,13 @@ VALIDATED_VIDEOS: dict[str, dict[str, dict[str, str]]] = {
             "title": "Maths - Grade 9 - Unit 23 - Area - Part 03 - English Medium",
             "url": "https://www.youtube.com/watch?v=PeQVWeapbb4",
         },
-        # Source cites two parts ("P 05" and "P 04") for this cell; only
-        # P 05's link resolved unambiguously in the extraction, so that
-        # one is used alone rather than guessing at the unresolved P 04.
         "angry": {
             "title": "Grade 09 - Mathematics (English Medium) - Area - 02 ( Lesson 23 ) - P 05",
             "url": "https://www.youtube.com/watch?v=jbWPTL_l5hQ&t=1s",
+            "also": [{
+                "title": "Grade 09 - Mathematics (English Medium) - Area - 01 ( Lesson 23 ) - P 04",
+                "url": "https://www.youtube.com/watch?v=ePUMiKpNIMw",
+            }],
         },
     },
     "sets": {
@@ -222,26 +231,30 @@ VALIDATED_VIDEOS: dict[str, dict[str, dict[str, str]]] = {
 }
 
 
-def get_validated_video(lesson_id: str, emotion: str | None) -> dict | None:
-    """One teacher-validated video for this lesson + emotional state, or
-    None if this lesson isn't covered by the source document. `emotion`
-    is matched case-insensitively and falls back to "normal" when not
-    supplied - the document's own "no strong emotional state detected"
-    case."""
+def get_validated_videos(lesson_id: str, emotion: str | None) -> list[dict]:
+    """The teacher-validated video(s) for this lesson + emotional state -
+    usually one, two where the source lists two - or [] if this lesson
+    isn't covered by the source document. `emotion` is matched
+    case-insensitively and falls back to "normal" when not supplied - the
+    document's own "no strong emotional state detected" case."""
     lesson_videos = VALIDATED_VIDEOS.get(lesson_id)
     if not lesson_videos:
-        return None
+        return []
 
     key = (emotion or "normal").strip().lower()
     entry = lesson_videos.get(key) or lesson_videos.get("normal")
     if not entry:
-        return None
+        return []
 
-    title = entry["title"]
-    return {
-        "id": f"validated-{lesson_id}-{key}",
-        "title": title,
-        "type": "video",
-        "difficulty": "medium",
-        "url": entry.get("url") or _youtube_search(title),
-    }
+    videos = []
+    for n, video in enumerate([entry, *entry.get("also", [])]):
+        title = video["title"]
+        videos.append({
+            "id": f"validated-{lesson_id}-{key}" + (f"-{n + 1}" if n else ""),
+            "title": title,
+            "type": "video",
+            "difficulty": "medium",
+            "url": video.get("url") or _youtube_search(title),
+        })
+    return videos
+

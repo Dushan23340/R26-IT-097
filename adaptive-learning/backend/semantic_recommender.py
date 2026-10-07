@@ -38,7 +38,7 @@ from sentence_transformers import SentenceTransformer, util
 
 from data import LO_DESCRIPTIONS
 from lesson_resources import get_lesson_resources
-from validated_recommendations import get_validated_video
+from validated_recommendations import get_validated_videos
 
 _MODEL_NAME = "all-MiniLM-L6-v2"
 
@@ -89,30 +89,28 @@ def _resource_text(resource: dict) -> str:
 def recommend_resources(
     lesson_id: str, lo_name: str, emotion: str | None = None, mastery_tier: str | None = None, top_k: int = 3
 ) -> list[dict]:
-    """Teacher-validated (lesson x emotion) video when one exists
-    (validated_recommendations.py) - takes priority since it's a real
+    """Teacher-validated (lesson x emotion) video(s) when they exist
+    (validated_recommendations.py) - taking priority since they're a real
     validated answer, not an approximation - blended with
     lesson_resources.py's matching (lesson x Bloom level) short note when
-    one exists, so a weak LO surfaces both "watch this" and "read this"
-    rather than only one. If no validated video exists, falls back to
+    one exists, so a weak/average LO surfaces both "watch this" and "read
+    this" rather than only one. The note is placed right after the primary
+    video so a second validated video never pushes it out of top_k. If no validated video exists, falls back to
     semantic-similarity ranking of lesson_resources.py's resource pool,
     re-weighted by emotional state and mastery tier per
     resolve_recommendation_strategy()."""
-    validated = get_validated_video(lesson_id, emotion)
+    validated = get_validated_videos(lesson_id, emotion)
     note = get_lesson_resources(lesson_id, lo_name)
     if validated:
-        results = [{
-            **validated,
-            "match_score": 1.0,
-            "rationale": ["teacher-validated resource for this lesson and emotional state"],
-        }]
-        for resource in note:
-            results.append({
-                **resource,
-                "match_score": 1.0,
-                "rationale": ["teacher-prepared short notes for this learning outcome"],
-            })
-        return results[:top_k]
+        videos = [
+            {**video, "match_score": 1.0, "rationale": ["teacher-validated resource for this lesson and emotional state"]}
+            for video in validated
+        ]
+        notes = [
+            {**resource, "match_score": 1.0, "rationale": ["teacher-prepared short notes for this learning outcome"]}
+            for resource in note
+        ]
+        return (videos[:1] + notes + videos[1:])[:top_k]
 
     candidates = note
     if not candidates:

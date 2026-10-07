@@ -31,6 +31,12 @@ const configuredOrigins = process.env.FRONTEND_URL
 
 const isDev = process.env.NODE_ENV !== "production";
 const localhostHttp = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+// Private LAN ranges (RFC1918). In dev, any origin on the local network is
+// allowed so a live-class demo works without pinning FRONTEND_URL to an IP
+// and port that change between networks/days (and drift when Vite's
+// strictPort:false picks the next free port).
+const privateLanHttp =
+  /^https?:\/\/(10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})(:\d+)?$/i;
 
 app.use(
   cors({
@@ -43,7 +49,7 @@ app.use(
         callback(null, true);
         return;
       }
-      if (isDev && localhostHttp.test(origin)) {
+      if (isDev && (localhostHttp.test(origin) || privateLanHttp.test(origin))) {
         callback(null, true);
         return;
       }

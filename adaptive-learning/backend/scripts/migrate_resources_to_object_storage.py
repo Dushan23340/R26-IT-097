@@ -1,7 +1,9 @@
-"""One-off migration: upload the existing static/notes/<lesson_id>/<lo>.pdf
-files into Object Storage and register them in PostgreSQL's core.resources
-table (target production architecture, item 4). Idempotent - re-running
-just re-uploads and upserts the same rows.
+"""Sync static/notes/<lesson_id>/<lo>.pdf into Object Storage and
+PostgreSQL's core.resources table (target production architecture, item
+4): uploads every note on disk and upserts its row, then removes rows (and
+their objects) for notes no longer on disk - e.g. after the LO quizzes
+dropped the analyze/evaluate/create levels. Idempotent - re-running just
+re-uploads the same files and finds nothing stale.
 
 Run from adaptive-learning/backend/:
     .venv/bin/python scripts/migrate_resources_to_object_storage.py
@@ -49,7 +51,24 @@ def main():
             uploaded += 1
             print(f"  {lesson_id}/{filename} -> {object_key} ({byte_size} bytes)")
 
-    print(f"\nDone. {uploaded} resources uploaded and registered in core.resources.")
+    on_disk = {
+        (lesson_id, filename[:-4])
+        for lesson_id in os.listdir(NOTES_DIR) if os.path.isdir(os.path.join(NOTES_DIR, lesson_id))
+        for filename in os.listdir(os.path.join(NOTES_DIR, lesson_id)) if filename.endswith(".pdf")
+    }
+    removed = 0
+    for row in core_db.fetch_all("SELECT lesson_id, bloom_level, object_key FROM core.resources"):
+        if (row["lesson_id"], row["bloom_level"]) in on_disk:
+            continue
+        object_storage.delete_object(row["object_key"])
+        core_db.execute(
+            "DELETE FROM core.resources WHERE lesson_id = %s AND bloom_level = %s",
+            (row["lesson_id"], row["bloom_level"]),
+        )
+        removed += 1
+        print(f"  removed stale {row['object_key']}")
+
+    print(f"\nDone. {uploaded} resources uploaded and registered in core.resources, {removed} stale removed.")
 
 
 if __name__ == "__main__":

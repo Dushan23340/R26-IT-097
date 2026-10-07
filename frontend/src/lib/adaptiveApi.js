@@ -19,7 +19,14 @@ async function request(endpoint, options = {}) {
   const response = await fetch(url, config);
   const data = await parseBody(response);
   if (!response.ok) {
-    throw new Error(data.error || data.message || response.statusText || "Request failed");
+    const err = new Error(data.error || data.message || response.statusText || "Request failed");
+    // Keep the HTTP status and any machine-readable reason on the error so
+    // callers can recover from specific cases (e.g. a 410
+    // "quiz_instance_expired" -> refetch a fresh quiz) instead of only
+    // being able to string-match the human-readable message.
+    err.status = response.status;
+    if (data.reason) err.reason = data.reason;
+    throw err;
   }
   return data;
 }

@@ -42,11 +42,6 @@ def circle_radius_from_area_22_7(area: int) -> int:
     return 7 * k
 
 
-def max_circles_cut(length: int, width: int, radius: int) -> int:
-    diameter = 2 * radius
-    return (length // diameter) * (width // diameter)
-
-
 def shaded_square_minus_inscribed_circle_22_7(radius_multiple_of_7: int) -> int:
     r = radius_multiple_of_7
     side = 2 * r

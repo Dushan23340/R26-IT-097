@@ -7,17 +7,26 @@ invented here - a template's only creative freedom is phrasing and which
 random numbers to plug in.
 
 Difficulty is NOT a template property - it follows the seed content's own
-convention (remember/understand -> easy, apply/analyze -> medium,
-evaluate/create -> hard), applied uniformly by generator.py regardless of
-which template fills a given slot.
+convention (remember/understand -> easy, apply -> medium), applied
+uniformly by generator.py regardless of which template fills a given slot.
 
-Some templates are tagged to multiple lo_levels (e.g. "find the common
-difference" is a legitimate remember, understand, or analyze question) -
-generator.py picks among the templates valid for the level it's filling.
-"pool" templates have no numeric parameters (pure recall/definition
-questions) and instead sample one of a few hand-written phrasing variants,
-still resampled per request so repeated attempts don't always show the
-identical wording.
+Only the 3 Bloom levels the Learning Outcome quizzes assess (remember,
+understand, apply) are used, and each template's lo_levels follow how the
+LO owner's own quizzes (bank.py) level that kind of question - e.g. "find
+the area of a parallelogram" is understand, "find its height from the
+area" is apply. Some templates are tagged to multiple lo_levels (e.g.
+"find the common difference" is a legitimate remember or understand
+question) - generator.py picks among the templates valid for the level
+it's filling. "pool" templates have no numeric parameters (pure
+recall/definition questions) and instead sample one of a few hand-written
+phrasing variants, still resampled per request so repeated attempts don't
+always show the identical wording.
+
+Besides these, every question in bank.py is registered as a fixed "bank"
+template (see _bank_templates at the bottom). `concept` marks a pool
+template and a bank item that ask the same thing, so one quiz never
+contains both; `quiz_set` restricts a bank template to the quiz (1 = first
+attempt, 2 = retake) it came from.
 """
 
 from __future__ import annotations
@@ -26,14 +35,29 @@ import random
 
 from . import solvers as s
 
-LEVELS = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+LEVELS = ["remember", "understand", "apply"]
 
 
 class Template:
-    def __init__(self, template_id, lo_levels, generate_fn):
+    def __init__(self, template_id, lo_levels, generate_fn, concept=None, quiz_set=None, feature_text=None):
         self.template_id = template_id
         self.lo_levels = lo_levels
         self._generate_fn = generate_fn
+        self.concept = concept
+        self.quiz_set = quiz_set
+        # Text the template selector (model.py) featurises: for bank
+        # templates the fixed question itself; for parameterised ones the
+        # readable template_id slug plus one fixed-seed sample question, so
+        # the selector sees the template's real topic words, not just the
+        # few its id happens to spell out.
+        if feature_text is None:
+            sample = generate_fn(random.Random(0))["question"]
+            feature_text = f"{template_id.replace('_', ' ')} {sample}"
+        self.feature_text = feature_text
+
+    @property
+    def is_bank(self) -> bool:
+        return self.quiz_set is not None
 
     def generate(self, rng: random.Random) -> dict:
         return self._generate_fn(rng)
@@ -186,15 +210,6 @@ def _np_negative_threshold(rng):
     return {"question": q, "answer": str(n)}
 
 
-def _np_first_n_terms(rng):
-    a = rng.randint(-20, 30)
-    d = _nonzero(rng, -8, 8)
-    terms = s.first_n_terms(a, d, 5)
-    q = f"Write the first 5 terms of a sequence with first term {a} and common difference {d}."
-    answer = ", ".join(str(t) for t in terms)
-    return {"question": q, "answer": answer, "accepted_answers": [",".join(str(t) for t in terms)]}
-
-
 def _np_general_term_from_ad(rng):
     a = rng.randint(1, 20)
     d = _nonzero(rng, -9, 9)
@@ -219,37 +234,48 @@ def _np_nth_term_from_ad(rng):
     return {"question": q, "answer": str(answer)}
 
 
+_NP_WORD_PROBLEMS = [
+    # Real-life arithmetic sequences, same shape as the LO quizzes' apply
+    # questions: first term {a}, common difference {d}, asked term {n}.
+    ("A runner runs {a} m on day 1 and increases the distance by {d} m each day. "
+     "How far does the runner run on day {n}? Give the answer in metres."),
+    ("The first row of a hall has {a} seats and each row has {d} more seats than the row before it. "
+     "How many seats are in row {n}?"),
+    ("A student saves Rs. {a} in the first week and increases the amount by Rs. {d} each week. "
+     "How much does the student save in week {n}?"),
+]
+
+
+def _np_word_problem(rng):
+    template = rng.choice(_NP_WORD_PROBLEMS)
+    a = rng.randint(2, 50) * (10 if "runner" in template else 1)
+    d = rng.randint(2, 10) * (10 if "runner" in template else 1)
+    n = rng.randint(8, 25)
+    answer = s.first_n_terms(a, d, n)[-1]
+    return {"question": template.format(a=a, d=d, n=n), "answer": str(answer)}
+
+
 NUMBER_PATTERNS_TEMPLATES = [
-    Template("np_r_pool", ["remember"], _np_r_pool),
-    Template("np_common_diff", ["remember", "understand", "analyze"], _np_common_diff),
+    Template("np_r_pool", ["remember"], _np_r_pool, concept="np-term-name"),
+    Template("np_common_diff", ["remember", "understand"], _np_common_diff),
     Template("np_first_three", ["remember"], _np_first_three),
-    Template("np_tn_meaning_pool", ["understand"], _np_tn_meaning_pool),
+    Template("np_tn_meaning_pool", ["understand"], _np_tn_meaning_pool, concept="np-tn"),
     Template("np_uniqueness_tf_pool", ["understand"], _np_uniqueness_tf_pool),
-    Template("np_nth_term_linear", ["apply"], _np_nth_term_linear),
+    Template("np_oscillating_pool", ["understand"], _np_oscillating_pool),
+    Template("np_nth_term_linear", ["understand"], _np_nth_term_linear),
+    Template("np_descending_nth_term", ["understand"], _np_descending_nth_term),
+    Template("np_general_term_from_ad", ["understand"], _np_general_term_from_ad),
     Template("np_find_term_number", ["apply"], _np_find_term_number),
-    Template("np_descending_nth_term", ["apply"], _np_descending_nth_term),
-    Template("np_is_term_yes", ["analyze"], _np_is_term_yes),
-    Template("np_is_term_no_descending", ["analyze"], _np_is_term_no_descending),
-    Template("np_is_term_no_ascending", ["evaluate"], _np_is_term_no_ascending),
-    Template("np_oscillating_pool", ["evaluate"], _np_oscillating_pool),
-    Template("np_negative_threshold", ["evaluate"], _np_negative_threshold),
-    Template("np_first_n_terms", ["create"], _np_first_n_terms),
-    Template("np_general_term_from_ad", ["create"], _np_general_term_from_ad),
-    Template("np_nth_term_from_ad", ["create"], _np_nth_term_from_ad),
+    Template("np_is_term_yes", ["apply"], _np_is_term_yes),
+    Template("np_is_term_no_descending", ["apply"], _np_is_term_no_descending),
+    Template("np_is_term_no_ascending", ["apply"], _np_is_term_no_ascending),
+    Template("np_negative_threshold", ["apply"], _np_negative_threshold),
+    Template("np_nth_term_from_ad", ["apply"], _np_nth_term_from_ad),
+    Template("np_word_problem", ["apply"], _np_word_problem),
 ]
 
 
 # ───────────────────────────── fractions-bodmas ─────────────────────────────
-
-_BODMAS_LETTERS = {
-    "B": "Brackets",
-    "O": "Orders",
-    "D": "Division",
-    "M": "Multiplication",
-    "A": "Addition",
-    "S": "Subtraction",
-}
-
 
 def _coprime_pair(rng: random.Random, lo=2, hi=12):
     from math import gcd
@@ -288,12 +314,6 @@ def _fr_mixed_number(rng):
     return {"question": q, "answer": answer, "answer_type": "fraction"}
 
 
-def _fr_bodmas_letter_pool(rng):
-    letter, meaning = rng.choice(list(_BODMAS_LETTERS.items()))
-    q = f"In the BODMAS rule, what does the '{letter}' stand for?"
-    return {"question": q, "answer": meaning, "accepted_answers": [meaning.lower()]}
-
-
 def _fr_of_means_multiply(rng):
     a, b = _coprime_pair(rng, 2, 9)
     c, d = _coprime_pair(rng, 2, 9)
@@ -317,8 +337,8 @@ def _fr_of_operation_pool(rng):
 
 
 def _fr_multiply(rng):
-    a, b = _coprime_pair(rng, 1, 9)
-    c, d = _coprime_pair(rng, 1, 9)
+    a, b = _coprime_pair(rng, 2, 9)
+    c, d = _coprime_pair(rng, 2, 9)
     ans = s.multiply_fractions(a, b, c, d)
     return {"question": f"Simplify: {a}/{b} x {c}/{d}", "answer": s.fraction_to_answer_string(ans), "answer_type": "fraction"}
 
@@ -373,55 +393,19 @@ def Fraction_of(n, d):
     return Fraction(n, d)
 
 
+def _reduced_proper_numerator(rng: random.Random, d: int) -> int:
+    from math import gcd
+    return rng.choice([n for n in range(1, d) if gcd(n, d) == 1])
+
+
 def _fr_divide_mixed(rng):
-    w1, n1, d1 = rng.randint(1, 3), 1, rng.randint(2, 5)
-    n1 = rng.randint(1, d1 - 1)
+    w1, d1 = rng.randint(1, 3), rng.randint(2, 5)
+    n1 = _reduced_proper_numerator(rng, d1)
     w2, d2 = rng.randint(1, 3), rng.randint(2, 5)
-    n2 = rng.randint(1, d2 - 1)
+    n2 = _reduced_proper_numerator(rng, d2)
     ans = s.divide_mixed(w1, n1, d1, w2, n2, d2)
     q = f"Simplify: {w1} {n1}/{d1} / {w2} {n2}/{d2}"
     return {"question": q, "answer": s.fraction_to_answer_string(ans), "answer_type": "fraction"}
-
-
-def _fr_verify_of(rng):
-    a, b = _coprime_pair(rng, 2, 9)
-    c, d = _coprime_pair(rng, 2, 9)
-    actual = s.multiply_fractions(a, b, c, d)
-    make_true = rng.random() < 0.5
-    if make_true:
-        shown = s.fraction_to_answer_string(actual)
-        answer = "Yes"
-    else:
-        wrong = actual + Fraction_of(1, actual.denominator + 3)
-        shown = s.fraction_to_answer_string(wrong)
-        answer = "No"
-    q = f"Is {a}/{b} of {c}/{d} equal to {shown}? Answer Yes or No."
-    return {"question": q, "answer": answer}
-
-
-def _fr_verify_mixed_mult(rng):
-    w1, d1 = rng.randint(1, 3), rng.randint(2, 5)
-    n1 = rng.randint(1, d1 - 1)
-    w2, d2 = rng.randint(1, 3), rng.randint(2, 5)
-    n2 = rng.randint(1, d2 - 1)
-    actual = (w1 + Fraction_of(n1, d1)) * (w2 + Fraction_of(n2, d2))
-    make_true = rng.random() < 0.5
-    if make_true:
-        shown = s.fraction_to_answer_string(actual)
-        answer = "Yes"
-    else:
-        wrong = actual + Fraction_of(1, actual.denominator + 2)
-        shown = s.fraction_to_answer_string(wrong)
-        answer = "No"
-    q = f"Is {w1} {n1}/{d1} x {w2} {n2}/{d2} = {shown}? Answer Yes or No."
-    return {"question": q, "answer": answer}
-
-
-def _fr_compare_of_pool(rng):
-    a, b = _coprime_pair(rng, 2, 9)
-    c, d = _coprime_pair(rng, 2, 9)
-    q = f"Which is greater: {a}/{b} of {c}/{d}, or {c}/{d} of {a}/{b}? Answer 'Equal' if they are the same."
-    return {"question": q, "answer": "Equal", "accepted_answers": ["both are equal", "same", "neither"]}
 
 
 def _fr_bodmas_combo(rng):
@@ -460,25 +444,48 @@ def _fr_donation_word_problem(rng):
     return {"question": q, "answer": s.fraction_to_answer_string(ans), "answer_type": "fraction"}
 
 
+def _fr_bodmas_add_times(rng):
+    a, b = _proper_fraction_pair(rng, 1, 5)
+    c, d = _proper_fraction_pair(rng, 1, 5)
+    e, f = _proper_fraction_pair(rng, 1, 5)
+    ans = s.add_then_multiply(a, b, c, d, e, f)
+    q = f"Simplify {a}/{b} + {c}/{d} × {e}/{f}."
+    return {"question": q, "answer": s.fraction_to_answer_string(ans), "answer_type": "fraction"}
+
+
+_FR_PORTION_STORIES = [
+    "A person owns {a}/{b} of a land and gives {c}/{d} of it to his daughter. "
+    "What fraction of the whole land does the daughter receive?",
+    "A farmer owns {a}/{b} of a land and uses {c}/{d} of his portion for cultivation. "
+    "What fraction of the whole land is used for cultivation?",
+]
+
+
+def _fr_portion_word_problem(rng):
+    a, b = _proper_fraction_pair(rng, 1, 7)
+    c, d = _proper_fraction_pair(rng, 1, 5)
+    ans = s.multiply_fractions(a, b, c, d)
+    q = rng.choice(_FR_PORTION_STORIES).format(a=a, b=b, c=c, d=d)
+    return {"question": q, "answer": s.fraction_to_answer_string(ans), "answer_type": "fraction"}
+
+
 FRACTIONS_BODMAS_TEMPLATES = [
     Template("fr_reciprocal", ["remember"], _fr_reciprocal),
     Template("fr_mixed_number", ["remember"], _fr_mixed_number),
-    Template("fr_bodmas_letter_pool", ["remember"], _fr_bodmas_letter_pool),
-    Template("fr_of_means_multiply", ["understand"], _fr_of_means_multiply),
+    Template("fr_of_means_multiply", ["understand"], _fr_of_means_multiply, concept="fr-of-op"),
     Template("fr_improper_reason_fillblank", ["understand"], _fr_improper_reason_fillblank),
-    Template("fr_of_operation_pool", ["understand"], _fr_of_operation_pool),
-    Template("fr_multiply", ["apply"], _fr_multiply),
-    Template("fr_add_same_denom", ["apply"], _fr_add_same_denom),
-    Template("fr_divide_by_whole", ["apply"], _fr_divide_by_whole),
-    Template("fr_of_two_fractions", ["analyze"], _fr_of_two_fractions),
-    Template("fr_add_sub_three", ["analyze"], _fr_add_sub_three),
-    Template("fr_divide_mixed", ["analyze"], _fr_divide_mixed),
-    Template("fr_verify_of", ["evaluate"], _fr_verify_of),
-    Template("fr_verify_mixed_mult", ["evaluate"], _fr_verify_mixed_mult),
-    Template("fr_compare_of_pool", ["evaluate"], _fr_compare_of_pool),
-    Template("fr_bodmas_combo", ["create"], _fr_bodmas_combo),
-    Template("fr_savings_word_problem", ["create"], _fr_savings_word_problem),
-    Template("fr_donation_word_problem", ["create"], _fr_donation_word_problem),
+    Template("fr_of_operation_pool", ["understand"], _fr_of_operation_pool, concept="fr-of-op"),
+    Template("fr_multiply", ["understand"], _fr_multiply),
+    Template("fr_add_same_denom", ["understand"], _fr_add_same_denom),
+    Template("fr_divide_by_whole", ["understand"], _fr_divide_by_whole),
+    Template("fr_of_two_fractions", ["understand"], _fr_of_two_fractions),
+    Template("fr_add_sub_three", ["understand"], _fr_add_sub_three),
+    Template("fr_divide_mixed", ["apply"], _fr_divide_mixed),
+    Template("fr_bodmas_combo", ["apply"], _fr_bodmas_combo),
+    Template("fr_bodmas_add_times", ["apply"], _fr_bodmas_add_times),
+    Template("fr_savings_word_problem", ["apply"], _fr_savings_word_problem),
+    Template("fr_donation_word_problem", ["apply"], _fr_donation_word_problem),
+    Template("fr_portion_word_problem", ["apply"], _fr_portion_word_problem),
 ]
 
 
@@ -545,29 +552,9 @@ def _bn_bin_to_dec(rng):
     return {"question": f"Convert {b} (binary) to a decimal number.", "answer": str(ans)}
 
 
-def _bn_dec_to_bin2(rng):
-    n = rng.randint(10, 60)
-    ans = s.dec_to_bin(n)
-    return {"question": f"Convert the decimal number {n} to a binary number.", "answer": ans}
-
-
 def _bn_bin_add(rng):
     b1 = _random_binstr(rng, 4, 5)
     b2 = _random_binstr(rng, 4, 5)
-    ans = s.bin_add(b1, b2)
-    return {"question": f"Add (in binary): {b1} + {b2}", "answer": ans}
-
-
-def _bn_expand_larger(rng):
-    b = _random_binstr(rng, 4, 6)
-    val = s.bin_to_dec(b)
-    q = f"Convert {b} (binary) to decimal by expanding in powers of 2. Give the decimal value."
-    return {"question": q, "answer": str(val)}
-
-
-def _bn_bin_add2(rng):
-    b1 = _random_binstr(rng, 5, 7)
-    b2 = _random_binstr(rng, 5, 7)
     ans = s.bin_add(b1, b2)
     return {"question": f"Add (in binary): {b1} + {b2}", "answer": ans}
 
@@ -586,56 +573,6 @@ def dec_to_bin_safe(n):
     return s.dec_to_bin(n) if n > 0 else "0"
 
 
-def _bn_verify_sub(rng):
-    b1 = _random_binstr(rng, 4, 6)
-    v1 = s.bin_to_dec(b1)
-    v2 = rng.randint(0, v1)
-    b2 = dec_to_bin_safe(v2)
-    actual = s.bin_sub(b1, b2)
-    make_true = rng.random() < 0.5
-    shown = actual if make_true else s.dec_to_bin(s.bin_to_dec(actual) + rng.randint(1, 3))
-    answer = "Yes" if make_true else "No"
-    q = f"Verify whether {b1} - {b2} = {shown} (all in binary) is correct. Answer Yes or No."
-    return {"question": q, "answer": answer}
-
-
-def _bn_verify_add(rng):
-    b1 = _random_binstr(rng, 4, 6)
-    b2 = _random_binstr(rng, 4, 6)
-    actual = s.bin_add(b1, b2)
-    make_true = rng.random() < 0.5
-    shown = actual if make_true else s.dec_to_bin(s.bin_to_dec(actual) + rng.randint(1, 3))
-    answer = "Yes" if make_true else "No"
-    q = f"Is {b1} + {b2} = {shown} (all in binary) correct? Answer Yes or No."
-    return {"question": q, "answer": answer}
-
-
-def _bn_compare(rng):
-    b = _random_binstr(rng, 3, 6)
-    bval = s.bin_to_dec(b)
-    delta = _nonzero(rng, -6, 6)
-    dec = max(0, bval + delta)
-    if dec == bval:
-        dec += 1
-    q = f"Which is larger: {b} (binary) or {dec} (decimal)? Answer '{b}' or '{dec}'."
-    answer = b if bval > dec else str(dec)
-    return {"question": q, "answer": answer}
-
-
-def _bn_next_binary(rng):
-    b = _random_binstr(rng, 3, 6)
-    ans = s.next_binary(b)
-    return {"question": f"Write the next binary number after {b}.", "answer": ans}
-
-
-def _bn_dec_to_bin_then_subtract(rng):
-    n1 = rng.randint(30, 90)
-    n2 = rng.randint(5, n1 - 5)
-    ans = s.dec_to_bin(n1 - n2)
-    q = f"Convert {n1} (decimal) to binary, then subtract {n2} (decimal, converted to binary). Give the answer in binary."
-    return {"question": q, "answer": ans}
-
-
 def _bn_bin_add3(rng):
     b1 = _random_binstr(rng, 3, 5)
     b2 = _random_binstr(rng, 3, 5)
@@ -644,25 +581,33 @@ def _bn_bin_add3(rng):
     return {"question": f"Add (in binary): {b1} + {b2} + {b3}", "answer": ans}
 
 
+def _bn_power_of_two(rng):
+    k = rng.randint(0, 8)
+    return {"question": f"What is the value of 2^{k}?", "answer": str(s.power_of_two(k))}
+
+
+def _bn_valid_binary(rng):
+    b = _random_binstr(rng, 4, 6)
+    if rng.random() < 0.5:
+        return {"question": f"Is {b} a valid binary number?", "answer": "Yes"}
+    pos = rng.randint(1, len(b) - 1)
+    invalid = b[:pos] + str(rng.randint(2, 9)) + b[pos + 1:]
+    return {"question": f"Is {invalid} a valid binary number?", "answer": "No"}
+
+
 BINARY_NUMBERS_TEMPLATES = [
-    Template("bn_digits_pool", ["remember"], _bn_digits_pool),
+    Template("bn_digits_pool", ["remember"], _bn_digits_pool, concept="bn-digits"),
+    Template("bn_base_pool", ["remember"], _bn_base_pool, concept="bn-base"),
     Template("bn_place_value", ["remember"], _bn_place_value),
-    Template("bn_dec_to_bin", ["remember"], _bn_dec_to_bin),
-    Template("bn_base_pool", ["understand"], _bn_base_pool),
+    Template("bn_power_of_two", ["remember"], _bn_power_of_two),
+    Template("bn_valid_binary", ["understand"], _bn_valid_binary),
+    Template("bn_dec_to_bin", ["understand"], _bn_dec_to_bin),
+    Template("bn_bin_to_dec", ["understand"], _bn_bin_to_dec),
     Template("bn_expand_small", ["understand"], _bn_expand_small),
     Template("bn_add_single_bit", ["understand"], _bn_add_single_bit),
-    Template("bn_bin_to_dec", ["apply"], _bn_bin_to_dec),
-    Template("bn_dec_to_bin2", ["apply"], _bn_dec_to_bin2),
     Template("bn_bin_add", ["apply"], _bn_bin_add),
-    Template("bn_expand_larger", ["analyze"], _bn_expand_larger),
-    Template("bn_bin_add2", ["analyze"], _bn_bin_add2),
-    Template("bn_bin_sub", ["analyze"], _bn_bin_sub),
-    Template("bn_verify_sub", ["evaluate"], _bn_verify_sub),
-    Template("bn_verify_add", ["evaluate"], _bn_verify_add),
-    Template("bn_compare", ["evaluate"], _bn_compare),
-    Template("bn_next_binary", ["create"], _bn_next_binary),
-    Template("bn_dec_to_bin_then_subtract", ["create"], _bn_dec_to_bin_then_subtract),
-    Template("bn_bin_add3", ["create"], _bn_bin_add3),
+    Template("bn_bin_sub", ["apply"], _bn_bin_sub),
+    Template("bn_bin_add3", ["apply"], _bn_bin_add3),
 ]
 
 
@@ -682,5 +627,44 @@ TEMPLATES_BY_LESSON.update(templates_geometry.TEMPLATES_BY_LESSON)
 TEMPLATES_BY_LESSON.update(templates_arithmetic.TEMPLATES_BY_LESSON)
 
 
-def templates_for(lesson_id: str, lo_level: str) -> list[Template]:
-    return [t for t in TEMPLATES_BY_LESSON.get(lesson_id, []) if lo_level in t.lo_levels]
+# ───────────────────────────── bank templates ─────────────────────────────
+
+from . import bank as B  # noqa: E402
+
+
+def _fixed(item):
+    def generate(_rng):
+        return {k: v for k, v in item.items() if k != "concept"}
+    return generate
+
+
+_BANK_PREFIX = {
+    "number-patterns": "np", "fractions-bodmas": "fr", "binary-numbers": "bn",
+    "area-of-shapes": "ar", "percentages": "pc", "sets": "st",
+}
+
+
+def _bank_templates(lesson_id: str) -> list[Template]:
+    prefix = _BANK_PREFIX[lesson_id]
+    return [
+        Template(
+            f"{prefix}_bank_q{quiz_set}_{code}{i}", [level], _fixed(item),
+            concept=item.get("concept"), quiz_set=quiz_set, feature_text=item["question"],
+        )
+        for quiz_set in (1, 2)
+        for level, code, i, item in B.bank_items(lesson_id, quiz_set)
+    ]
+
+
+for _lesson_id in TEMPLATES_BY_LESSON:
+    TEMPLATES_BY_LESSON[_lesson_id] = TEMPLATES_BY_LESSON[_lesson_id] + _bank_templates(_lesson_id)
+
+
+def templates_for(lesson_id: str, lo_level: str, quiz_set: int | None = None) -> list[Template]:
+    """Templates valid for one (lesson, level) slot. Bank templates are
+    limited to the requested quiz_set (1 = first attempt, 2 = retake);
+    quiz_set=None returns every bank template."""
+    return [
+        t for t in TEMPLATES_BY_LESSON.get(lesson_id, [])
+        if lo_level in t.lo_levels and (not t.is_bank or quiz_set is None or t.quiz_set == quiz_set)
+    ]

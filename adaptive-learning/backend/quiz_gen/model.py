@@ -1,11 +1,12 @@
 """quiz_gen/model.py — The trained model in this system.
 
-Scope, deliberately: with only 180 seed questions in quiz.pdf (54 across
-the 3 piloted lessons), there isn't enough real data to safely fine-tune an
-open-ended text generator and trust ITS answers - a wrong answer shown to a
-real student is unacceptable. So this model's job is narrower and safer:
+Scope, deliberately: with only a few hundred verified questions (the LO
+owner's 144 quiz questions in bank.py plus the solver-backed templates),
+there isn't enough real data to safely fine-tune an open-ended text
+generator and trust ITS answers - a wrong answer shown to a real student is
+unacceptable. So this model's job is narrower and safer:
 given a (lesson, LO level) slot to fill, LEARN which of the already
-solver-verified templates (templates.py) is the best fit, and weight
+verified templates (templates.py) is the best fit, and weight
 sampling toward it - real supervised training, real gradient descent, real
 saved weights, but with zero path to ever influence what counts as a
 correct answer. solvers.py alone owns correctness.
@@ -35,7 +36,7 @@ LESSON_ORDER = [
     "number-patterns", "fractions-bodmas", "binary-numbers",
     "area-of-shapes", "percentages", "sets",
 ]
-LEVEL_ORDER = ["remember", "understand", "apply", "analyze", "evaluate", "create"]
+LEVEL_ORDER = ["remember", "understand", "apply"]
 
 KEYWORDS = [
     "term", "sequence", "common", "difference", "find", "write", "general",
@@ -49,9 +50,17 @@ KEYWORDS = [
     "profit", "loss", "discount", "percent", "price", "cost", "vendor",
     "set", "union", "intersection", "complement", "subset", "element",
     "mode", "median", "mean", "data", "frequency", "class", "range",
+    "symbol", "digit", "device", "bracket", "marked", "commission", "finite",
+    "equal", "equivalent", "subsets", "runner", "seats", "save", "formula",
+    "valid", "power", "land", "selling", "called", "stand",
 ]
 
 WEIGHTS_PATH = Path(__file__).resolve().parent / "template_selector.pt"
+
+# Share of each slot's sampling probability spread uniformly over all valid
+# candidates, on top of the model's learned distribution (see
+# select_template).
+EXPLORATION_SHARE = 0.35
 
 FEATURE_DIM = len(LESSON_ORDER) + len(LEVEL_ORDER) + len(KEYWORDS)
 
@@ -61,13 +70,14 @@ def _keyword_features(text: str) -> list[float]:
     return [1.0 if kw in lowered else 0.0 for kw in KEYWORDS]
 
 
-def encode(lesson_id: str, lo_level: str, template_id: str) -> np.ndarray:
+def encode(lesson_id: str, lo_level: str, feature_text: str) -> np.ndarray:
     lesson_onehot = [1.0 if lesson_id == lid else 0.0 for lid in LESSON_ORDER]
     level_onehot = [1.0 if lo_level == lvl else 0.0 for lvl in LEVEL_ORDER]
-    # the template_id itself is a readable slug (e.g. "np_nth_term_linear")
-    # that already encodes its own topic keywords - used as the text signal
-    # since the actual generated question text doesn't exist until sampled.
-    kw = _keyword_features(template_id.replace("_", " "))
+    # Template.feature_text: for parameterised templates the readable
+    # template_id slug (e.g. "np nth term linear") - their question text
+    # doesn't exist until sampled - and for bank templates the fixed
+    # question itself.
+    kw = _keyword_features(feature_text)
     return np.array(lesson_onehot + level_onehot + kw, dtype=np.float32)
 
 
@@ -95,16 +105,16 @@ def build_training_data(seed: int = 0) -> tuple[np.ndarray, np.ndarray]:
         tlist = T.TEMPLATES_BY_LESSON[lesson_id]
         for tmpl in tlist:
             for level in tmpl.lo_levels:
-                xs.append(encode(lesson_id, level, tmpl.template_id))
+                xs.append(encode(lesson_id, level, tmpl.feature_text))
                 ys.append(1.0)
             wrong_levels = [lvl for lvl in LEVEL_ORDER if lvl not in tmpl.lo_levels]
             for level in rng.sample(wrong_levels, k=min(3, len(wrong_levels))):
-                xs.append(encode(lesson_id, level, tmpl.template_id))
+                xs.append(encode(lesson_id, level, tmpl.feature_text))
                 ys.append(0.0)
             other_lessons = [lid for lid in LESSON_ORDER if lid != lesson_id]
             for other in other_lessons:
                 level = rng.choice(LEVEL_ORDER)
-                xs.append(encode(other, level, tmpl.template_id))
+                xs.append(encode(other, level, tmpl.feature_text))
                 ys.append(0.0)
     return np.stack(xs), np.array(ys, dtype=np.float32)
 
@@ -166,13 +176,18 @@ def select_template(lesson_id: str, lo_level: str, candidates: list, rng: random
         return rng.choice(candidates)
 
     with torch.no_grad():
-        feats = np.stack([encode(lesson_id, lo_level, c.template_id) for c in candidates])
+        feats = np.stack([encode(lesson_id, lo_level, c.feature_text) for c in candidates])
         scores = model(torch.from_numpy(feats)).numpy()
 
     scaled = scores / max(temperature, 1e-6)
     scaled -= scaled.max()
     weights = np.exp(scaled)
     weights /= weights.sum()
+    # Exploration floor: every candidate is already verified valid for
+    # this slot, so the learned preference may favour some but must never
+    # shut one out entirely (unmixed, a few valid templates - including
+    # some of the LO owner's own questions - landed at ~0% probability).
+    weights = (1 - EXPLORATION_SHARE) * weights + EXPLORATION_SHARE / len(candidates)
 
     idx = rng.choices(range(len(candidates)), weights=weights.tolist(), k=1)[0]
     return candidates[idx]
