@@ -34,3 +34,7 @@ def upload_file(local_path: str, object_key: str, content_type: str) -> None:
 def get_object_bytes(object_key: str) -> bytes:
     obj = _client.get_object(Bucket=BUCKET, Key=object_key)
     return obj["Body"].read()
+
+
+def delete_object(object_key: str) -> None:
+    _client.delete_object(Bucket=BUCKET, Key=object_key)

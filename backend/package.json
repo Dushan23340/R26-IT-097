@@ -3,9 +3,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch index.js",
-    "start": "node index.js",
-    "build": "node --check index.js && node --check routes/auth.js && node --check models/userRepository.js"
+    "dev": "node init && node --watch index.js",
+    "start": "node init && node index.js",
+    "build": "node init && node --check index.js && node --check routes/auth.js && node --check models/userRepository.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

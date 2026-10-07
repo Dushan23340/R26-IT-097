@@ -6,22 +6,20 @@ placeholders ("Concept Mapping Tutorial", "Evidence-Based Decision Making
 Guide") reused for every lesson regardless of topic - not tied to any real
 URL, and not actually about the specific lesson topic.
 
-Now holds teacher-prepared short revision notes (one PDF per lesson x
-Bloom level - "remember" through "create") as PDF resources, served as
-static files from this service (static/notes/<lesson_id>/<lo_name>.pdf).
-These are BLENDED with validated_recommendations.py's teacher-validated
-video in semantic_recommender.recommend_resources() - the video answers
-"what to watch for this emotional state", the note answers "what to read
-for this Bloom level" - rather than one replacing the other.
+Now holds the Learning Outcome owner's short revision notes - one PDF per
+lesson x Bloom level (remember, understand, apply: the 3 levels the LO
+quizzes assess) - served as static files from this service
+(static/notes/<lesson_id>/<lo_name>.pdf). A note is recommended for every
+level the student scored "weak" or "average" on (mastery.py); the notes
+cover the level, while the emotion side is covered by
+validated_recommendations.py's teacher-validated video - the two are
+BLENDED in semantic_recommender.recommend_resources(), the video
+answering "what to watch for this emotional state" and the note "what to
+read for this Bloom level", rather than one replacing the other.
 
-Coverage is real, not complete: 5 of the 6 lessons have full remember
-through create coverage (binary-numbers, fractions-bodmas,
-number-patterns, percentages, sets - see below), except:
-  - area-of-shapes is missing analyze and create (not prepared upstream)
-  - sets has no notes at all (none prepared upstream)
-get_lesson_resources() returns [] for any (lesson_id, lo_name) not in the
-dict below - callers already treat "no resources" as expected, not an
-error, so these gaps degrade silently rather than needing a special case.
+All 6 lessons have all 3 levels. get_lesson_resources() still returns []
+for any (lesson_id, lo_name) not in the dict below - callers already treat
+"no resources" as expected, not an error.
 """
 
 from __future__ import annotations
@@ -62,31 +60,15 @@ _LESSON_TITLES = {
     "fractions-bodmas": "Fractions",
     "number-patterns": "Number Patterns",
     "percentages": "Percentages",
+    "sets": "Sets",
 }
 
-# lesson_id -> lo_name -> [resource, ...]. Every lesson here has one note
-# per Bloom level actually prepared (see module docstring for the two gaps).
+NOTE_LEVELS = ["remember", "understand", "apply"]
+
+# lesson_id -> lo_name -> [resource, ...]
 LESSON_RESOURCES: dict[str, dict[str, list[dict]]] = {
-    "area-of-shapes": {
-        lo: [_note("area-of-shapes", lo, _LESSON_TITLES["area-of-shapes"])]
-        for lo in ["remember", "understand", "apply", "evaluate"]
-    },
-    "binary-numbers": {
-        lo: [_note("binary-numbers", lo, _LESSON_TITLES["binary-numbers"])]
-        for lo in ["remember", "understand", "apply", "analyze", "evaluate", "create"]
-    },
-    "fractions-bodmas": {
-        lo: [_note("fractions-bodmas", lo, _LESSON_TITLES["fractions-bodmas"])]
-        for lo in ["remember", "understand", "apply", "analyze", "evaluate", "create"]
-    },
-    "number-patterns": {
-        lo: [_note("number-patterns", lo, _LESSON_TITLES["number-patterns"])]
-        for lo in ["remember", "understand", "apply", "analyze", "evaluate", "create"]
-    },
-    "percentages": {
-        lo: [_note("percentages", lo, _LESSON_TITLES["percentages"])]
-        for lo in ["remember", "understand", "apply", "analyze", "evaluate", "create"]
-    },
+    lesson_id: {lo: [_note(lesson_id, lo, title)] for lo in NOTE_LEVELS}
+    for lesson_id, title in _LESSON_TITLES.items()
 }
 
 
