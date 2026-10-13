@@ -57,7 +57,13 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})  # type: ignore
 # Every route except /health now needs the account service's JWT or the
 # internal service token (see service_auth.py).
-protect_flask(app)
+protect_flask(
+    app,
+    # Every tracked learner at once: the teacher console and adaptive-learning.
+    teacher_only={("GET", "/students"), ("GET", "/live")},
+    # A learner appears here under the pseudonym of their id.
+    id_aliases=lambda user_id: [anonymize_student_id(user_id)],
+)
 
 app.logger.setLevel(logging.INFO)
 

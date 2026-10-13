@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from typing import Dict, Optional
 
-from app.service_auth import TEACHER_ROLES, fastapi_require_role
+from app.service_auth import TEACHER_ROLES, ensure_owner, fastapi_require_role
 from app.models.schemas import RecommendationResponse
 from app.services.emotion_store import emotion_store
 from app.services.recommendation_engine import recommendation_engine
@@ -46,7 +46,7 @@ async def end_active_recommendation() -> Dict:
 
 
 @router.post("/active/join")
-async def join_active_recommendation(body: Dict) -> Dict:
+async def join_active_recommendation(body: Dict, request: Request) -> Dict:
     """
     A student's game page calls this on mount when it detects itself as
     the currently broadcast game. Body: {"student_id": "...", "session_id": "..."}.
@@ -58,12 +58,13 @@ async def join_active_recommendation(body: Dict) -> Dict:
     session_id = body.get("session_id")
     if not student_id or not session_id:
         return {"success": False, "error": "student_id and session_id are required"}
+    ensure_owner(request, student_id)
     joined = active_recommendation_store.join(student_id, session_id)
     return {"success": joined}
 
 
 @router.post("/active/finish")
-async def finish_active_recommendation(body: Dict) -> Dict:
+async def finish_active_recommendation(body: Dict, request: Request) -> Dict:
     """
     A student's game page calls this when the game ends (win/loss). Body:
     {"student_id": "...", "student_name": "...", "session_id": "...",
@@ -78,6 +79,7 @@ async def finish_active_recommendation(body: Dict) -> Dict:
     score = body.get("score")
     if not student_id or not session_id or outcome not in ("win", "loss"):
         return {"success": False, "error": "student_id, session_id, and outcome ('win'|'loss') are required"}
+    ensure_owner(request, student_id)  # results can only be reported for oneself
     recorded = active_recommendation_store.record_result(
         student_id,
         session_id,

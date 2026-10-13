@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from typing import Dict
 
-from app.service_auth import TEACHER_ROLES, fastapi_require_role
+from app.service_auth import TEACHER_ROLES, ensure_owner, fastapi_require_role
 from app.services.class_session import class_session_store
 from app.services import student_profile_bridge, adaptive_learning_bridge
 
@@ -48,7 +48,7 @@ async def end_class_session() -> Dict:
 
 
 @router.post("/join")
-async def join_class_session(body: Dict) -> Dict:
+async def join_class_session(body: Dict, request: Request) -> Dict:
     """A student's dashboard calls this when they click Join. Body:
     {"student_id": "...", "session_id": "...", "student_name": "..."}.
     session_id must match the current broadcast (from GET /state) or the
@@ -60,6 +60,7 @@ async def join_class_session(body: Dict) -> Dict:
     student_name = body.get("student_name")
     if not student_id or not session_id:
         return {"success": False, "error": "student_id and session_id are required"}
+    ensure_owner(request, student_id)  # a student can only join as themselves
     joined = class_session_store.join(student_id, session_id, student_name)
     return {"success": joined}
 

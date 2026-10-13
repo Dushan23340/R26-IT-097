@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+import service_auth
 
 from service_auth import TEACHER_ROLES, flask_require_role
 from services import intervention_service, profile_service, statistics_service, validation_service
@@ -28,6 +30,11 @@ def pending_recommendations():
 @bp.route("/recommendations/approved", methods=["GET"])
 def approved_recommendations():
     student_id = request.args.get("student_id")
+    # Without a student_id this lists every learner's recommendations, so a
+    # student is always scoped to their own (a different id is already
+    # refused by service_auth's ownership check).
+    if not service_auth.is_staff(g.identity):
+        student_id = str((g.identity or {}).get("userId", ""))
     return jsonify({"recommendations": validation_service.list_approved_recommendations(student_id)}), 200
 
 

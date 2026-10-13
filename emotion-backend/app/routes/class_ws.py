@@ -79,7 +79,9 @@ async def teacher_socket(websocket: WebSocket, session_id: str, token: str = "")
 
 @router.websocket("/ws/class-session/student")
 async def student_socket(websocket: WebSocket, session_id: str, student_id: str, name: str = "", token: str = ""):
-    if service_auth.ENABLED and service_auth.identify(query_token=token) is None:
+    # A valid token is not enough: the socket must be opened for the
+    # caller's own student id.
+    if service_auth.ENABLED and not service_auth.owns(service_auth.identify(query_token=token), student_id):
         await websocket.close(code=4401)
         return
     if session_id != _live_session_id():

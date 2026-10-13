@@ -58,7 +58,19 @@ app = Flask(__name__, static_folder=None)
 CORS(app)  # Enable CORS for frontend integration
 # Every route except /api/health and the public short-notes PDFs now needs
 # the account service's JWT or the internal service token (service_auth.py).
-protect_flask(app)
+protect_flask(
+    app,
+    teacher_only={
+        ("GET", "/api/help-requests"),
+        ("POST", "/api/help-requests/<student_id>/<lesson_id>/resolve"),
+    },
+    # Called only by emotion-backend (class ended) and analytics-service
+    # (a teacher approved a recommendation).
+    service_only={
+        ("POST", "/api/lessons/<lesson_id>/complete"),
+        ("POST", "/api/students/<student_id>/advisor-recommendations"),
+    },
+)
 
 
 @app.route("/static/notes/<lesson_id>/<lo_name>.pdf", methods=["GET"])

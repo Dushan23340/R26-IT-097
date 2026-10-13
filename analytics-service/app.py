@@ -41,7 +41,28 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 # Every route except /health now needs the account service's JWT or the
 # internal service token (service_auth.py).
-protect_flask(app)
+protect_flask(
+    app,
+    # Class-wide views: every learner's data at once.
+    teacher_only={
+        ("GET", "/class/overview"),
+        ("GET", "/class/stability-baseline"),
+        ("GET", "/recommendations/pending"),
+        ("GET", "/interventions/effectiveness"),
+        ("GET", "/fairness/disparate-impact"),
+        ("GET", "/fairness/variance-calibration"),
+        ("GET", "/fairness/alerts"),
+    },
+    # Data ingestion: only adaptive-learning and emotion-backend write here.
+    service_only={
+        ("POST", "/students"),
+        ("POST", "/sessions"),
+        ("POST", "/lo-scores"),
+        ("POST", "/sessions/<session_id>/copy-emotional-states"),
+        ("POST", "/emotional-states"),
+        ("POST", "/engagement-metrics"),
+    },
+)
 
 app.register_blueprint(profiles.bp)
 app.register_blueprint(analytics.bp)

@@ -117,20 +117,80 @@ def has_role(identity, roles) -> bool:
     return bool(identity) and (identity.get("role") == "service" or identity.get("role") in roles)
 
 
+def is_staff(identity) -> bool:
+    """Another service, a teacher or an admin: may read any learner's data."""
+    return has_role(identity, TEACHER_ROLES)
+
+
+def is_service(identity) -> bool:
+    return bool(identity) and identity.get("role") == "service"
+
+
+def owns(identity, student_id, aliases=None) -> bool:
+    """May this caller act on `student_id`'s data? Staff always may. A
+    student may only when it is their own id: the `userId` inside their
+    token (or one of its `aliases`, e.g. the pseudonym of that id).
+    "anonymous" carries no personal data and is allowed."""
+    if is_staff(identity):
+        return True
+    if not identity or student_id is None:
+        return False
+    sid = str(student_id)
+    if sid in ("", "anonymous"):
+        return True
+    own = str(identity.get("userId", ""))
+    allowed = {own}
+    if aliases and own:
+        allowed.update(str(x) for x in aliases(own))
+    return bool(own) and sid in allowed
+
+
+_ID_KEYS = ("student_id", "studentId")
+_FORBIDDEN = {"success": False, "error": "You do not have permission to do this", "reason": "forbidden"}
+
+
 # ------------------------------------------------------------------ Flask
-def protect_flask(app):
-    """Rejects unauthenticated requests to a Flask app with 401. The caller's
-    identity is left on flask.g.identity for role checks."""
+def protect_flask(app, teacher_only=(), service_only=(), id_aliases=None):
+    """Guards a Flask app.
+
+    1. Every request needs a valid credential (401 otherwise).
+    2. `service_only` / `teacher_only` are sets of (METHOD, url rule), e.g.
+       ("GET", "/students/<student_id>/history"). They are refused (403) for
+       anyone else.
+    3. Ownership: a student may only name their own id. Any `student_id` /
+       `studentId` found in the URL, the query string or the JSON body is
+       compared with the id inside their token, so a student who edits the
+       id in a request gets 403 instead of another learner's data.
+
+    The caller's identity is left on flask.g.identity."""
     from flask import g, jsonify, request
+
+    teacher_only, service_only = set(teacher_only), set(service_only)
 
     @app.before_request
     def _require_credentials():
         g.identity = None
         if not ENABLED or is_public(request.method, request.path):
             return None
-        g.identity = identify(request.headers.get("Authorization", ""), request.headers.get("X-Internal-Token", ""))
-        if g.identity is None:
+        identity = identify(request.headers.get("Authorization", ""), request.headers.get("X-Internal-Token", ""))
+        if identity is None:
             return jsonify({"success": False, "error": "Authentication required", "reason": "unauthenticated"}), 401
+        g.identity = identity
+
+        key = (request.method, request.url_rule.rule if request.url_rule else request.path)
+        if key in service_only and not is_service(identity):
+            return jsonify(_FORBIDDEN), 403
+        if key in teacher_only and not is_staff(identity):
+            return jsonify(_FORBIDDEN), 403
+
+        if not is_staff(identity):
+            named = [(request.view_args or {}).get(k) for k in _ID_KEYS] + [request.args.get(k) for k in _ID_KEYS]
+            body = request.get_json(silent=True) if request.method in ("POST", "PUT", "PATCH", "DELETE") else None
+            if isinstance(body, dict):
+                named += [body.get(k) for k in _ID_KEYS]
+            for student_id in named:
+                if student_id is not None and not owns(identity, student_id, id_aliases):
+                    return jsonify(_FORBIDDEN), 403
         return None
 
 
@@ -150,22 +210,46 @@ def flask_require_role(*roles):
 
 
 # ------------------------------------------------------------------ FastAPI
-def protect_fastapi(app):
-    """Same check as protect_flask, as HTTP middleware. Register it BEFORE
-    CORSMiddleware so CORS stays the outer layer and a 401 still carries the
-    CORS headers the browser needs to read it. WebSocket routes are not
-    covered by HTTP middleware; they call identify(query_token=...) themselves."""
+def protect_fastapi(app, teacher_only=(), service_only=()):
+    """Same rules as protect_flask, as HTTP middleware. `teacher_only` /
+    `service_only` are sets of (METHOD, path). A `student_id` in the query
+    string is checked here; ids in a JSON body are checked by the route with
+    ensure_owner(), because middleware must not consume the body. Register
+    this BEFORE CORSMiddleware so CORS stays the outer layer and a 401/403
+    still carries the CORS headers the browser needs to read it. WebSocket
+    routes are not covered by HTTP middleware; they call identify() and
+    owns() themselves."""
     from fastapi import Request
     from fastapi.responses import JSONResponse
+
+    teacher_only, service_only = set(teacher_only), set(service_only)
 
     @app.middleware("http")
     async def _require_credentials(request: Request, call_next):
         request.state.identity = None
         if ENABLED and not is_public(request.method, request.url.path):
-            request.state.identity = identify(request.headers.get("authorization", ""), request.headers.get("x-internal-token", ""))
-            if request.state.identity is None:
+            identity = identify(request.headers.get("authorization", ""), request.headers.get("x-internal-token", ""))
+            if identity is None:
                 return JSONResponse(status_code=401, content={"success": False, "detail": "Authentication required", "reason": "unauthenticated"})
+            request.state.identity = identity
+            key = (request.method, request.url.path.rstrip("/") or "/")
+            if (key in service_only and not is_service(identity)) or (key in teacher_only and not is_staff(identity)):
+                return JSONResponse(status_code=403, content={"success": False, "detail": _FORBIDDEN["error"], "reason": "forbidden"})
+            if not is_staff(identity):
+                for k in _ID_KEYS:
+                    value = request.query_params.get(k)
+                    if value is not None and not owns(identity, value):
+                        return JSONResponse(status_code=403, content={"success": False, "detail": _FORBIDDEN["error"], "reason": "forbidden"})
         return await call_next(request)
+
+
+def ensure_owner(request, student_id):
+    """For FastAPI routes that receive a student id in the JSON body:
+    raises 403 unless the caller may act on that learner's data."""
+    from fastapi import HTTPException
+
+    if ENABLED and not owns(getattr(request.state, "identity", None), student_id):
+        raise HTTPException(status_code=403, detail=_FORBIDDEN["error"])
 
 
 def fastapi_require_role(*roles):

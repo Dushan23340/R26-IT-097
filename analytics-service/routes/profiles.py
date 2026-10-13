@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, g, jsonify, request
+
+import service_auth
 
 from services import intervention_service, profile_service
 
@@ -30,7 +32,14 @@ def upsert_student():
 
 @bp.route("/students", methods=["GET"])
 def list_students():
-    return jsonify({"students": profile_service.get_all_students()}), 200
+    # A teacher sees the class. A student gets only their own row (the
+    # profile page uses it for its header), never other learners' names
+    # and e-mail addresses.
+    students = profile_service.get_all_students()
+    if not service_auth.is_staff(g.identity):
+        own = str((g.identity or {}).get("userId", ""))
+        students = [s for s in students if str(s.get("student_id")) == own]
+    return jsonify({"students": students}), 200
 
 
 @bp.route("/students/<student_id>/history", methods=["GET"])

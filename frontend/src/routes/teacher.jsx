@@ -1,7 +1,7 @@
-import { createFileRoute, useRouter } from "@tanstack/react-router";
-import { Loader2 } from "lucide-react";
-import { useAuth } from "@/lib/auth";
+import { createFileRoute } from "@tanstack/react-router";
 import { TeacherDashboard } from "@/components/TeacherDashboard";
+
+// Who may open this page is decided in one place: the Guard in __root.jsx.
 const Route = createFileRoute("/teacher")({
   head: () => ({
     meta: [
@@ -11,27 +11,7 @@ const Route = createFileRoute("/teacher")({
       { property: "og:description", content: "Live class-wide emotion analytics and interventions." }
     ]
   }),
-  component: TeacherView
+  component: TeacherDashboard
 });
-function TeacherView() {
-  const { user, isLoading } = useAuth();
-  const router = useRouter();
 
-  if (!isLoading && !user) {
-    router.navigate({ to: "/login" });
-    return <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>;
-  }
-
-  if (user?.role === "student") {
-    router.navigate({ to: "/" });
-    return <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>;
-  }
-  return <TeacherDashboard />;
-}
-export {
-  Route
-};
+export { Route };

@@ -43,7 +43,17 @@ app = FastAPI(
 )
 
 # Authentication (registered before CORS so CORS stays the outer layer).
-protect_fastapi(app)
+protect_fastapi(
+    app,
+    teacher_only={("GET", "/class-session/students")},
+    # Emotion readings come only from emotion-service.
+    service_only={
+        ("POST", "/emotions"),
+        ("POST", "/emotions/invalid"),
+        ("POST", "/emotion-event"),
+        ("POST", "/emotion-event/batch"),
+    },
+)
 
 # CORS configuration for frontend integration
 app.add_middleware(

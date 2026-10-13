@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { api } from "@/lib/api";
 import { hasValidToken } from "@/lib/authHeaders";
+import { toast } from "sonner";
 const AuthContext = createContext(void 0);
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -27,6 +28,31 @@ function AuthProvider({ children }) {
     // fake "Test Teacher" account, which meant logout could never actually
     // stick past a page refresh.
     setIsLoading(false);
+  }, []);
+  // One browser holds one login (localStorage is shared by its tabs). When
+  // another tab signs in as someone else, or signs out, follow it here too.
+  // Otherwise this tab keeps showing the old user while sending the new
+  // user's token, and every role-checked request comes back 403.
+  useEffect(() => {
+    const sync = (event) => {
+      if (event.key !== null && event.key !== "user" && event.key !== "token") return;
+      let stored = null;
+      try {
+        stored = JSON.parse(localStorage.getItem("user") || "null");
+      } catch {
+        stored = null;
+      }
+      if (!stored || !hasValidToken()) stored = null;
+      setUser((current) => {
+        if ((current?.id ?? null) === (stored?.id ?? null) && current?.role === stored?.role) return current;
+        if (stored && current) {
+          toast.info(`Now signed in as ${stored.name}`, { description: `Another tab signed in as a ${stored.role}. One browser can hold one login at a time.` });
+        }
+        return stored;
+      });
+    };
+    window.addEventListener("storage", sync);
+    return () => window.removeEventListener("storage", sync);
   }, []);
   const signup = async (email, password, name, role) => {
     try {
