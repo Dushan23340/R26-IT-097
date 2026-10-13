@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Dict
 
+from app.service_auth import TEACHER_ROLES, fastapi_require_role
 from app.services.class_session import class_session_store
 from app.services import student_profile_bridge, adaptive_learning_bridge
 
@@ -13,7 +14,7 @@ async def get_class_session_state() -> Dict:
     return class_session_store.get_state()
 
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def start_class_session(body: Dict) -> Dict:
     """Body: {"subject": "Mathematics", "started_by": "Dr. Sarah Johnson",
     "lesson_id": "fractions-bodmas"}. lesson_id is optional - a real
@@ -26,7 +27,7 @@ async def start_class_session(body: Dict) -> Dict:
     return {"success": True, **class_session_store.get_state()}
 
 
-@router.post("/end")
+@router.post("/end", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def end_class_session() -> Dict:
     """Teacher ends the live class for the whole class. Pushes a final
     engagement_metrics summary to analytics-service for every student who

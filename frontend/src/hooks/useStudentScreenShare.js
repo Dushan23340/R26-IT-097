@@ -1,3 +1,4 @@
+import { withTokenParam } from "@/lib/authHeaders";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
@@ -25,9 +26,11 @@ export function useStudentScreenShare({ sessionId, studentId, name, enabled }) {
     if (!enabled || !sessionId || !studentId) return undefined;
 
     const ws = new WebSocket(
-      wsUrl(
-        `/ws/class-session/student?session_id=${encodeURIComponent(sessionId)}` +
-          `&student_id=${encodeURIComponent(studentId)}&name=${encodeURIComponent(name || "")}`
+      withTokenParam(
+        wsUrl(
+          `/ws/class-session/student?session_id=${encodeURIComponent(sessionId)}` +
+            `&student_id=${encodeURIComponent(studentId)}&name=${encodeURIComponent(name || "")}`
+        )
       )
     );
     wsRef.current = ws;

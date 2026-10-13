@@ -4,6 +4,8 @@ from statistics import mean
 
 from flask import Blueprint, jsonify, request
 
+from service_auth import TEACHER_ROLES, flask_require_role
+
 from services import fairness_audit_service, fairness_service, profile_service
 
 bp = Blueprint("fairness", __name__)
@@ -46,6 +48,7 @@ def alerts():
 
 
 @bp.route("/fairness/alerts/<int:audit_id>/resolve", methods=["POST"])
+@flask_require_role(*TEACHER_ROLES)
 def resolve_alert(audit_id: int):
     data = request.get_json(force=True) or {}
     reviewer = data.get("reviewer")

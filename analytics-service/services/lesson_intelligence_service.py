@@ -22,8 +22,11 @@ STRONG_THRESHOLD = 75.0  # matches fairness_service.MASTERY_THRESHOLD
 # statistics_service.compute_class_stability_baseline's class-mean+1.5SD
 # approach (used for the whole-profile at-risk flag), since computing a
 # class baseline PER LESSON would mean an extra full-class DB scan for
-# every lesson a student has ever taken. 15 points of std-dev on a 0-100
-# percentile score is a reasonable, documented absolute bar for "unstable".
+# every lesson a student has ever taken. 15 points on a 0-100 percentile
+# score is a reasonable, documented absolute bar for "unstable". Compared
+# against compute_stability's `volatility` (fluctuation around the lesson's
+# own trend line), not the plain std-dev - otherwise a lesson a learner
+# steadily improved in (20 -> 100) is labelled unstable and a "weakness".
 HIGH_VARIANCE_STD_DEV = 15.0
 
 
@@ -65,7 +68,7 @@ def generate_lesson_intelligence(student_id: str) -> list[dict[str, Any]]:
         trend_direction = trend["direction"] if trend.get("available") else "insufficient_data"
 
         stability = statistics_service.compute_stability(rows)
-        is_unstable = bool(stability.get("available") and stability["std_dev"] > HIGH_VARIANCE_STD_DEV)
+        is_unstable = bool(stability.get("available") and stability["volatility"] > HIGH_VARIANCE_STD_DEV)
 
         dominant_emotion = None
         emotions = emotions_by_lesson.get(lesson_id)

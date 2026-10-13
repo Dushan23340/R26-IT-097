@@ -479,38 +479,110 @@ function LessonsPage() {
   );
   const resultLessonTitle = resultLesson?.title ?? "this lesson";
 
+  // ---- presentation helpers ----
+  // Each step is its own view, so start it at the top of the page (after
+  // "Submit Quiz" the browser was otherwise left scrolled to the bottom).
+  useEffect(() => {
+    window.scrollTo({ top: 0 });
+  }, [screen]);
+  const LEVEL_ORDER = ["remember", "understand", "apply", "analyze", "evaluate", "create"];
+  const byLevel = ([a], [b]) => LEVEL_ORDER.indexOf(a) - LEVEL_ORDER.indexOf(b);
+  const STEPS = [
+    { key: "select", label: "Choose a lesson" },
+    { key: "quiz", label: "Take the quiz" },
+    { key: "results", label: "Results and support" },
+  ];
+  const stepIndex = STEPS.findIndex((s) => s.key === screen);
+  const LEVEL_TONE = {
+    remember: "var(--teal)",
+    understand: "var(--emotion-happy)",
+    apply: "var(--amber)",
+  };
+  const toneOf = (lo) => LEVEL_TONE[lo] || "var(--chart-5)";
+  const tierInfo = (tier) =>
+    tier === "good"
+      ? { label: "Good", colour: "var(--emotion-happy)", Icon: CheckCircle2 }
+      : tier === "average"
+      ? { label: "Average", colour: "var(--amber)", Icon: AlertTriangle }
+      : { label: "Weak", colour: "var(--destructive)", Icon: XCircle };
+  const totalQuestions = quiz?.questions?.length ?? 0;
+  const answeredPct = totalQuestions ? Math.round((answeredCount / totalQuestions) * 100) : 0;
+  const overall = result ? Math.round(result.overall_percentile_mastery) : 0;
+  const overallColour = overall >= 75 ? "var(--emotion-happy)" : overall >= 50 ? "var(--amber)" : "var(--destructive)";
+  const availableCount = lessons.filter((l) => access[l.lesson_id]?.can_take_quiz).length;
+
   return (
-    <div className="space-y-6">
-      <div className="glass rounded-2xl p-6">
-        <div className="flex items-center gap-2 text-xs font-semibold text-primary mb-2">
-          <BookOpen className="h-4 w-4" />
-          LEARNING OUTCOME ACHIEVEMENT
+    <div className="space-y-6 max-w-7xl mx-auto">
+      {/* Page header with the three-step path */}
+      <section className="glass rounded-3xl p-6 sm:p-8 relative overflow-hidden">
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: "radial-gradient(50% 90% at 0% 0%, color-mix(in oklab, var(--teal) 15%, transparent), transparent 70%)" }}
+        />
+        <div className="relative flex flex-wrap items-end justify-between gap-6">
+          <div className="min-w-0">
+            <p className="eyebrow flex items-center gap-2">
+              <BookOpen className="h-3.5 w-3.5" /> Adaptive Learning
+            </p>
+            <h1 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight">
+              {screen === "quiz" && quiz ? quiz.title : screen === "results" ? `${resultLessonTitle}: your results` : "Choose a lesson"}
+            </h1>
+            <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
+              {screen === "quiz"
+                ? "Answer what you can, then submit. Each question is tagged with the level of thinking it checks."
+                : screen === "results"
+                ? "See how you did at each level, then work through the resources chosen for your gaps."
+                : "Every quiz is made fresh for you: 12 questions across Remember, Understand and Apply."}
+            </p>
+          </div>
+          <ol className="flex items-center gap-2 text-xs font-medium" aria-label="Progress">
+            {STEPS.map((s, i) => {
+              const done = i < stepIndex;
+              const current = i === stepIndex;
+              return (
+                <li key={s.key} className="flex items-center gap-2" aria-current={current ? "step" : undefined}>
+                  <span
+                    className={`h-7 w-7 rounded-full grid place-items-center text-[11px] font-bold ${done || current ? "text-primary-foreground" : "text-muted-foreground border border-border"}`}
+                    style={done || current ? { background: "var(--gradient-primary)" } : undefined}
+                  >
+                    {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
+                  </span>
+                  <span className={`hidden sm:inline ${current ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</span>
+                  {i < STEPS.length - 1 && <span className="h-px w-5 sm:w-8 bg-border" />}
+                </li>
+              );
+            })}
+          </ol>
         </div>
-        <h1 className="font-display text-2xl sm:text-3xl font-bold">Adaptive Learning</h1>
-        <p className="text-sm text-muted-foreground mt-1">
-          Real questions, good/average/weak mastery scoring across Bloom's Taxonomy levels, and semantic
-          resource recommendations for anything you haven't mastered yet.
-        </p>
-      </div>
+      </section>
 
       {error && (
-        <div className="glass rounded-2xl p-4 border border-destructive/30 bg-destructive/5 text-sm text-destructive flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" /> {error}
+        <div role="alert" className="glass rounded-2xl p-4 border border-destructive/30 bg-destructive/5 text-sm text-destructive flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0" /> {error}
         </div>
       )}
 
+      {/* ------------------------------------------------ 1. choose a lesson */}
       {screen === "select" && (
-        <div className="glass rounded-2xl p-6">
-          <h2 className="text-sm font-semibold mb-4">Choose a lesson</h2>
+        <section>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-display text-lg font-bold">Lessons</h2>
+            {!loadingLessons && lessons.length > 0 && (
+              <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-primary" /> {availableCount} ready</span>
+                <span className="flex items-center gap-1.5"><Lock className="h-3 w-3" /> {lessons.length - availableCount} locked</span>
+              </div>
+            )}
+          </div>
           {loadingLessons ? (
-            <div className="py-8 flex justify-center text-muted-foreground">
-              <RefreshCw className="h-5 w-5 animate-spin" />
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[0, 1, 2, 3, 4, 5].map((i) => <div key={i} className="skeleton h-40" />)}
             </div>
           ) : lessons.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No lessons available.</p>
+            <div className="glass rounded-2xl p-10 text-center text-sm text-muted-foreground">No lessons available.</div>
           ) : (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {lessons.map((lesson) => {
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {lessons.map((lesson, i) => {
                 const lessonAccess = access[lesson.lesson_id];
                 const canTake = lessonAccess?.can_take_quiz ?? false;
                 // Paused work for this lesson (a half-answered quiz, or a
@@ -519,172 +591,257 @@ function LessonsPage() {
                 // has since been re-locked (the student legitimately
                 // started it).
                 const resumable = quiz?.lesson_id === lesson.lesson_id;
-                const resumeLabel = result ? "Resume — finish recommendations" : "Resume attempt";
+                const resumeLabel = result ? "Resume: finish recommendations" : "Resume attempt";
                 const lockReason = !lessonAccess
                   ? "Checking access..."
                   : !lessonAccess.completed
                   ? "Attend the live class for this lesson first"
                   : "Waiting for your teacher to unlock this quiz";
+                const open = canTake || resumable;
                 return (
                   <button
                     key={lesson.lesson_id}
                     type="button"
-                    onClick={() => (canTake || resumable) && startLesson(lesson.lesson_id)}
-                    disabled={loadingQuiz || (!canTake && !resumable)}
-                    className="text-left p-4 rounded-xl border border-border/60 hover:border-primary/60 transition-colors disabled:opacity-50 disabled:hover:border-border/60"
+                    onClick={() => open && startLesson(lesson.lesson_id)}
+                    disabled={loadingQuiz || !open}
+                    className={`group text-left flex flex-col rounded-2xl border p-5 transition-all ${
+                      open ? "glass lift border-border/70" : "border-border/50 bg-background/20 cursor-not-allowed"
+                    }`}
                   >
-                    <div className="text-xs uppercase tracking-widest text-muted-foreground">{lesson.subject}</div>
-                    <div className="font-semibold mt-1">{lesson.title}</div>
-                    {resumable ? (
-                      <div className="text-xs text-primary mt-2 flex items-center gap-1 font-medium">
-                        <RefreshCw className="h-3 w-3" /> {resumeLabel} <ArrowRight className="h-3 w-3" />
-                      </div>
-                    ) : canTake ? (
-                      <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                        {lesson.question_count} questions <ArrowRight className="h-3 w-3" />
-                      </div>
-                    ) : (
-                      <div className="text-xs text-muted-foreground mt-2 flex items-center gap-1">
-                        <Lock className="h-3 w-3" /> {lockReason}
-                      </div>
-                    )}
+                    <div className="flex items-start justify-between gap-3">
+                      <span
+                        className={`h-11 w-11 rounded-xl grid place-items-center text-sm font-bold tnum ${open ? "text-primary-foreground" : "text-muted-foreground bg-secondary"}`}
+                        style={open ? { background: "var(--gradient-primary)" } : undefined}
+                      >
+                        {open ? String(i + 1).padStart(2, "0") : <Lock className="h-4 w-4" />}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-[11px] font-semibold border ${
+                          resumable ? "border-amber/40 bg-amber/10 text-amber" : canTake ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground"
+                        }`}
+                      >
+                        {resumable ? "In progress" : canTake ? "Ready" : "Locked"}
+                      </span>
+                    </div>
+                    <div className="mt-4 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{lesson.subject}</div>
+                    <div className={`mt-1 text-lg font-semibold leading-snug ${open ? "" : "text-muted-foreground"}`}>{lesson.title}</div>
+                    <div className="mt-auto pt-4 text-sm">
+                      {resumable ? (
+                        <span className="flex items-center gap-1.5 font-semibold text-amber">
+                          <RefreshCw className="h-3.5 w-3.5" /> {resumeLabel}
+                          <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                        </span>
+                      ) : canTake ? (
+                        <span className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground">{lesson.question_count} questions</span>
+                          <span className="flex items-center gap-1.5 font-semibold text-primary">
+                            Start quiz <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                          </span>
+                        </span>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">{lockReason}</span>
+                      )}
+                    </div>
                   </button>
                 );
               })}
             </div>
           )}
-        </div>
+          <p className="mt-5 flex items-start gap-2 text-xs text-muted-foreground">
+            <Monitor className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
+            A quiz opens after you attend the lesson's live class and your teacher unlocks it.
+          </p>
+        </section>
       )}
 
+      {/* ------------------------------------------------ 2. take the quiz */}
       {screen === "quiz" && quiz && (
-        <div className="glass rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-4">
-            <div>
-              <div className="text-xs uppercase tracking-widest text-muted-foreground">{quiz.subject}</div>
-              <h2 className="font-display text-xl font-bold">{quiz.title}</h2>
-            </div>
-            <div className="text-sm text-muted-foreground">{answeredCount}/{quiz.questions.length} answered</div>
-          </div>
-
-          <div className="space-y-5">
-            {quiz.questions.map((q, idx) => (
-              <div key={q.id} className="p-4 rounded-xl border border-border/60">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-mono text-muted-foreground">Q{idx + 1}</span>
-                  <span className="text-[10px] uppercase tracking-widest px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                    {LO_LABELS[q.lo_level] || q.lo_level}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{q.difficulty}</span>
-                </div>
-                <p className="text-sm font-medium mb-3">{q.question}</p>
-                {q.options ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {q.options.map((opt) => (
-                      <button
-                        key={opt}
-                        type="button"
-                        onClick={() => selectAnswer(q.id, opt)}
-                        className={`text-left px-3 py-2 rounded-lg text-sm border transition-colors ${
-                          answers[q.id] === opt
-                            ? "border-primary bg-primary/10 text-primary font-medium"
-                            : "border-border/60 hover:border-primary/40"
-                        }`}
-                      >
-                        {opt}
-                      </button>
-                    ))}
+        <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
+          <div className="space-y-4">
+            {quiz.questions.map((q, idx) => {
+              const answered = Boolean(answers[q.id]);
+              const tone = toneOf(q.lo_level);
+              return (
+                <div
+                  key={q.id}
+                  id={`question-${idx + 1}`}
+                  className={`glass rounded-2xl p-5 sm:p-6 scroll-mt-28 border ${answered ? "border-primary/35" : "border-border/60"}`}
+                >
+                  <div className="flex flex-wrap items-center gap-2 mb-3">
+                    <span
+                      className={`h-8 w-8 rounded-lg grid place-items-center text-xs font-bold tnum ${answered ? "text-primary-foreground" : "text-muted-foreground bg-secondary"}`}
+                      style={answered ? { background: "var(--gradient-primary)" } : undefined}
+                    >
+                      {idx + 1}
+                    </span>
+                    <span
+                      className="rounded-full px-2.5 py-0.5 text-[11px] font-semibold"
+                      style={{ color: tone, background: `color-mix(in oklab, ${tone} 13%, transparent)`, border: `1px solid color-mix(in oklab, ${tone} 35%, transparent)` }}
+                    >
+                      {LO_LABELS[q.lo_level] || q.lo_level}
+                    </span>
+                    <span className="text-[11px] capitalize text-muted-foreground">{q.difficulty}</span>
                   </div>
-                ) : (
-                  <input
-                    type="text"
-                    value={answers[q.id] || ""}
-                    onChange={(e) => selectAnswer(q.id, e.target.value)}
-                    placeholder="Type your answer..."
-                    className="input-field w-full"
-                    autoComplete="off"
-                  />
-                )}
-              </div>
-            ))}
+                  <p className="text-base font-medium leading-relaxed mb-4">{q.question}</p>
+                  {q.options ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {q.options.map((opt) => (
+                        <button
+                          key={opt}
+                          type="button"
+                          onClick={() => selectAnswer(q.id, opt)}
+                          className={`text-left px-4 py-3 rounded-xl text-sm border transition-colors ${
+                            answers[q.id] === opt
+                              ? "border-primary bg-primary/10 text-primary font-medium"
+                              : "border-border/60 hover:border-primary/40"
+                          }`}
+                        >
+                          {opt}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
+                    <input
+                      type="text"
+                      value={answers[q.id] || ""}
+                      onChange={(e) => selectAnswer(q.id, e.target.value)}
+                      placeholder="Type your answer"
+                      aria-label={`Answer to question ${idx + 1}`}
+                      className="h-12 w-full rounded-xl border border-border px-4 text-sm"
+                      autoComplete="off"
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
 
-          <div className="mt-6 flex gap-3">
+          {/* Progress and submit: stays in view while scrolling the questions */}
+          <aside className="glass-strong rounded-2xl border border-border p-5 lg:sticky lg:top-24 order-first lg:order-none">
+            <div className="flex items-center justify-between">
+              <p className="eyebrow">Your progress</p>
+              <span className="text-xs text-muted-foreground tnum">{answeredCount}/{totalQuestions}</span>
+            </div>
+            <div className="mt-3 h-2 rounded-full bg-secondary overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={totalQuestions} aria-valuenow={answeredCount}>
+              <div className="h-full rounded-full transition-all duration-300" style={{ width: `${answeredPct}%`, background: "var(--gradient-primary)" }} />
+            </div>
+            <div className="mt-4 grid grid-cols-6 gap-1.5">
+              {quiz.questions.map((q, idx) => {
+                const answered = Boolean(answers[q.id]);
+                return (
+                  <a
+                    key={q.id}
+                    href={`#question-${idx + 1}`}
+                    title={`Question ${idx + 1}${answered ? " (answered)" : ""}`}
+                    className={`h-9 rounded-lg grid place-items-center text-xs font-semibold tnum transition-colors ${
+                      answered ? "text-primary-foreground" : "text-muted-foreground border border-border hover:border-primary/50"
+                    }`}
+                    style={answered ? { background: "var(--gradient-primary)" } : undefined}
+                  >
+                    {idx + 1}
+                  </a>
+                );
+              })}
+            </div>
+            <div className="hairline my-5" />
             <button
               type="button"
               onClick={submitQuiz}
               disabled={submitting || answeredCount === 0}
-              className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
+              className="w-full h-12 rounded-xl text-sm font-semibold text-primary-foreground flex items-center justify-center gap-2 transition-[filter,transform] hover:brightness-110 active:translate-y-px disabled:opacity-50"
+              style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
             >
               {submitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
               Submit Quiz
             </button>
+            {answeredCount > 0 && answeredCount < totalQuestions && (
+              <p className="mt-2 text-xs text-muted-foreground text-center">{totalQuestions - answeredCount} unanswered. Blank answers count as wrong.</p>
+            )}
             <button
               type="button"
               onClick={backToLessons}
-              className="px-5 py-2.5 rounded-lg text-sm font-medium border border-border/60 hover:bg-secondary transition-colors"
+              className="mt-3 w-full h-11 rounded-xl text-sm font-medium border border-border/60 hover:bg-secondary transition-colors"
             >
               Back to Lessons
             </button>
-          </div>
+            <p className="mt-3 text-[11px] text-muted-foreground text-center">Your answers are saved. You can come back and resume.</p>
+          </aside>
         </div>
       )}
 
+      {/* ------------------------------------------------ 3. results and support */}
       {screen === "results" && result && (
         <div className="space-y-6">
-          <div className="glass rounded-2xl p-6">
-            <div className="flex items-center gap-3 mb-4">
-              <Trophy className="h-6 w-6 text-primary" />
-              <div>
-                <h2 className="font-display text-xl font-bold">
-                  {result.overall_percentile_mastery}% overall mastery
+          <section className="glass rounded-3xl p-6 sm:p-8">
+            <div className="flex flex-wrap items-center gap-8">
+              <div
+                className="relative h-36 w-36 rounded-full grid place-items-center shrink-0"
+                style={{ background: `conic-gradient(${overallColour} ${overall * 3.6}deg, var(--secondary) 0deg)` }}
+                role="img"
+                aria-label={`${overall}% overall mastery`}
+              >
+                <div className="h-[118px] w-[118px] rounded-full grid place-items-center text-center" style={{ background: "var(--card)" }}>
+                  <div>
+                    <div className="text-4xl font-bold tnum leading-none" style={{ color: overallColour }}>{overall}%</div>
+                    <div className="mt-1.5 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Overall mastery</div>
+                  </div>
+                </div>
+              </div>
+              <div className="flex-1 min-w-[240px]">
+                <p className="eyebrow flex items-center gap-2"><Trophy className="h-3.5 w-3.5" /> Quiz result</p>
+                <h2 className="mt-2 font-display text-2xl font-bold">
+                  {result.weak_los.length === 0
+                    ? "Excellent. You have mastered every level."
+                    : overall >= 50
+                    ? "Good progress. A few areas need another look."
+                    : "This one was tough. Let's close the gaps."}
                 </h2>
-                <p className="text-xs text-muted-foreground">
+                <p className="mt-2 text-xs text-muted-foreground max-w-xl">
                   {result.lo_scores.remember?.total_count === 5
-                    ? "Remember & Understand: 5 questions each - 4-5 correct is Good, 3 is Average, 0-2 is Weak. Apply: 2 questions - 2 is Good, 1 is Average, 0 is Weak"
+                    ? "Remember and Understand have 5 questions each: 4 or 5 correct is Good, 3 is Average, 0 to 2 is Weak. Apply has 2 questions: 2 is Good, 1 is Average, 0 is Weak."
                     : result.lo_scores[Object.keys(result.lo_scores)[0]]?.total_count === 3
-                      ? "3 questions per Learning Outcome - all 3 correct is Good, 2 is Average, 0-1 is Weak"
-                      : "Percentage of questions answered correctly per Learning Outcome"}
+                      ? "3 questions per Learning Outcome: all 3 correct is Good, 2 is Average, 0 or 1 is Weak."
+                      : "Percentage of questions answered correctly per Learning Outcome."}
                 </p>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {Object.entries(result.lo_scores).map(([lo, data]) => (
-                <div
-                  key={lo}
-                  className={`p-3 rounded-xl border text-center ${
-                    data.mastery_tier === "good"
-                      ? "border-emotion-happy/40 bg-emotion-happy/5"
-                      : data.mastery_tier === "average"
-                      ? "border-amber/40 bg-amber/5"
-                      : "border-error/40 bg-error/5"
-                  }`}
-                >
-                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{LO_LABELS[lo] || lo}</div>
-                  <div className="font-display text-lg font-bold mt-1">
-                    {data.correct_count}/{data.total_count}
+            <div className="mt-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {Object.entries(result.lo_scores).sort(byLevel).map(([lo, data]) => {
+                const tier = tierInfo(data.mastery_tier);
+                const pct = data.total_count ? Math.round((data.correct_count / data.total_count) * 100) : 0;
+                return (
+                  <div
+                    key={lo}
+                    className="rounded-2xl border p-4"
+                    style={{ borderColor: `color-mix(in oklab, ${tier.colour} 35%, transparent)`, background: `color-mix(in oklab, ${tier.colour} 6%, transparent)` }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-semibold">{LO_LABELS[lo] || lo}</span>
+                      <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: tier.colour }}>
+                        <tier.Icon className="h-3.5 w-3.5" /> {tier.label}
+                      </span>
+                    </div>
+                    <div className="mt-3 flex items-end justify-between">
+                      <span className="font-display text-3xl font-bold tnum">{data.correct_count}<span className="text-lg text-muted-foreground">/{data.total_count}</span></span>
+                      <span className="text-xs text-muted-foreground">correct</span>
+                    </div>
+                    <div className="mt-3 h-1.5 rounded-full bg-secondary overflow-hidden">
+                      <div className="h-full rounded-full" style={{ width: `${pct}%`, background: tier.colour }} />
+                    </div>
                   </div>
-                  <div className="flex items-center justify-center gap-1 mt-1 text-[10px]">
-                    {data.mastery_tier === "good" ? (
-                      <><CheckCircle2 className="h-3 w-3 text-emotion-happy" /> Good</>
-                    ) : data.mastery_tier === "average" ? (
-                      <><AlertTriangle className="h-3 w-3 text-amber" /> Average</>
-                    ) : (
-                      <><XCircle className="h-3 w-3 text-error" /> Weak</>
-                    )}
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
-          </div>
+          </section>
 
           {previousResult && (
-            <div className="glass rounded-2xl p-6">
+            <section className="glass rounded-2xl p-6">
               <div className="flex items-center gap-2 mb-4">
                 <TrendingUp className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold">Progress since your last attempt</h2>
+                <h2 className="font-semibold">Progress since your last attempt</h2>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {previousResult.weak_los.map((lo) => {
                   const before = previousResult.lo_scores[lo]?.percentile_mastery_score ?? 0;
                   const after = result.lo_scores[lo]?.percentile_mastery_score ?? 0;
@@ -693,7 +850,7 @@ function LessonsPage() {
                   return (
                     <div
                       key={lo}
-                      className={`p-3 rounded-xl border flex items-center justify-between ${
+                      className={`p-4 rounded-xl border flex items-center justify-between ${
                         mastered
                           ? "border-emotion-happy/40 bg-emotion-happy/5"
                           : improved
@@ -702,9 +859,9 @@ function LessonsPage() {
                       }`}
                     >
                       <div>
-                        <div className="text-xs uppercase tracking-widest text-muted-foreground">{LO_LABELS[lo] || lo}</div>
-                        <div className="text-sm font-semibold mt-1">
-                          {before}% <ArrowRight className="inline h-3 w-3 mx-1" /> {after}%
+                        <div className="text-xs text-muted-foreground">{LO_LABELS[lo] || lo}</div>
+                        <div className="text-lg font-semibold mt-1 tnum">
+                          {before}% <ArrowRight className="inline h-3.5 w-3.5 mx-1 text-muted-foreground" /> {after}%
                         </div>
                       </div>
                       {mastered ? (
@@ -718,14 +875,24 @@ function LessonsPage() {
                   );
                 })}
               </div>
-            </div>
+            </section>
           )}
 
           {result.weak_los.length > 0 && (
-            <div className="glass rounded-2xl p-6">
-              <div className="flex items-center gap-2 mb-4">
-                <Sparkles className="h-4 w-4 text-primary" />
-                <h2 className="text-sm font-semibold">Recommended resources for your gaps</h2>
+            <section className="glass rounded-2xl p-6">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-primary" />
+                  <h2 className="font-semibold">Recommended resources for your gaps</h2>
+                </div>
+                {allResourceIds.length > 0 && (
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    <span className="tnum">{completedResourceIds.size} of {allResourceIds.length} completed</span>
+                    <span className="h-1.5 w-28 rounded-full bg-secondary overflow-hidden">
+                      <span className="block h-full rounded-full" style={{ width: `${(completedResourceIds.size / allResourceIds.length) * 100}%`, background: "var(--gradient-primary)" }} />
+                    </span>
+                  </div>
+                )}
               </div>
               {(() => {
                 // A given teacher-validated resource is the same for every weak LO in
@@ -740,60 +907,72 @@ function LessonsPage() {
                   }
                 }
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Array.from(byResource.values()).map(({ res, los }) => {
                       const TypeIcon = RESOURCE_TYPE_ICONS[res.type] || FileText;
                       const done = completedResourceIds.has(res.id);
                       return (
                         <div
                           key={res.id}
-                          className={`p-3 rounded-lg border transition-colors ${
-                            done ? "border-emotion-happy/40 bg-emotion-happy/5" : "border-border/60 hover:border-primary/60"
+                          className={`flex flex-col rounded-2xl border p-4 transition-colors ${
+                            done ? "border-emotion-happy/40 bg-emotion-happy/5" : "border-border/60 bg-background/30 hover:border-primary/50"
                           }`}
                         >
-                          <div className="flex flex-wrap gap-1 mb-2">
+                          <div className="flex items-start gap-3">
+                            <span className="h-10 w-10 shrink-0 rounded-xl grid place-items-center bg-primary/10 border border-primary/30">
+                              <TypeIcon className="h-4 w-4 text-primary" />
+                            </span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-semibold leading-snug">{res.title}</p>
+                              <p className="mt-0.5 text-xs capitalize text-muted-foreground">{res.type} · {res.difficulty}</p>
+                            </div>
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-1.5">
                             {los.map((lo) => (
                               <span
                                 key={lo}
-                                className="text-[9px] uppercase tracking-widest text-muted-foreground px-1.5 py-0.5 rounded bg-white/5 border border-border/60"
+                                className="rounded-full px-2 py-0.5 text-[10px] font-semibold"
+                                style={{ color: toneOf(lo), background: `color-mix(in oklab, ${toneOf(lo)} 12%, transparent)` }}
                               >
                                 {LO_LABELS[lo] || lo}
                               </span>
                             ))}
                           </div>
-                          <a href={res.url} target="_blank" rel="noopener noreferrer" className="block">
-                            <div className="flex items-start gap-2">
-                              <TypeIcon className="h-4 w-4 text-primary flex-shrink-0 mt-0.5" />
-                              <p className="text-sm font-medium flex-1">{res.title}</p>
-                              <ExternalLink className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-1" />
-                            </div>
-                            <p className="text-xs text-muted-foreground mt-1 ml-6">{res.type} - {res.difficulty}</p>
-                            <p className="text-[10px] text-muted-foreground mt-2 ml-6">{res.rationale.join(" - ")}</p>
-                          </a>
-                          <button
-                            type="button"
-                            onClick={() => toggleResourceComplete(res.id)}
-                            className={`mt-3 ml-6 flex items-center gap-1.5 text-xs font-medium transition-colors ${
-                              done ? "text-emotion-happy" : "text-muted-foreground hover:text-primary"
-                            }`}
-                          >
-                            {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
-                            {done ? "Completed" : "Mark as complete"}
-                          </button>
+                          <p className="mt-2 text-xs text-muted-foreground">{res.rationale.join(" · ")}</p>
+                          <div className="mt-auto pt-4 flex items-center justify-between gap-2">
+                            <a
+                              href={res.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"
+                            >
+                              Open <ExternalLink className="h-3 w-3" />
+                            </a>
+                            <button
+                              type="button"
+                              onClick={() => toggleResourceComplete(res.id)}
+                              className={`flex items-center gap-1.5 text-xs font-medium transition-colors ${
+                                done ? "text-emotion-happy" : "text-muted-foreground hover:text-primary"
+                              }`}
+                            >
+                              {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+                              {done ? "Completed" : "Mark as complete"}
+                            </button>
+                          </div>
                         </div>
                       );
                     })}
                   </div>
                 );
               })()}
-            </div>
+            </section>
           )}
 
           {shouldEscalate && (
-            <div className="glass rounded-2xl p-6 border border-amber/40">
+            <section className="glass rounded-2xl p-6 border border-amber/40 bg-amber/5">
               <div className="flex items-center gap-2 mb-2">
                 <AlertTriangle className="h-4 w-4 text-amber" />
-                <h2 className="text-sm font-semibold">Extra help needed</h2>
+                <h2 className="font-semibold">Extra help needed</h2>
               </div>
               <p className="text-sm text-muted-foreground">
                 You've attempted {resultLessonTitle} {attemptCount} times and{" "}
@@ -805,14 +984,13 @@ function LessonsPage() {
                       `${LO_LABELS[lo] || lo} ${Math.round(result.lo_scores?.[lo]?.percentile_mastery_score ?? 0)}%`
                   )
                   .join(", ")}
-                ). Another quiz on its own probably won't move this — the concept needs another
-                explanation.
+                ). Another quiz on its own probably won't move this. The concept needs another explanation.
               </p>
               <div className="flex flex-wrap gap-3 mt-4">
                 <button
                   type="button"
                   onClick={() => navigate({ to: "/" })}
-                  className="px-4 py-2 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors flex items-center gap-2"
                 >
                   <Monitor className="h-4 w-4" /> Rejoin the live class
                 </button>
@@ -838,7 +1016,7 @@ function LessonsPage() {
                       );
                     }
                   }}
-                  className="px-4 py-2 rounded-lg text-sm font-medium border border-border/60 hover:bg-secondary transition-colors flex items-center gap-2"
+                  className="px-4 py-2.5 rounded-xl text-sm font-medium border border-border/60 hover:bg-secondary transition-colors flex items-center gap-2"
                 >
                   <MessageSquare className="h-4 w-4" /> Ask your teacher for help
                 </button>
@@ -853,12 +1031,12 @@ function LessonsPage() {
                   </button>
                 )}
               </div>
-            </div>
+            </section>
           )}
 
-          <div className="flex flex-wrap gap-3">
+          <div className="glass rounded-2xl p-4 flex flex-wrap items-center gap-3">
             {result.weak_los.length === 0 ? (
-              <div className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-emotion-happy/10 text-emotion-happy border border-emotion-happy/30 flex items-center gap-2">
+              <div className="px-5 py-2.5 rounded-xl text-sm font-semibold bg-emotion-happy/10 text-emotion-happy border border-emotion-happy/30 flex items-center gap-2">
                 <CheckCircle2 className="h-4 w-4" /> All Learning Outcomes mastered
               </div>
             ) : shouldEscalate ? null : (
@@ -866,7 +1044,8 @@ function LessonsPage() {
                 type="button"
                 onClick={retakeLesson}
                 disabled={!allResourcesCompleted || loadingQuiz}
-                className="px-5 py-2.5 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                className="px-5 py-2.5 rounded-xl text-sm font-semibold text-primary-foreground transition-[filter] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                style={{ background: "var(--gradient-primary)" }}
               >
                 {allResourcesCompleted ? <TrendingUp className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
                 Retake Quiz
@@ -875,10 +1054,13 @@ function LessonsPage() {
                 </span>
               </button>
             )}
+            {result.weak_los.length > 0 && !shouldEscalate && !allResourcesCompleted && (
+              <span className="text-xs text-muted-foreground">Finish every resource above to unlock the retake.</span>
+            )}
             <button
               type="button"
               onClick={backToLessons}
-              className="px-5 py-2.5 rounded-lg text-sm font-medium border border-border/60 hover:bg-secondary transition-colors"
+              className="ml-auto px-5 py-2.5 rounded-xl text-sm font-medium border border-border/60 hover:bg-secondary transition-colors"
             >
               Try Another Lesson
             </button>

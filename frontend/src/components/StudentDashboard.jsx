@@ -511,57 +511,84 @@ function StudentDashboard() {
       {
     /* 1. Top Header - Simple Summary */
   }
-      <div className="glass rounded-2xl p-6">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div className="flex-1">
-            <h1 className="font-display text-3xl font-bold mb-2">
-              Welcome back, {user?.name || "Student"}! 👋
+      <section className="glass rounded-3xl p-6 sm:p-8 relative overflow-hidden">
+        <div
+          className="absolute inset-0 pointer-events-none"
+          style={{ background: "radial-gradient(55% 80% at 0% 0%, color-mix(in oklab, var(--teal) 16%, transparent), transparent 70%)" }}
+        />
+        <div className="relative flex flex-wrap items-center justify-between gap-6">
+          <div className="min-w-0">
+            <p className="eyebrow">
+              {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+            </p>
+            <h1 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight">
+              {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"},{" "}
+              <span className="text-gradient-primary">{user?.name?.split(" ")[0] || "Student"}</span>
             </h1>
-            <p className="text-muted-foreground mb-4">Here's your learning overview for today</p>
-            
-            {
-    /* Progress Bar */
-  }
-            <div className="max-w-md">
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span className="text-muted-foreground">Overall Progress</span>
-                <span className="font-semibold">{loadingHistory || avgScore == null ? "–" : `${avgScore}%`}</span>
-              </div>
-              <div className="h-3 rounded-full bg-secondary overflow-hidden">
-                <div
-    className="h-full rounded-full transition-all duration-500"
-    style={{
-      width: `${avgScore ?? 0}%`,
-      background: "var(--gradient-primary)"
-    }}
-  />
-              </div>
-              <p className="text-xs text-muted-foreground mt-2">
-                {avgScore == null
-                  ? "Take a lesson quiz to see your progress"
-                  : avgScore >= 70
-                  ? "\u{1F389} Doing Well!"
-                  : "\u{1F4AA} Keep Practicing!"}
-              </p>
+            <p className="mt-2 text-muted-foreground">
+              {avgScore == null
+                ? "Take a lesson quiz to start tracking your progress."
+                : avgScore >= 70
+                ? "You are doing well. Keep the momentum going."
+                : "Keep practising. Your recommended resources are below."}
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link
+                to="/lessons"
+                className="inline-flex items-center gap-2 rounded-xl px-5 py-2.5 text-sm font-semibold text-primary-foreground transition-[filter,transform] hover:brightness-110 active:translate-y-px"
+                style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
+              >
+                <Play className="h-4 w-4" />
+                Continue learning
+              </Link>
+              <a href="#quizzes" className="inline-flex items-center gap-2 rounded-xl border border-border px-5 py-2.5 text-sm font-semibold hover:border-primary/60 transition-colors">
+                <FileText className="h-4 w-4" />
+                Browse quizzes
+              </a>
             </div>
           </div>
 
-          {
-    /* Emotion Indicator */
-  }
-          <div className="flex items-center gap-4">
+          {/* Overall progress ring (average quiz score) */}
+          <div className="flex items-center gap-5">
             <div
-    className="text-center px-6 py-4 rounded-xl"
-    style={{ background: `${currentEmotion.color}10` }}
-  >
-              <div className="text-5xl mb-2">{currentEmotion.emoji}</div>
-              <p className="text-sm font-medium" style={{ color: currentEmotion.color }}>
-                {currentEmotion.label}
-              </p>
+              className="relative h-28 w-28 rounded-full grid place-items-center"
+              style={{ background: `conic-gradient(var(--teal) ${(avgScore ?? 0) * 3.6}deg, var(--secondary) 0deg)` }}
+              role="img"
+              aria-label={avgScore == null ? "No quiz results yet" : `Overall progress ${avgScore}%`}
+            >
+              <div className="h-[92px] w-[92px] rounded-full grid place-items-center text-center" style={{ background: "var(--card)" }}>
+                <div>
+                  <div className="text-2xl font-bold tnum leading-none">{loadingHistory || avgScore == null ? "–" : `${avgScore}%`}</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Overall</div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+
+        <div className="relative mt-7 grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[
+            { label: "Quizzes completed", value: loadingHistory ? "–" : quizzesCompleted, Icon: FileText },
+            { label: "Average score", value: loadingHistory || avgScore == null ? "–" : `${avgScore}%`, Icon: Target },
+            { label: "Study streak", value: loadingHistory ? "–" : `${studyStreak} ${studyStreak === 1 ? "day" : "days"}`, Icon: Award },
+          ].map(({ label, value, Icon }) => (
+            <div key={label} className="rounded-2xl border border-border/70 bg-background/35 p-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <Icon className="h-3.5 w-3.5 text-primary" />
+                {label}
+              </div>
+              <div className="mt-2 text-2xl font-bold tnum">{value}</div>
+            </div>
+          ))}
+          <div className="rounded-2xl border p-4" style={{ borderColor: `color-mix(in oklab, ${currentEmotion.color} 40%, transparent)`, background: `color-mix(in oklab, ${currentEmotion.color} 9%, transparent)` }}>
+            <div className="text-xs text-muted-foreground">Current state</div>
+            <div className="mt-2 flex items-center gap-2 text-2xl font-bold" style={{ color: currentEmotion.color }}>
+              <span aria-hidden="true">{currentEmotion.emoji}</span>
+              <span className="text-xl">{currentEmotion.label}</span>
+            </div>
+          </div>
+        </div>
+      </section>
 
       {
     /* Real live-class broadcast - the teacher's actual "Start Class" on
@@ -729,31 +756,6 @@ function StudentDashboard() {
             </div>
           </div>
 
-          {
-    /* Quick Progress */
-  }
-          <div className="glass rounded-2xl p-6">
-            <h3 className="text-sm font-semibold mb-4 flex items-center gap-2">
-              <Target className="h-4 w-4" />
-              Quick Stats
-            </h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Quizzes Completed</span>
-                <span className="font-semibold">{loadingHistory ? "–" : quizzesCompleted}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Avg. Score</span>
-                <span className="font-semibold">{loadingHistory || avgScore == null ? "–" : `${avgScore}%`}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-muted-foreground">Study Streak</span>
-                <span className="font-semibold">
-                  {loadingHistory ? "–" : `${studyStreak} day${studyStreak === 1 ? "" : "s"}${studyStreak > 0 ? " 🔥" : ""}`}
-                </span>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -901,40 +903,48 @@ function StudentDashboard() {
       {
     /* 6. Quiz Section - real lessons from the adaptive-learning backend */
   }
-      <div className="glass rounded-2xl p-6">
-        <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" />
-          Available Quizzes
-        </h2>
+      <div id="quizzes" className="glass rounded-2xl p-6 scroll-mt-28">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
+          <h2 className="font-display text-xl font-bold flex items-center gap-2">
+            <FileText className="h-5 w-5 text-primary" />
+            Available Quizzes
+          </h2>
+          {!loadingLessons && lessons.length > 0 && (
+            <span className="text-xs text-muted-foreground">{lessons.length} lessons · a new quiz every attempt</span>
+          )}
+        </div>
 
         {loadingLessons ? (
-          <div className="py-8 flex justify-center text-muted-foreground">
-            <RefreshCw className="h-5 w-5 animate-spin" />
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {[0, 1, 2].map((i) => <div key={i} className="skeleton h-32" />)}
           </div>
         ) : lessons.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No lessons available.</p>
         ) : (
-          <div className="space-y-3">
-            {lessons.map((lesson) => <div key={lesson.lesson_id} className="flex items-center justify-between p-4 rounded-xl border border-border/60 hover:border-primary/40 transition-all">
-                <div className="flex-1">
-                  <h3 className="font-semibold mb-1">{lesson.title}</h3>
-                  <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                    <span>{lesson.subject}</span>
-                    <span className="flex items-center gap-1">
-                      <FileText className="h-3 w-3" />
-                      {lesson.question_count} questions
-                    </span>
-                  </div>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {lessons.map((lesson, i) => (
+              <Link
+                key={lesson.lesson_id}
+                to="/lessons"
+                className="lift group flex flex-col rounded-2xl border border-border/70 bg-background/30 p-5 transition-all"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <span className="h-10 w-10 rounded-xl grid place-items-center bg-primary/10 border border-primary/30 text-sm font-bold text-primary tnum">
+                    {String(i + 1).padStart(2, "0")}
+                  </span>
+                  <span className="rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground">{lesson.subject}</span>
                 </div>
-
-                <Link
-                  to="/lessons"
-                  className="px-5 py-2 rounded-lg text-sm font-semibold text-primary-foreground transition-all hover:scale-105"
-                  style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
-                >
-                  Start Quiz
-                </Link>
-              </div>)}
+                <h3 className="mt-4 font-semibold leading-snug">{lesson.title}</h3>
+                <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <FileText className="h-3 w-3" />
+                  {lesson.question_count} questions
+                </p>
+                <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary">
+                  Start quiz
+                  <Play className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                </span>
+              </Link>
+            ))}
           </div>
         )}
       </div>

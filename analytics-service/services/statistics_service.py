@@ -38,6 +38,13 @@ MIN_SESSIONS_PER_GROUP = 3
 MIN_SESSIONS_FOR_DIFFICULTY = 3
 TREND_SIGNIFICANCE = 0.05
 CORRELATION_THRESHOLD = 0.3  # |r| below this is not "meaningful" per Table 8
+# A correlation is only turned into a queued recommendation when it is also
+# statistically significant and rests on at least this many sessions. The
+# effect-size gate alone is not enough at these sample sizes: a simulation
+# with this module's own code flagged about half of learners with 8 sessions
+# as "meaningful" when no relationship existed at all.
+MIN_SESSIONS_FOR_CORRELATION_RECOMMENDATION = 5
+CORRELATION_SIGNIFICANCE = 0.05
 ENGAGEMENT_HIGH_THRESHOLD = 0.6  # engagement_score is stored 0-1 per schema
 DIFFICULTY_ORDINAL = {"easy": 1, "medium": 2, "hard": 3}
 
@@ -98,10 +105,36 @@ def analyze_lo_trend(lo_history: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _volatility(scores: list[float]) -> float:
+    """Fluctuation of the scores around their own straight-line trend:
+    the population std-dev of the residuals of an ordinary least squares
+    line fitted to (session order, score).
+
+    This is what "unstable" should mean. The plain std-dev of the scores
+    also contains the trend itself, so a learner who improves steadily
+    (20, 40, 60, 80, 100) has a large std-dev and was being flagged as
+    volatile and "at risk" - the opposite of what happened. Their
+    residuals are zero, so their volatility is zero.
+
+    With only 2 sessions a line fits exactly and says nothing about
+    fluctuation, so the plain std-dev is used until a third session exists.
+    """
+    if len(scores) < 3:
+        return pstdev(scores)
+    x = np.arange(len(scores), dtype=float)
+    slope, intercept = np.polyfit(x, np.asarray(scores, dtype=float), 1)
+    residuals = np.asarray(scores, dtype=float) - (slope * x + intercept)
+    return float(np.sqrt(np.mean(residuals ** 2)))
+
+
 def compute_stability(lo_history: list[dict[str, Any]]) -> dict[str, Any]:
-    """Population variance/std-dev of session-average scores. Population
-    (not sample) statistics per the schema's finite, complete session set
-    for a given student at query time."""
+    """Population variance/std-dev of session-average scores, plus
+    `volatility` - the std-dev around the learner's own trend line (see
+    _volatility). Population (not sample) statistics per the schema's
+    finite, complete session set for a given student at query time.
+
+    `std_dev`/`variance` are kept for display; every "unstable"/"at risk"
+    decision uses `volatility`."""
     sessions = _session_average_scores(lo_history)
     if len(sessions) < 2:
         return {"available": False, "reason": "need at least 2 sessions", "session_count": len(sessions)}
@@ -113,17 +146,20 @@ def compute_stability(lo_history: list[dict[str, Any]]) -> dict[str, Any]:
         "mean_score": round(mean(scores), 4),
         "variance": round(pstdev(scores) ** 2, 4),
         "std_dev": round(pstdev(scores), 4),
+        "volatility": round(_volatility(scores), 4),
     }
 
 
 def compute_class_stability_baseline(all_students_lo_history: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
-    """Class-wide distribution of per-student score std-devs, used as the
-    "class mean + 1.5 SD" at-risk threshold from Table 8."""
+    """Class-wide distribution of per-student volatility (fluctuation
+    around each learner's own trend, see _volatility), used as the
+    "class mean + 1.5 SD" at-risk threshold from Table 8. The field names
+    keep "std" because they are the mean and std-dev of that measure."""
     student_stds = []
     for history in all_students_lo_history.values():
         stability = compute_stability(history)
         if stability["available"]:
-            student_stds.append(stability["std_dev"])
+            student_stds.append(stability["volatility"])
 
     if len(student_stds) < 2:
         return {"available": False, "reason": "need at least 2 students with 2+ sessions each"}
@@ -137,10 +173,37 @@ def compute_class_stability_baseline(all_students_lo_history: dict[str, list[dic
     }
 
 
-def is_at_risk_by_stability(student_std_dev: float, baseline: dict[str, Any]) -> bool:
+def is_at_risk_by_stability(student_volatility: float, baseline: dict[str, Any]) -> bool:
+    """`student_volatility` is compute_stability(...)["volatility"], the same
+    measure the baseline is built from."""
     if not baseline.get("available"):
         return False
-    return student_std_dev > baseline["at_risk_threshold"]
+    return student_volatility > baseline["at_risk_threshold"]
+
+
+def select_emotion_finding(correlations: dict[str, dict[str, Any]]) -> Optional[tuple[str, dict[str, Any]]]:
+    """The one emotion-achievement correlation worth queuing as a
+    recommendation for a teacher, or None.
+
+    A correlation qualifies only if it is negative, clears the effect-size
+    gate (|r| >= CORRELATION_THRESHOLD), is statistically significant
+    (p < CORRELATION_SIGNIFICANCE) and rests on at least
+    MIN_SESSIONS_FOR_CORRELATION_RECOMMENDATION sessions. Among those that
+    qualify, the most significant is returned. analyze_emotion_lo_correlation
+    still reports every correlation for display; this only decides what is
+    strong enough to act on."""
+    qualifying = [
+        (emotion, result)
+        for emotion, result in correlations.items()
+        if result.get("available")
+        and result.get("direction") == "negative"
+        and result.get("meaningful")
+        and result["p_value"] < CORRELATION_SIGNIFICANCE
+        and result.get("n", 0) >= MIN_SESSIONS_FOR_CORRELATION_RECOMMENDATION
+    ]
+    if not qualifying:
+        return None
+    return min(qualifying, key=lambda item: item[1]["p_value"])
 
 
 def analyze_emotion_lo_correlation(

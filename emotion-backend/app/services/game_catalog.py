@@ -174,7 +174,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
             ),
             GameRecommendation(
                 game_id="gm_math_fraction_chef_happy",
-                lesson_id="fraction-operations",
+                lesson_id="fractions-bodmas",
                 title="Fraction Chef: The Recipe Rescue",
                 description="A grade-9 fraction game - simplify, add, subtract, multiply, divide, and compare fractions across 5 magical ovens to recover the Master Recipe Scrolls.",
                 subject="Mathematics",
@@ -284,6 +284,18 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 estimated_duration_minutes=8,
                 engagement_score=9.0
             ),
+            GameRecommendation(
+                game_id="gm_math_binary_breaker_confused",
+                lesson_id="binary-numbers",
+                title="Binary Code Breaker",
+                description="A binary numbers game - use place values, binary-to-decimal and decimal-to-binary conversion and binary addition to crack the vault's locks, with the working shown after every answer.",
+                subject="Mathematics",
+                game_type="code-breaking puzzle game",
+                difficulty="Medium",
+                target_emotion="CONFUSED",
+                estimated_duration_minutes=6,
+                engagement_score=8.9
+            ),
         ],
         "BORED": [
             GameRecommendation(
@@ -309,6 +321,18 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 target_emotion="BORED",
                 estimated_duration_minutes=8,
                 engagement_score=9.2
+            ),
+            GameRecommendation(
+                game_id="gm_math_percent_market_bored",
+                lesson_id="percentages",
+                title="Percent Market Dash",
+                description="A percentages game - convert fractions to percentages, find a percentage of an amount, and work out profit and discounts at a busy market stall.",
+                subject="Mathematics",
+                game_type="market simulation game",
+                difficulty="Medium",
+                target_emotion="BORED",
+                estimated_duration_minutes=6,
+                engagement_score=9.0
             ),
             GameRecommendation(
                 game_id="gm_math_eco_blooms_bored",
@@ -360,6 +384,18 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
                 estimated_duration_minutes=7,
                 engagement_score=9.2
             ),
+            GameRecommendation(
+                game_id="gm_math_set_sorter_frustrated",
+                lesson_id="sets",
+                title="Set Sorter Station",
+                description="A sets game - count elements, spot members, and find unions and intersections to sort cargo at the station, one short step at a time.",
+                subject="Mathematics",
+                game_type="sorting puzzle game",
+                difficulty="Medium",
+                target_emotion="FRUSTRATED",
+                estimated_duration_minutes=6,
+                engagement_score=8.8
+            ),
         ],
         "ANGRY": [
             GameRecommendation(
@@ -376,7 +412,7 @@ GAME_CATALOG: Dict[str, Dict[str, List[GameRecommendation]]] = {
             ),
             GameRecommendation(
                 game_id="gm_math_fraction_chef_angry",
-                lesson_id="fraction-operations",
+                lesson_id="fractions-bodmas",
                 title="Fraction Chef: The Recipe Rescue",
                 description="A grade-9 fraction game - simplify, add, subtract, multiply, divide, and compare fractions across 5 magical ovens - a calmer, structured reset with hints available.",
                 subject="Mathematics",

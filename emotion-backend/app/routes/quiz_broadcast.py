@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Dict
 
+from app.service_auth import TEACHER_ROLES, fastapi_require_role
 from app.services.quiz_broadcast import quiz_broadcast_store
 
 router = APIRouter(prefix="/quiz-broadcast", tags=["quiz-broadcast"])
@@ -12,7 +13,7 @@ async def get_quiz_broadcast_state() -> Dict:
     return quiz_broadcast_store.get_state()
 
 
-@router.post("/start")
+@router.post("/start", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def start_quiz_broadcast(body: Dict) -> Dict:
     """Body: {"lesson_id": "...", "lesson_title": "...", "started_by": "..."}.
     lesson_id must be a real lesson id from adaptive-learning's
@@ -31,7 +32,7 @@ async def start_quiz_broadcast(body: Dict) -> Dict:
     return {"success": True, **quiz_broadcast_store.get_state()}
 
 
-@router.post("/end")
+@router.post("/end", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def end_quiz_broadcast() -> Dict:
     quiz_broadcast_store.end()
     return {"success": True, "is_active": False}

@@ -9,14 +9,14 @@ from app.redis_client import redis_client
 
 STATE_KEY = "recommendation:history"
 
-# Emotion->game mapping is intentionally OFF for now (explicit instruction:
-# "don't map games with emotions still... only do when teacher click
-# recommend button display games"). generate_recommendation() below picks
-# from every real game for the subject via get_all_games_for(), cycling
-# through them with the existing variation-window logic instead of pinning
-# to a specific emotion bucket. To re-enable emotion-based selection later,
-# swap the games = get_all_games_for(subject) line back to
-# games = get_games_for(subject, emotion).
+# Emotion->game mapping is an OPTION the teacher switches on per request
+# (match_emotion=True), not the default. By default generate_recommendation()
+# picks from every real game for the subject via get_all_games_for(), cycling
+# through them with the variation-window logic. With match_emotion=True the
+# pool is narrowed to games designed for the class's dominant emotion
+# (GameRecommendation.target_emotion) - the proposal's subject x emotion
+# mapping - and the result says honestly (emotion_matched) whether such a
+# game existed, the same way lesson_matched does for the lesson filter.
 
 
 class RecommendationEngine:
@@ -41,11 +41,12 @@ class RecommendationEngine:
         self,
         dominant_emotion: str,
         subject: str = "General",
-        lesson_id: Optional[str] = None
+        lesson_id: Optional[str] = None,
+        match_emotion: bool = False
     ) -> Dict:
         """
         Generate a subject-aware game recommendation, optionally narrowed
-        to a specific real lesson.
+        to a specific real lesson and/or to the class's dominant emotion.
 
         Args:
             dominant_emotion: The detected dominant emotion (e.g., "BORED")
@@ -57,6 +58,12 @@ class RecommendationEngine:
                 subject-wide pool and reports lesson_matched=False so the
                 caller can be honest about it rather than pretending
                 relevance.
+
+            match_emotion: When True, prefer games whose target_emotion is
+                the dominant emotion. Applied after the lesson filter, so
+                the lesson still wins; if no game in the pool targets this
+                emotion the pool is left as it is and emotion_matched is
+                False.
 
         Returns:
             Dict with recommended game, alternatives, and metadata.
@@ -77,6 +84,14 @@ class RecommendationEngine:
             if lesson_games:
                 games = lesson_games
                 lesson_matched = True
+
+        # Step 1b (optional): narrow to games designed for this emotion.
+        emotion_matched = False
+        if match_emotion:
+            emotion_games = [g for g in games if str(g.target_emotion).upper() == emotion]
+            if emotion_games:
+                games = emotion_games
+                emotion_matched = True
 
         # Step 2: Filter out recently used game types within the window, so
         # repeated "Recommend" clicks cycle to a different game instead of
@@ -112,6 +127,8 @@ class RecommendationEngine:
             "subject": subject,
             "lesson_id": lesson_id,
             "lesson_matched": lesson_matched,
+            "match_emotion": match_emotion,
+            "emotion_matched": emotion_matched,
             "game_type": primary.game_type,
             "recommendation": primary,
             "alternatives": alternatives,

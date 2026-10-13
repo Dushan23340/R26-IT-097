@@ -37,6 +37,9 @@ GAME_LIBRARY: Dict[str, Dict[str, str]] = {
     "time_guardians_rounding_clock": {"route": "/time-guardians-rounding-clock", "label": "Time Guardians: Save the Rounding Clock", "badge": "Game 11"},
     "laser_heist_parallel_museum": {"route": "/laser-heist-parallel-museum", "label": "Laser Heist: The Parallel Museum", "badge": "Game 12"},
     "fraction_chef_recipe_rescue": {"route": "/fraction-chef-recipe-rescue", "label": "Fraction Chef: The Recipe Rescue", "badge": "Game 13"},
+    "binary_code_breaker": {"route": "/binary-code-breaker", "label": "Binary Code Breaker", "badge": "Game 14"},
+    "percent_market_dash": {"route": "/percent-market-dash", "label": "Percent Market Dash", "badge": "Game 15"},
+    "set_sorter_station": {"route": "/set-sorter-station", "label": "Set Sorter Station", "badge": "Game 16"},
 }
 
 STATE_KEY = "active_recommendation:state"

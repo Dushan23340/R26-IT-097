@@ -14,6 +14,8 @@ import os
 
 import requests
 
+from service_auth import internal_headers
+
 LO_COMPONENT_URL = os.environ.get("LO_COMPONENT_SERVICE_URL", "http://127.0.0.1:5005")
 _TIMEOUT = 3
 
@@ -28,6 +30,7 @@ def forward_recommendation(student_id: str, lesson_id: str, recommendation_text:
                 "insight_type": insight_type,
                 "source": "IT22197146-analytics-service",
             },
+            headers=internal_headers(),
             timeout=_TIMEOUT,
         )
         response.raise_for_status()

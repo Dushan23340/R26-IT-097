@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Dict, Optional
 
+from app.service_auth import TEACHER_ROLES, fastapi_require_role
 from app.models.schemas import RecommendationResponse
 from app.services.emotion_store import emotion_store
 from app.services.recommendation_engine import recommendation_engine
@@ -21,7 +22,7 @@ async def get_active_recommendation() -> Dict:
     return active_recommendation_store.get_active()
 
 
-@router.post("/active")
+@router.post("/active", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def set_active_recommendation(body: Dict) -> Dict:
     """
     Body: {"game_key": "pirate"} - one of "fraction_room", "track_field", "pirate".
@@ -37,7 +38,7 @@ async def set_active_recommendation(body: Dict) -> Dict:
     return {"success": True, **active_recommendation_store.get_active()}
 
 
-@router.post("/active/end")
+@router.post("/active/end", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def end_active_recommendation() -> Dict:
     """Teacher ends the current live game session for the whole class."""
     active_recommendation_store.end_active()
@@ -110,7 +111,8 @@ async def get_latest_recommendation():
 async def generate_recommendation(
     emotion: Optional[str] = None,
     subject: str = "General",
-    lesson_id: Optional[str] = None
+    lesson_id: Optional[str] = None,
+    match_emotion: bool = False
 ) -> Dict:
     """
     Generate a subject-aware game recommendation with variation tracking.
@@ -123,6 +125,8 @@ async def generate_recommendation(
             GET /api/lessons) to prefer a game tagged to that lesson -
             see recommendation_engine.generate_recommendation's docstring
             for the fallback behavior when no game is tagged yet.
+        match_emotion: When true, prefer a game designed for the dominant
+            emotion (the teacher's "Match game to class emotion" option).
     """
     dominant = emotion.upper() if emotion else emotion_store.get_dominant_emotion()
 
@@ -133,7 +137,7 @@ async def generate_recommendation(
     }
 
     # Generate recommendation
-    result = recommendation_engine.generate_recommendation(dominant, subject, lesson_id)
+    result = recommendation_engine.generate_recommendation(dominant, subject, lesson_id, match_emotion)
 
     # Start intervention tracking
     intervention_id = intervention_tracker.start_intervention(

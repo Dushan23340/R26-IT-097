@@ -1,3 +1,4 @@
+import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 const ADAPTIVE_API_BASE = import.meta.env.VITE_ADAPTIVE_API_URL || "http://localhost:5005/api";
 
 async function parseBody(response) {
@@ -13,11 +14,12 @@ async function parseBody(response) {
 async function request(endpoint, options = {}) {
   const url = `${ADAPTIVE_API_BASE}${endpoint}`;
   const config = {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...options.headers },
     ...options,
   };
   const response = await fetch(url, config);
   const data = await parseBody(response);
+  if (response.status === 401) handleUnauthorized();
   if (!response.ok) {
     const err = new Error(data.error || data.message || response.statusText || "Request failed");
     // Keep the HTTP status and any machine-readable reason on the error so

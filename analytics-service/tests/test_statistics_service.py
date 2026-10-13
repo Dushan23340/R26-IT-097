@@ -19,6 +19,7 @@ from services.statistics_service import (
     compute_class_stability_baseline,
     compute_stability,
     is_at_risk_by_stability,
+    select_emotion_finding,
 )
 
 
@@ -94,10 +95,44 @@ class StabilityTests(unittest.TestCase):
         self.assertTrue(baseline["available"])
 
         volatile_student = compute_stability(_lo_rows([20, 95, 15, 98]))
-        self.assertTrue(is_at_risk_by_stability(volatile_student["std_dev"], baseline))
+        self.assertTrue(is_at_risk_by_stability(volatile_student["volatility"], baseline))
 
         stable_student = compute_stability(_lo_rows([70, 71, 69, 72]))
-        self.assertFalse(is_at_risk_by_stability(stable_student["std_dev"], baseline))
+        self.assertFalse(is_at_risk_by_stability(stable_student["volatility"], baseline))
+
+    def test_steady_improvement_is_not_volatile(self):
+        # A learner rising in even steps has a large plain std-dev (the trend
+        # itself) but no fluctuation around that trend.
+        improving = compute_stability(_lo_rows([20, 40, 60, 80, 100]))
+        self.assertGreater(improving["std_dev"], 25)
+        self.assertAlmostEqual(improving["volatility"], 0.0, places=6)
+
+    def test_steady_improver_is_not_flagged_at_risk(self):
+        # The exact case seen on the running platform: four sessions scoring
+        # 0, 20, 46.67, 100 were described as "unusually volatile".
+        # A class with ordinary, varied fluctuation between sessions.
+        classmates = {
+            "stu-0": _lo_rows([60, 68, 59, 70, 62]),
+            "stu-1": _lo_rows([55, 75, 50, 80, 58]),
+            "stu-2": _lo_rows([70, 72, 71, 69, 73]),
+            "stu-3": _lo_rows([40, 65, 45, 70, 52]),
+            "stu-4": _lo_rows([80, 62, 85, 66, 78]),
+            "stu-5": _lo_rows([50, 58, 47, 61, 55]),
+        }
+        baseline = compute_class_stability_baseline(classmates)
+        improver = compute_stability(_lo_rows([0, 20, 46.67, 100]))
+        self.assertGreater(improver["std_dev"], baseline["at_risk_threshold"])  # the old rule flagged this
+        self.assertFalse(is_at_risk_by_stability(improver["volatility"], baseline))
+
+    def test_zigzag_around_a_rising_trend_is_still_volatile(self):
+        zigzag = compute_stability(_lo_rows([20, 90, 30, 95, 40, 100]))
+        smooth = compute_stability(_lo_rows([20, 36, 52, 68, 84, 100]))
+        self.assertGreater(zigzag["volatility"], 20)
+        self.assertGreater(zigzag["volatility"], smooth["volatility"] + 20)
+
+    def test_two_sessions_fall_back_to_plain_std_dev(self):
+        two = compute_stability(_lo_rows([40, 80]))
+        self.assertEqual(two["volatility"], two["std_dev"])
 
 
 class EmotionCorrelationTests(unittest.TestCase):
@@ -123,6 +158,52 @@ class EmotionCorrelationTests(unittest.TestCase):
     def test_insufficient_sessions_returns_empty(self):
         result = analyze_emotion_lo_correlation(_lo_rows([50, 60]), [])
         self.assertEqual(result, {})
+
+
+class EmotionFindingSelectionTests(unittest.TestCase):
+    """select_emotion_finding decides which correlation is strong enough to
+    queue as a recommendation for a teacher."""
+
+    @staticmethod
+    def _result(r, p, n, available=True):
+        return {"available": available, "r": r, "p_value": p, "n": n,
+                "meaningful": abs(r) >= 0.3, "direction": "negative" if r < 0 else "positive"}
+
+    def test_large_but_non_significant_correlation_is_not_queued(self):
+        # The real case that exposed the problem: r = -0.76 with p = 0.45.
+        self.assertIsNone(select_emotion_finding({"BORED": self._result(-0.76, 0.45, 3)}))
+
+    def test_significant_correlation_on_too_few_sessions_is_not_queued(self):
+        self.assertIsNone(select_emotion_finding({"BORED": self._result(-0.99, 0.01, 4)}))
+
+    def test_significant_negative_correlation_with_enough_sessions_is_queued(self):
+        finding = select_emotion_finding({"BORED": self._result(-0.94, 0.0001, 10)})
+        self.assertIsNotNone(finding)
+        self.assertEqual(finding[0], "BORED")
+
+    def test_positive_or_weak_correlations_are_not_queued(self):
+        self.assertIsNone(select_emotion_finding({"HAPPY": self._result(0.9, 0.001, 10)}))
+        self.assertIsNone(select_emotion_finding({"BORED": self._result(-0.2, 0.01, 40)}))
+
+    def test_most_significant_qualifying_emotion_wins(self):
+        finding = select_emotion_finding({
+            "CONFUSED": self._result(-0.7, 0.03, 9),
+            "BORED": self._result(-0.9, 0.001, 9),
+            "FRUSTRATED": self._result(-0.95, 0.4, 9),
+        })
+        self.assertEqual(finding[0], "BORED")
+
+    def test_real_pipeline_end_to_end(self):
+        # Same data as the detection test above, through the real analysis.
+        lo_rows = _lo_rows([30, 50, 70, 90, 95, 20])
+        states = []
+        for i, frac in enumerate([0.9, 0.6, 0.3, 0.1, 0.05, 0.95]):
+            n_bored = int(frac * 10)
+            states += [{"session_id": f"session-{i}", "emotion_label": "BORED"}] * n_bored
+            states += [{"session_id": f"session-{i}", "emotion_label": "HAPPY"}] * (10 - n_bored)
+        finding = select_emotion_finding(analyze_emotion_lo_correlation(lo_rows, states))
+        self.assertIsNotNone(finding)
+        self.assertEqual(finding[0], "BORED")
 
 
 class EngagementPerformanceTests(unittest.TestCase):

@@ -16,6 +16,8 @@ from datetime import datetime, timedelta
 
 import requests
 
+from service_auth import internal_headers
+
 from anonymize import anonymize_student_id
 
 ANALYTICS_SERVICE_URL = os.environ.get("STUDENT_PROFILE_SERVICE_URL", "http://127.0.0.1:5010")
@@ -30,7 +32,7 @@ _TIMEOUT = 3
 
 def _post(path: str, payload: dict) -> dict | None:
     try:
-        response = requests.post(f"{ANALYTICS_SERVICE_URL}{path}", json=payload, timeout=_TIMEOUT)
+        response = requests.post(f"{ANALYTICS_SERVICE_URL}{path}", json=payload, headers=internal_headers(), timeout=_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.RequestException:
@@ -39,7 +41,7 @@ def _post(path: str, payload: dict) -> dict | None:
 
 def _get(path: str) -> dict | None:
     try:
-        response = requests.get(f"{ANALYTICS_SERVICE_URL}{path}", timeout=_TIMEOUT)
+        response = requests.get(f"{ANALYTICS_SERVICE_URL}{path}", headers=internal_headers(), timeout=_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.RequestException:
@@ -77,7 +79,7 @@ def get_live_emotion(student_id: str) -> str | None:
     comparing - matching against the raw ID would never match anything."""
     pseudonym = anonymize_student_id(student_id)
     try:
-        response = requests.get(f"{EMOTION_SERVICE_URL}/students", timeout=_TIMEOUT)
+        response = requests.get(f"{EMOTION_SERVICE_URL}/students", headers=internal_headers(), timeout=_TIMEOUT)
         response.raise_for_status()
         payload = response.json()
     except requests.RequestException:

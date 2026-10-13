@@ -1,4 +1,5 @@
 import axios from "axios"
+import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 
 const DEFAULT_API_BASE_URL =
   import.meta.env.VITE_EMOTION_API_BASE_URL || "http://127.0.0.1:5002"
@@ -7,6 +8,20 @@ const apiClient = axios.create({
   baseURL: DEFAULT_API_BASE_URL.replace(/\/$/, ""),
   timeout: 15000,
 })
+
+// Attach the logged-in user's token to every request (see lib/authHeaders.js).
+apiClient.interceptors.request.use((config) => {
+  Object.assign(config.headers, authHeaders());
+  return config;
+})
+apiClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) handleUnauthorized();
+    return Promise.reject(error);
+  }
+)
+
 
 function getErrorMessage(error) {
   if (axios.isAxiosError(error)) {

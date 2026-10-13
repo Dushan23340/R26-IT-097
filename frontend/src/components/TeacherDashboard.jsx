@@ -91,6 +91,10 @@ function TeacherDashboard() {
   // fetching lessons twice).
   const [allLessons, setAllLessons] = useState([]);
   const [selectedLessonId, setSelectedLessonId] = useState("");
+  // Optional: prefer a game designed for the class's dominant emotion
+  // (emotion-backend's match_emotion). Off by default, so "Recommend" keeps
+  // cycling through every game unless the teacher asks for this.
+  const [matchEmotion, setMatchEmotion] = useState(false);
   // Which real lesson (if any) "Start Class" is for - separate from
   // selectedLessonId above (that one only narrows the Game Recommendation
   // Engine). Optional: starting a class without picking one just skips
@@ -494,7 +498,7 @@ function TeacherDashboard() {
       }
       const dominant = analytics?.dominant_emotion || "BORED";
       console.log("Generating recommendation for emotion:", dominant, "subject:", selectedSubject, "lesson:", selectedLessonId);
-      const data = await emotionApi.generateRecommendation(dominant, selectedSubject, selectedLessonId);
+      const data = await emotionApi.generateRecommendation(dominant, selectedSubject, selectedLessonId, matchEmotion);
       console.log("Recommendation data:", data);
 
       const normalizedRecommendation = data?.recommendation
@@ -576,6 +580,9 @@ function TeacherDashboard() {
     gm_math_laser_heist_frustrated: { route: "/laser-heist-parallel-museum", gameKey: "laser_heist_parallel_museum" },
     gm_math_fraction_chef_happy: { route: "/fraction-chef-recipe-rescue", gameKey: "fraction_chef_recipe_rescue" },
     gm_math_fraction_chef_angry: { route: "/fraction-chef-recipe-rescue", gameKey: "fraction_chef_recipe_rescue" },
+    gm_math_binary_breaker_confused: { route: "/binary-code-breaker", gameKey: "binary_code_breaker" },
+    gm_math_percent_market_bored: { route: "/percent-market-dash", gameKey: "percent_market_dash" },
+    gm_math_set_sorter_frustrated: { route: "/set-sorter-station", gameKey: "set_sorter_station" },
   };
 
   function handleOpenGame(gameId) {
@@ -602,6 +609,9 @@ function TeacherDashboard() {
     { gameKey: "time_guardians_rounding_clock", title: "Time Guardians: Save the Rounding Clock", description: "Round to the nearest 10/100, decimal places, and significant figures to purify time crystals." },
     { gameKey: "laser_heist_parallel_museum", title: "Laser Heist: The Parallel Museum", description: "Use corresponding, alternate, co-interior, and vertically opposite angle properties to disable laser grids." },
     { gameKey: "fraction_chef_recipe_rescue", title: "Fraction Chef: The Recipe Rescue", description: "Simplify, add, subtract, multiply, divide, and compare fractions across 5 magical ovens to recover the Master Recipe Scrolls." },
+    { gameKey: "binary_code_breaker", title: "Binary Code Breaker", description: "Use place values, binary and decimal conversion and binary addition to crack the vault's locks." },
+    { gameKey: "percent_market_dash", title: "Percent Market Dash", description: "Convert fractions to percentages, find a percentage of an amount, and work out profit and discounts." },
+    { gameKey: "set_sorter_station", title: "Set Sorter Station", description: "Count elements, spot members, and find unions and intersections of sets." },
   ];
 
   async function handleAssignActivity(game) {
@@ -1006,8 +1016,11 @@ function TeacherDashboard() {
       <div className="glass rounded-2xl p-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div className="flex-1">
-            <h1 className="font-display text-3xl font-bold mb-2">
-              Teacher Dashboard 👨‍🏫
+            <p className="eyebrow">
+              Teacher Console · {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+            </p>
+            <h1 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight mb-2">
+              Teacher Dashboard
             </h1>
             <p className="text-muted-foreground mb-4">
               {isLive ? "Live class in progress" : "Ready to start your next class"}
@@ -1153,7 +1166,21 @@ function TeacherDashboard() {
       )}
 
       {/* 2. Real-Time Emotion Summary */}
-      <div className="glass rounded-2xl p-6">
+      {/* Section menu: the console is long, so every section is one click away. */}
+      <nav aria-label="Console sections" className="sticky top-[84px] z-30 -mx-1">
+        <div className="glass-strong rounded-full border border-border px-2 py-1.5 flex items-center gap-1 overflow-x-auto no-scrollbar">
+          <span className="shrink-0 pl-2 pr-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">Jump to</span>
+          <a href="#sec-emotion" className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">Class emotion</a>
+          <a href="#sec-history" className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">History</a>
+          <a href="#sec-help" className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">Needs help</a>
+          <a href="#sec-insights" className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">Insights</a>
+          <a href="#sec-games" className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">Games</a>
+          <a href="#sec-actions" className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">Quick actions</a>
+          <a href="#sec-quiz" className="shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors">Quiz access</a>
+        </div>
+      </nav>
+
+      <div id="sec-emotion" className="scroll-mt-36 glass rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-xl font-bold flex items-center gap-2">
             <Eye className="h-5 w-5 text-primary" />
@@ -1271,7 +1298,7 @@ function TeacherDashboard() {
           /recommendation/history), same feed profile.jsx already shows the
           student, surfaced here for the teacher too. */}
       {recommendationHistory.length > 0 && (
-        <div className="glass rounded-2xl p-6">
+        <div id="sec-history" className="scroll-mt-36 glass rounded-2xl p-6">
           <h2 className="font-display text-xl font-bold flex items-center gap-2 mb-4">
             <ClipboardCheck className="h-5 w-5 text-primary" />
             Recommendation History
@@ -1477,7 +1504,7 @@ function TeacherDashboard() {
       </div>
 
       {/* 4a. Students Needing Help (lessons.jsx escalation panel -> here) */}
-      <div className="glass rounded-2xl p-6">
+      <div id="sec-help" className="scroll-mt-36 glass rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-xl font-bold flex items-center gap-2">
             <ShieldAlert className="h-5 w-5 text-amber" />
@@ -1536,7 +1563,7 @@ function TeacherDashboard() {
       {
     /* 4b. Expert-in-the-Loop Review Queue (IT22197146 SO5) */
   }
-      <div className="glass rounded-2xl p-6">
+      <div id="sec-insights" className="scroll-mt-36 glass rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-xl font-bold flex items-center gap-2">
             <ClipboardCheck className="h-5 w-5 text-primary" />
@@ -1627,7 +1654,7 @@ function TeacherDashboard() {
       </div>
 
       {/* 5. Game Recommendation Panel */}
-      <div className="glass rounded-2xl p-6">
+      <div id="sec-games" className="scroll-mt-36 glass rounded-2xl p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="font-display text-xl font-bold flex items-center gap-2">
             <Gamepad2 className="h-5 w-5 text-primary" />
@@ -1662,6 +1689,10 @@ function TeacherDashboard() {
                   <option key={l.lesson_id} value={l.lesson_id}>{l.title}</option>
                 ))}
             </select>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer" title="Prefer a game designed for the class's current dominant emotion, when one exists">
+              <input type="checkbox" checked={matchEmotion} onChange={(e) => setMatchEmotion(e.target.checked)} className="h-4 w-4 accent-primary" />
+              Match class emotion
+            </label>
             <button
               onClick={handleGenerateRecommendation}
               disabled={loading.rec}
@@ -1751,6 +1782,17 @@ function TeacherDashboard() {
                     </p>
                   )
                 )}
+                {recommendation.match_emotion && (
+                  recommendation.emotion_matched ? (
+                    <p className="text-xs text-primary mt-1">
+                      Chosen for the class's dominant emotion: <span className="font-medium">{recommendation.dominant_emotion}</span>
+                    </p>
+                  ) : (
+                    <p className="text-xs text-muted-foreground mt-1">
+                      No game designed for {recommendation.dominant_emotion} in this selection - showing another game instead.
+                    </p>
+                  )
+                )}
               </div>
             </div>
 
@@ -1827,7 +1869,7 @@ function TeacherDashboard() {
       {
     /* 6. Quick Actions */
   }
-      <div className="glass rounded-2xl p-6">
+      <div id="sec-actions" className="scroll-mt-36 glass rounded-2xl p-6">
         <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
           <Zap className="h-5 w-5 text-primary" />
           Quick Actions
@@ -2053,7 +2095,7 @@ function TeacherDashboard() {
        completed a live class for it AND a teacher publishes it here. Every
        lesson starts locked (the real backend default) until toggled. */
   }
-      <div className="glass rounded-2xl p-6">
+      <div id="sec-quiz" className="scroll-mt-36 glass rounded-2xl p-6">
         <h2 className="font-display text-xl font-bold flex items-center gap-2 mb-4">
           <Lock className="h-5 w-5 text-primary" />
           Quiz Access

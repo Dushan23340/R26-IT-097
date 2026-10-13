@@ -21,13 +21,15 @@ from typing import Optional
 
 import requests
 
+from app.service_auth import internal_headers
+
 ANALYTICS_SERVICE_URL = os.getenv("STUDENT_PROFILE_SERVICE_URL", "http://127.0.0.1:5010")
 _TIMEOUT = 3
 
 
 def _post(path: str, payload: dict) -> Optional[dict]:
     try:
-        response = requests.post(f"{ANALYTICS_SERVICE_URL}{path}", json=payload, timeout=_TIMEOUT)
+        response = requests.post(f"{ANALYTICS_SERVICE_URL}{path}", json=payload, headers=internal_headers(), timeout=_TIMEOUT)
         response.raise_for_status()
         return response.json()
     except requests.RequestException:

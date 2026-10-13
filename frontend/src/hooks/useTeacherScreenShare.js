@@ -1,3 +1,4 @@
+import { withTokenParam } from "@/lib/authHeaders";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 // No TURN server - relies on host/STUN candidates connecting directly,
@@ -58,7 +59,7 @@ export function useTeacherScreenShare({ sessionId, enabled }) {
   useEffect(() => {
     if (!enabled || !sessionId) return undefined;
 
-    const ws = new WebSocket(wsUrl(`/ws/class-session/teacher?session_id=${encodeURIComponent(sessionId)}`));
+    const ws = new WebSocket(withTokenParam(wsUrl(`/ws/class-session/teacher?session_id=${encodeURIComponent(sessionId)}`)));
     wsRef.current = ws;
 
     ws.onmessage = async (event) => {

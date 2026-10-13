@@ -100,7 +100,7 @@ def class_overview():
 
         stability = statistics_service.compute_stability(history)
         is_at_risk = stability.get("available") and statistics_service.is_at_risk_by_stability(
-            stability["std_dev"], baseline
+            stability["volatility"], baseline
         )
         if is_at_risk:
             at_risk_count += 1

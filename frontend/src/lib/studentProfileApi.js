@@ -1,3 +1,4 @@
+import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 // Client for analytics-service (IT22197146) - Student Profile Management &
 // Advanced Statistical Progress Analytics. Distinct from lib/emotionApi.js
 // (port 8000, IT22242754's class-level emotion/game-recommendation service).
@@ -7,11 +8,12 @@ const STUDENT_PROFILE_API_BASE =
 async function request(endpoint, options = {}) {
   const url = `${STUDENT_PROFILE_API_BASE}${endpoint}`;
   const response = await fetch(url, {
-    headers: { "Content-Type": "application/json", ...options.headers },
+    headers: { "Content-Type": "application/json", ...authHeaders(), ...options.headers },
     ...options,
   });
   const text = await response.text();
   const data = text ? JSON.parse(text) : {};
+  if (response.status === 401) handleUnauthorized();
   if (!response.ok) {
     throw new Error(data.error || data.message || response.statusText || "Request failed");
   }

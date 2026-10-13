@@ -31,6 +31,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask, jsonify
 from flask_cors import CORS
+from service_auth import protect_flask
 
 load_dotenv()
 
@@ -38,6 +39,9 @@ from routes import analytics, fairness, profiles, validation  # noqa: E402
 
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
+# Every route except /health now needs the account service's JWT or the
+# internal service token (service_auth.py).
+protect_flask(app)
 
 app.register_blueprint(profiles.bp)
 app.register_blueprint(analytics.bp)

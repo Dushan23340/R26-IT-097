@@ -19,6 +19,8 @@ from typing import Optional
 
 import requests
 
+from app.service_auth import internal_headers
+
 ADAPTIVE_LEARNING_URL = os.getenv("ADAPTIVE_LEARNING_SERVICE_URL", "http://127.0.0.1:5005")
 _TIMEOUT = 3
 
@@ -28,6 +30,7 @@ def _push(lesson_id: str, completions: list[dict]) -> Optional[dict]:
         response = requests.post(
             f"{ADAPTIVE_LEARNING_URL}/api/lessons/{lesson_id}/complete",
             json={"completions": completions},
+            headers=internal_headers(),
             timeout=_TIMEOUT,
         )
         response.raise_for_status()

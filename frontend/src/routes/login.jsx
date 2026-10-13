@@ -1,236 +1,127 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
+import { ArrowRight, Loader2, Lock, Mail } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
-import { OtpInput } from "@/components/OtpInput";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { GraduationCap, Mail, CheckCircle, AlertCircle, ArrowLeft } from "lucide-react";
+import { ROLES, homeFor } from "@/lib/roles";
+import { AuthLayout, RolePicker } from "@/components/AuthLayout";
+import { EMAIL_PATTERN, Field, Notice, PasswordField } from "@/components/AuthFields";
+
 const Route = createFileRoute("/login")({
-  component: LoginPage
+  head: () => ({ meta: [{ title: "Sign in — AdaptiveMind" }] }),
+  component: LoginPage,
 });
+
 function LoginPage() {
   const router = useRouter();
-  const { login, verifyOtp, resendOtp } = useAuth();
-  const [step, setStep] = useState("form");
-  const [formData, setFormData] = useState({
-    email: "",
-    password: ""
-  });
-  const [error, setError] = useState("");
+  const { login } = useAuth();
+  // The role tab only changes what this screen shows. The account itself
+  // decides the role: after sign-in the user always lands on the home of the
+  // role their account really has.
+  const [role, setRole] = useState("student");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [fieldErrors, setFieldErrors] = useState({});
+  // "?expired=1" is set by lib/authHeaders.js when a saved session's token
+  // was rejected, so the user knows why they are back on this page.
+  const [error, setError] = useState(() =>
+    typeof window !== "undefined" && new URLSearchParams(window.location.search).get("expired")
+      ? "Your session has expired. Please sign in again."
+      : ""
+  );
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
     setSuccess("");
-    if (!formData.email || !formData.password) {
-      setError("Email and password are required");
+    const errors = {};
+    if (!email.trim()) errors.email = "Enter your e-mail address";
+    else if (!EMAIL_PATTERN.test(email.trim())) errors.email = "Enter a valid e-mail address";
+    if (!password) errors.password = "Enter your password";
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
+
+    setIsLoading(true);
+    const result = await login(email.trim(), password);
+    setIsLoading(false);
+
+    if (!result.success || !result.user) {
+      setError(result.message || "Sign in failed. Please try again.");
       return;
     }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError("Please enter a valid email address");
-      return;
-    }
-    setIsLoading(true);
-    const result = await login(formData.email, formData.password);
-    setIsLoading(false);
-    if (result.success) {
-      if (result.requiresOtp) {
-        setSuccess("Please verify your identity with the OTP sent to your email.");
-        setStep("otp");
-      } else {
-        setSuccess("Login successful! Redirecting...");
-        setTimeout(() => {
-          router.navigate({ to: "/" });
-        }, 1500);
-      }
+    // The route guard moves a signed-in user off this page at once, so the
+    // confirmation is a toast (it stays visible across the redirect).
+    const actualRole = result.user.role;
+    const destination = actualRole === "teacher" ? "Teacher Console" : "dashboard";
+    if (actualRole !== role && ROLES[actualRole]) {
+      toast.info(`This is a ${ROLES[actualRole].label.toLowerCase()} account`, { description: `Opening your ${destination}.` });
     } else {
-      setError(result.message);
+      toast.success(`Welcome back, ${result.user.name?.split(" ")[0] || "there"}`, { description: `Opening your ${destination}.` });
     }
+    setSuccess("Signed in.");
+    router.navigate({ to: homeFor(actualRole), replace: true });
   };
-  const handleOtpComplete = async (otp) => {
-    setError("");
-    setIsLoading(true);
-    const result = await verifyOtp(formData.email, otp);
-    setIsLoading(false);
-    if (result.success) {
-      setSuccess("Email verified successfully! Redirecting...");
-      setTimeout(() => {
-        router.navigate({ to: "/" });
-      }, 1500);
-    } else {
-      setError(result.message);
-    }
-  };
-  const handleResendOtp = async () => {
-    setError("");
-    setSuccess("");
-    setIsLoading(true);
-    const result = await resendOtp(formData.email);
-    setIsLoading(false);
-    if (result.success) {
-      setSuccess("OTP resent! Please check your email.");
-    } else {
-      setError(result.message);
-    }
-  };
-  return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-secondary/20 to-background px-4">
-      <div className="w-full max-w-md">
-        {
-    /* Logo */
-  }
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-3 group">
-            <div className="h-12 w-12 rounded-xl flex items-center justify-center" style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}>
-              <GraduationCap className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <div>
-              <div className="font-display text-2xl font-bold leading-tight">Adaptive<span className="text-gradient-primary">Mind</span></div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground">Welcome Back</div>
-            </div>
+
+  return (
+    <AuthLayout role={role}>
+      <div className="glass rounded-3xl p-7 sm:p-9">
+        <p className="eyebrow">Welcome back</p>
+        <h2 className="mt-2 text-3xl font-bold tracking-tight">Sign in</h2>
+        <p className="mt-2 text-sm text-muted-foreground">Choose how you use AdaptiveMind, then enter your details.</p>
+
+        <div className="mt-6">
+          <RolePicker value={role} onChange={setRole} compact />
+        </div>
+
+        <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
+          <Field
+            id="email"
+            label="E-mail address"
+            icon={Mail}
+            type="email"
+            autoComplete="email"
+            placeholder={role === "teacher" ? "teacher@school.lk" : "you@example.com"}
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            error={fieldErrors.email}
+          />
+          <PasswordField
+            id="password"
+            label="Password"
+            icon={Lock}
+            autoComplete="current-password"
+            placeholder="Your password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            error={fieldErrors.password}
+          />
+
+          {error && <Notice>{error}</Notice>}
+
+          <button
+            type="submit"
+            disabled={isLoading || Boolean(success)}
+            className="w-full h-12 rounded-xl text-base font-semibold text-primary-foreground flex items-center justify-center gap-2 transition-[filter,transform] hover:brightness-110 active:translate-y-px disabled:opacity-60"
+            style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
+          >
+            {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+            {isLoading ? "Signing in..." : `Sign in as ${ROLES[role].label.toLowerCase()}`}
+            {!isLoading && <ArrowRight className="h-4 w-4" />}
+          </button>
+        </form>
+
+        <div className="hairline my-6" />
+        <p className="text-center text-sm text-muted-foreground">
+          New to AdaptiveMind?{" "}
+          <Link to="/signup" className="font-semibold text-primary hover:underline">
+            Create an account
           </Link>
-        </div>
-
-        {
-    /* Card */
-  }
-        <div className="glass rounded-2xl p-8 shadow-xl">
-          {step === "form" ? <>
-              <h2 className="text-2xl font-bold mb-2">Sign In</h2>
-              <p className="text-sm text-muted-foreground mb-6">
-                Enter your credentials to access your account
-              </p>
-
-              <form onSubmit={handleSubmit} className="space-y-4">
-                {
-    /* Email */
-  }
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email Address</Label>
-                  <Input
-    id="email"
-    type="email"
-    placeholder="john@example.com"
-    value={formData.email}
-    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-    className="h-12"
-  />
-                </div>
-
-                {
-    /* Password */
-  }
-                <div className="space-y-2">
-                  <Label htmlFor="password">Password</Label>
-                  <Input
-    id="password"
-    type="password"
-    placeholder="••••••••"
-    value={formData.password}
-    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-    className="h-12"
-  />
-                </div>
-
-                {
-    /* Error/Success Messages */
-  }
-                {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
-                    <AlertCircle className="h-4 w-4" />
-                    {error}
-                  </div>}
-
-                {success && <div className="flex items-center gap-2 text-sm text-emotion-happy bg-emotion-happy/10 p-3 rounded-lg">
-                    <CheckCircle className="h-4 w-4" />
-                    {success}
-                  </div>}
-
-                {
-    /* Submit Button */
-  }
-                <Button
-    type="submit"
-    disabled={isLoading}
-    className="w-full h-12 text-base font-semibold"
-    style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
-  >
-                  {isLoading ? "Signing In..." : "Sign In"}
-                </Button>
-              </form>
-
-              {
-    /* Signup Link */
-  }
-              <div className="mt-6 text-center text-sm text-muted-foreground">
-                Don't have an account?{" "}
-                <Link to="/signup" className="text-primary hover:underline font-medium">
-                  Sign up
-                </Link>
-              </div>
-            </> : <>
-              <button
-    onClick={() => setStep("form")}
-    className="flex items-center gap-2 text-sm text-muted-foreground hover:text-foreground mb-6 transition-colors"
-  >
-                <ArrowLeft className="h-4 w-4" />
-                Back
-              </button>
-
-              <div className="text-center mb-6">
-                <div className="mx-auto mb-4 h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
-                  <Mail className="h-8 w-8 text-primary" />
-                </div>
-                <h2 className="text-2xl font-bold mb-2">Verify Your Identity</h2>
-                <p className="text-sm text-muted-foreground">
-                  We sent a 6-digit code to <span className="font-medium text-foreground">{formData.email}</span>
-                </p>
-              </div>
-
-              <OtpInput length={6} onComplete={handleOtpComplete} />
-
-              {error && <div className="flex items-center justify-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg mt-6">
-                  <AlertCircle className="h-4 w-4" />
-                  {error}
-                </div>}
-
-              {success && <div className="flex items-center justify-center gap-2 text-sm text-emotion-happy bg-emotion-happy/10 p-3 rounded-lg mt-6">
-                  <CheckCircle className="h-4 w-4" />
-                  {success}
-                </div>}
-
-              <div className="mt-6 text-center">
-                <p className="text-sm text-muted-foreground">
-                  Didn't receive the code?{" "}
-                  <button
-    onClick={handleResendOtp}
-    disabled={isLoading}
-    className="text-primary hover:underline font-medium disabled:opacity-50"
-  >
-                    {isLoading ? "Sending..." : "Resend OTP"}
-                  </button>
-                </p>
-              </div>
-            </>}
-        </div>
-
-        {
-    /* Footer */
-  }
-        <div className="mt-8 text-center text-xs text-muted-foreground">
-          By signing in, you agree to our{" "}
-          <Link to="/" className="hover:underline">
-            Terms of Service
-          </Link>{" "}
-          and{" "}
-          <Link to="/" className="hover:underline">
-            Privacy Policy
-          </Link>
-        </div>
+        </p>
       </div>
-    </div>;
+    </AuthLayout>
+  );
 }
-export {
-  Route
-};
+
+export { Route };

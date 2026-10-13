@@ -12,6 +12,7 @@ Endpoints:
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
+from service_auth import TEACHER_ROLES, flask_require_role, protect_flask
 import os
 import sys
 
@@ -55,6 +56,9 @@ import object_storage
 # metadata, Object Storage holds the actual file).
 app = Flask(__name__, static_folder=None)
 CORS(app)  # Enable CORS for frontend integration
+# Every route except /api/health and the public short-notes PDFs now needs
+# the account service's JWT or the internal service token (service_auth.py).
+protect_flask(app)
 
 
 @app.route("/static/notes/<lesson_id>/<lo_name>.pdf", methods=["GET"])
@@ -393,6 +397,7 @@ def get_lesson_locks():
 
 
 @app.route("/api/lessons/<lesson_id>/lock", methods=["POST"])
+@flask_require_role(*TEACHER_ROLES)
 def set_lesson_lock(lesson_id):
     """Teacher-facing: publish (unlock) or withdraw (lock) this lesson's
     quiz. Body: { "locked": true | false }. Same trust level as every

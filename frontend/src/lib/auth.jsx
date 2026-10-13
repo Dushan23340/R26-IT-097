@@ -1,6 +1,7 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { api } from "@/lib/api";
+import { hasValidToken } from "@/lib/authHeaders";
 const AuthContext = createContext(void 0);
 function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
@@ -8,7 +9,13 @@ function AuthProvider({ children }) {
   const router = useRouter();
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
-    if (storedUser) {
+    // A saved user without a valid token is not a usable session: every
+    // service now checks the token, so treat it as logged out and let the
+    // login screen issue a fresh one.
+    if (storedUser && !hasValidToken()) {
+      localStorage.removeItem("user");
+      localStorage.removeItem("token");
+    } else if (storedUser) {
       try {
         setUser(JSON.parse(storedUser));
       } catch {
@@ -24,6 +31,14 @@ function AuthProvider({ children }) {
   const signup = async (email, password, name, role) => {
     try {
       const response = await api.post("/auth/signup", { email, password, name, role });
+      // The account service already returns the new user and a token on
+      // sign-up. Keep them, so a new account is signed in straight away
+      // instead of being sent to the login page to type the same details.
+      if (response.success && response.user && response.token) {
+        setUser(response.user);
+        localStorage.setItem("user", JSON.stringify(response.user));
+        localStorage.setItem("token", response.token);
+      }
       return response;
     } catch (error) {
       return { success: false, message: error.message || "Signup failed" };
@@ -31,9 +46,7 @@ function AuthProvider({ children }) {
   };
   const login = async (email, password) => {
     try {
-      console.log("\u{1F510} Login attempt:", { email, api_url: import.meta.env.VITE_API_URL || "http://localhost:3001/api" });
       const response = await api.post("/auth/login", { email, password });
-      console.log("\u2705 Login response:", response);
       if (response.success && response.user) {
         setUser(response.user);
         localStorage.setItem("user", JSON.stringify(response.user));

@@ -1,211 +1,170 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
+import { ArrowLeft, ArrowRight, Loader2, Lock, Mail, ShieldCheck, User } from "lucide-react";
+import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Button } from "@/components/ui/button";
-import { GraduationCap, Users, AlertCircle } from "lucide-react";
+import { ROLES, homeFor } from "@/lib/roles";
+import { AuthLayout, RolePicker } from "@/components/AuthLayout";
+import { EMAIL_PATTERN, Field, Notice, PasswordField, PasswordStrength } from "@/components/AuthFields";
+
 const Route = createFileRoute("/signup")({
-  component: SignupPage
+  head: () => ({ meta: [{ title: "Create account — AdaptiveMind" }] }),
+  component: SignupPage,
 });
+
+function Steps({ step }) {
+  return (
+    <ol className="flex items-center gap-2 text-xs font-medium" aria-label="Progress">
+      {["Your role", "Your details"].map((label, i) => {
+        const n = i + 1;
+        const done = step > n;
+        const current = step === n;
+        return (
+          <li key={label} className="flex items-center gap-2" aria-current={current ? "step" : undefined}>
+            <span
+              className={`h-6 w-6 rounded-full grid place-items-center text-[11px] font-bold ${done || current ? "text-primary-foreground" : "text-muted-foreground border border-border"}`}
+              style={done || current ? { background: "var(--gradient-primary)" } : undefined}
+            >
+              {n}
+            </span>
+            <span className={current ? "text-foreground" : "text-muted-foreground"}>{label}</span>
+            {n === 1 && <span className="mx-1 h-px w-8 bg-border" />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function SignupPage() {
   const router = useRouter();
   const { signup } = useAuth();
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    password: "",
-    confirmPassword: "",
-    role: "student"
-  });
+  const [step, setStep] = useState(1);
+  const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "student" });
+  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const set = (key) => (e) => setForm((f) => ({ ...f, [key]: e.target.value }));
+  const info = ROLES[form.role];
+
+  // Same rules the account service enforces (validateSignupFields), checked
+  // here first so the user sees the problem next to the field.
+  const validate = () => {
+    const errors = {};
+    const name = form.name.trim();
+    if (name.length < 2) errors.name = "Enter your full name (at least 2 characters)";
+    else if (name.length > 100) errors.name = "Name must be 100 characters or fewer";
+    if (!form.email.trim()) errors.email = "Enter your e-mail address";
+    else if (!EMAIL_PATTERN.test(form.email.trim())) errors.email = "Enter a valid e-mail address";
+    if (form.password.length < 6) errors.password = "Use at least 6 characters";
+    if (!form.confirmPassword) errors.confirmPassword = "Type your password again";
+    else if (form.confirmPassword !== form.password) errors.confirmPassword = "The two passwords do not match";
+    return errors;
+  };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    if (!formData.name || !formData.email || !formData.password) {
-      setError("All fields are required");
-      return;
-    }
-    if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match");
-      return;
-    }
-    if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(formData.email)) {
-      setError("Please enter a valid email address");
-      return;
-    }
+    const errors = validate();
+    setFieldErrors(errors);
+    if (Object.keys(errors).length) return;
+
     setIsLoading(true);
-    const result = await signup(formData.email, formData.password, formData.name, formData.role);
+    const result = await signup(form.email.trim(), form.password, form.name.trim(), form.role);
     setIsLoading(false);
-    if (result.success) {
-      router.navigate({ to: "/" });
+
+    if (!result.success) {
+      setError(result.message || "Could not create the account. Please try again.");
+      return;
+    }
+    if (result.user && result.token) {
+      // Signed in already (lib/auth.jsx keeps the token the sign-up returns).
+      toast.success(`Welcome to AdaptiveMind, ${result.user.name?.split(" ")[0] || "there"}`, {
+        description: `Your ${result.user.role} account is ready.`,
+      });
+      setSuccess("Account created.");
+      router.navigate({ to: homeFor(result.user.role), replace: true });
     } else {
-      setError(result.message);
+      toast.success("Account created", { description: "Please sign in." });
+      router.navigate({ to: "/login", replace: true });
     }
   };
-  return <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-secondary/20 to-background px-4">
-      <div className="w-full max-w-md">
-        {
-    /* Logo */
-  }
-        <div className="text-center mb-8">
-          <Link to="/" className="inline-flex items-center gap-3 group">
-            <div className="h-12 w-12 rounded-xl flex items-center justify-center" style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}>
-              <GraduationCap className="h-6 w-6 text-primary-foreground" />
-            </div>
-            <div>
-              <div className="font-display text-2xl font-bold leading-tight">Adaptive<span className="text-gradient-primary">Mind</span></div>
-              <div className="text-xs uppercase tracking-wider text-muted-foreground">Create Account</div>
-            </div>
-          </Link>
-        </div>
 
-        {
-    /* Card */
-  }
-        <div className="glass rounded-2xl p-8 shadow-xl">
-          <h2 className="text-2xl font-bold mb-2">Sign Up</h2>
-          <p className="text-sm text-muted-foreground mb-6">
-            Join AdaptiveMind as a {formData.role === "student" ? "student" : "teacher"}
-          </p>
+  return (
+    <AuthLayout role={form.role}>
+      <div className="glass rounded-3xl p-7 sm:p-9">
+        <Steps step={step} />
 
-          {
-    /* Role Selection */
-  }
-          <div className="grid grid-cols-2 gap-3 mb-6">
+        {step === 1 ? (
+          <>
+            <h2 className="mt-6 text-3xl font-bold tracking-tight">Create your account</h2>
+            <p className="mt-2 text-sm text-muted-foreground">First, tell us how you will use AdaptiveMind.</p>
+            <div className="mt-6">
+              <RolePicker value={form.role} onChange={(role) => setForm((f) => ({ ...f, role }))} />
+            </div>
             <button
-    type="button"
-    onClick={() => setFormData({ ...formData, role: "student" })}
-    className={`flex items-center gap-2 p-4 rounded-xl border-2 transition-all ${formData.role === "student" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
-  >
-              <GraduationCap className="h-5 w-5" />
-              <span className="font-medium">Student</span>
+              type="button"
+              onClick={() => setStep(2)}
+              className="mt-6 w-full h-12 rounded-xl text-base font-semibold text-primary-foreground flex items-center justify-center gap-2 transition-[filter,transform] hover:brightness-110 active:translate-y-px"
+              style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
+            >
+              Continue as {info.label.toLowerCase()}
+              <ArrowRight className="h-4 w-4" />
             </button>
-            <button
-    type="button"
-    onClick={() => setFormData({ ...formData, role: "teacher" })}
-    className={`flex items-center gap-2 p-4 rounded-xl border-2 transition-all ${formData.role === "teacher" ? "border-primary bg-primary/10" : "border-border hover:border-primary/50"}`}
-  >
-              <Users className="h-5 w-5" />
-              <span className="font-medium">Teacher</span>
+          </>
+        ) : (
+          <>
+            <button type="button" onClick={() => setStep(1)} className="mt-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
+              <ArrowLeft className="h-4 w-4" />
+              Change role
             </button>
-          </div>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight">
+              {info.label} details
+            </h2>
+            <p className="mt-2 text-sm text-muted-foreground">{info.tagline}.</p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {
-    /* Name */
-  }
-            <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
-              <Input
-    id="name"
-    type="text"
-    placeholder="John Doe"
-    value={formData.name}
-    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-    className="h-12"
-  />
-            </div>
+            <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
+              <Field id="name" label="Full name" icon={User} autoComplete="name" placeholder={form.role === "teacher" ? "Ms. Kumari Silva" : "Nimal Perera"} value={form.name} onChange={set("name")} error={fieldErrors.name} />
+              <Field id="email" label="E-mail address" icon={Mail} type="email" autoComplete="email" placeholder={form.role === "teacher" ? "teacher@school.lk" : "you@example.com"} value={form.email} onChange={set("email")} error={fieldErrors.email} />
+              <div>
+                <PasswordField id="password" label="Password" icon={Lock} autoComplete="new-password" placeholder="At least 6 characters" value={form.password} onChange={set("password")} error={fieldErrors.password} />
+                <PasswordStrength password={form.password} />
+              </div>
+              <PasswordField id="confirmPassword" label="Confirm password" icon={Lock} autoComplete="new-password" placeholder="Type it again" value={form.confirmPassword} onChange={set("confirmPassword")} error={fieldErrors.confirmPassword} />
 
-            {
-    /* Email */
-  }
-            <div className="space-y-2">
-              <Label htmlFor="email">Email Address</Label>
-              <Input
-    id="email"
-    type="email"
-    placeholder="john@example.com"
-    value={formData.email}
-    onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-    className="h-12"
-  />
-            </div>
+              {form.role === "student" && (
+                <div className="flex gap-3 rounded-xl border border-border bg-background/30 p-3 text-xs text-muted-foreground">
+                  <ShieldCheck className="h-4 w-4 mt-0.5 shrink-0 text-primary" />
+                  <span>During live classes your webcam is used to read how the lesson is going for you. No face images are stored.</span>
+                </div>
+              )}
 
-            {
-    /* Password */
-  }
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-    id="password"
-    type="password"
-    placeholder="••••••••"
-    value={formData.password}
-    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-    className="h-12"
-  />
-            </div>
+              {error && <Notice>{error}</Notice>}
 
-            {
-    /* Confirm Password */
-  }
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm Password</Label>
-              <Input
-    id="confirmPassword"
-    type="password"
-    placeholder="••••••••"
-    value={formData.confirmPassword}
-    onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
-    className="h-12"
-  />
-            </div>
+              <button
+                type="submit"
+                disabled={isLoading || Boolean(success)}
+                className="w-full h-12 rounded-xl text-base font-semibold text-primary-foreground flex items-center justify-center gap-2 transition-[filter,transform] hover:brightness-110 active:translate-y-px disabled:opacity-60"
+                style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
+              >
+                {isLoading ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
+                {isLoading ? "Creating account..." : `Create ${info.label.toLowerCase()} account`}
+              </button>
+            </form>
+          </>
+        )}
 
-            {
-    /* Error Message */
-  }
-            {error && <div className="flex items-center gap-2 text-sm text-destructive bg-destructive/10 p-3 rounded-lg">
-                <AlertCircle className="h-4 w-4" />
-                {error}
-              </div>}
-
-            {
-    /* Submit Button */
-  }
-            <Button
-    type="submit"
-    disabled={isLoading}
-    className="w-full h-12 text-base font-semibold"
-    style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
-  >
-              {isLoading ? "Creating Account..." : "Create Account"}
-            </Button>
-          </form>
-
-          {
-    /* Login Link */
-  }
-          <div className="mt-6 text-center text-sm text-muted-foreground">
-            Already have an account?{" "}
-            <Link to="/login" className="text-primary hover:underline font-medium">
-              Sign in
-            </Link>
-          </div>
-        </div>
-
-        {
-    /* Footer */
-  }
-        <div className="mt-8 text-center text-xs text-muted-foreground">
-          By signing up, you agree to our{" "}
-          <Link to="/" className="hover:underline">
-            Terms of Service
-          </Link>{" "}
-          and{" "}
-          <Link to="/" className="hover:underline">
-            Privacy Policy
+        <div className="hairline my-6" />
+        <p className="text-center text-sm text-muted-foreground">
+          Already have an account?{" "}
+          <Link to="/login" className="font-semibold text-primary hover:underline">
+            Sign in
           </Link>
-        </div>
+        </p>
       </div>
-    </div>;
+    </AuthLayout>
+  );
 }
-export {
-  Route
-};
+
+export { Route };

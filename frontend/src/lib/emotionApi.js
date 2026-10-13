@@ -1,3 +1,4 @@
+import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 const EMOTION_API_URL = import.meta.env.VITE_EMOTION_API_URL || "http://localhost:8000";
 
 async function request(endpoint, options = {}) {
@@ -5,12 +6,14 @@ async function request(endpoint, options = {}) {
   const config = {
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
       ...options.headers,
     },
     ...options,
   };
   const response = await fetch(url, config);
   const data = await response.json().catch(() => ({}));
+  if (response.status === 401) handleUnauthorized();
   if (!response.ok) {
     throw new Error(data.message || data.detail || "Request failed");
   }
@@ -22,10 +25,11 @@ export const emotionApi = {
   getTrend: (n = 10) => request(`/analytics/trend?n=${n}`),
   getPattern: () => request("/analytics/pattern"),
 
-  generateRecommendation: (emotion, subject = "General", lessonId = "") =>
+  generateRecommendation: (emotion, subject = "General", lessonId = "", matchEmotion = false) =>
     request(
       `/recommendation/generate?emotion=${encodeURIComponent(emotion)}&subject=${encodeURIComponent(subject)}` +
-        (lessonId ? `&lesson_id=${encodeURIComponent(lessonId)}` : "")
+        (lessonId ? `&lesson_id=${encodeURIComponent(lessonId)}` : "") +
+        (matchEmotion ? "&match_emotion=true" : "")
     ),
 
   getLatestRecommendation: () => request("/recommendation/latest"),

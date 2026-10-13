@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from flask import Blueprint, jsonify, request
 
+from service_auth import TEACHER_ROLES, flask_require_role
 from services import intervention_service, profile_service, statistics_service, validation_service
 
 bp = Blueprint("validation", __name__)
@@ -31,6 +32,7 @@ def approved_recommendations():
 
 
 @bp.route("/recommendations/<int:recommendation_id>/review", methods=["POST"])
+@flask_require_role(*TEACHER_ROLES)
 def review_recommendation(recommendation_id: int):
     data = request.get_json(force=True) or {}
     action = data.get("action")

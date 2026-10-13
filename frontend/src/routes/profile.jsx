@@ -12,7 +12,7 @@ import {
   Scatter,
   ZAxis
 } from "recharts";
-import { Activity, TrendingUp, Calendar, RefreshCw, AlertTriangle, Sparkles, Mail, ShieldCheck, Users, Scale, Gamepad2, Clock, Video, Layers, BarChart3, Target, BellRing, CheckCircle2 } from "lucide-react";
+import { Activity, TrendingUp, Calendar, Settings, RefreshCw, AlertTriangle, Sparkles, Mail, ShieldCheck, Users, Scale, Gamepad2, Clock, Video, Layers, BarChart3, Target, BellRing, CheckCircle2 } from "lucide-react";
 import { EmotionBadge } from "@/components/EmotionBadge";
 import { MasteryRing } from "@/components/MasteryRing";
 import { AccountSettings } from "@/components/AccountSettings";
@@ -20,6 +20,7 @@ import { studentProfileApi } from "@/lib/studentProfileApi";
 import { emotionApi } from "@/lib/emotionApi";
 import { toEmotionKey } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
+import { initialsOf } from "@/components/AppHeader";
 
 const Route = createFileRoute("/profile")({
   head: () => ({
@@ -171,8 +172,7 @@ function buildLiveClassSessions(emotionalStates) {
 function ProfileView() {
   const { user } = useAuth();
   return (
-    <div className="space-y-6">
-      <AccountSettings />
+    <div className="max-w-7xl mx-auto">
       {user?.role === "teacher" ? <TeacherProfileCard user={user} /> : <StudentAnalyticsView />}
     </div>
   );
@@ -200,6 +200,7 @@ function TeacherProfileCard({ user }) {
   const [resolvingAlertId, setResolvingAlertId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [tab, setTab] = useState("overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -252,48 +253,43 @@ function TeacherProfileCard({ user }) {
 
   return (
     <div className="space-y-6 stagger-children">
-      <div className="glass rounded-2xl p-6 flex flex-wrap items-center gap-6">
-        <div
-          className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0 overflow-hidden"
-          style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
-        >
-          {user?.avatarDataUrl ? (
-            <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            (user?.name || "?").slice(0, 2).toUpperCase()
-          )}
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Teacher Profile</div>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold">{user?.name || "Teacher"}</h1>
-          <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" /> {user?.email}</span>
-            <span className="flex items-center gap-1.5"><ShieldCheck className="h-3.5 w-3.5" /> Teacher</span>
-          </div>
-        </div>
-        <div className="flex gap-3 flex-wrap">
-          <Stat label="Students" value={overview ? String(overview.total_students) : "–"} tone="neutral" />
-          <Stat label="At-Risk" value={overview ? String(overview.at_risk_count) : "–"} tone={overview?.at_risk_count > 0 ? "warn" : "good"} />
-          <Stat label="Class Avg LO" value={overview?.avg_lo_score != null ? `${overview.avg_lo_score}%` : "–"} tone={overview?.avg_lo_score == null ? "neutral" : overview.avg_lo_score >= 75 ? "good" : overview.avg_lo_score >= 50 ? "warn" : "bad"} />
-          <Stat label="Pending Insights" value={pendingCount != null ? String(pendingCount) : "–"} tone={pendingCount > 0 ? "warn" : "neutral"} />
-        </div>
-      </div>
+      <ProfileHero
+        user={user}
+        name={user?.name || "Teacher"}
+        eyebrow="Teacher profile"
+        meta={[user?.email, "Teacher", user?.createdAt ? `Member since ${new Date(user.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" })}` : null]}
+        stats={[
+          { label: "Students", value: overview ? String(overview.total_students) : "–", tone: "neutral" },
+          { label: "At risk", value: overview ? String(overview.at_risk_count) : "–", tone: overview?.at_risk_count > 0 ? "warn" : "good" },
+          { label: "Class average", value: overview?.avg_lo_score != null ? `${overview.avg_lo_score}%` : "–", tone: overview?.avg_lo_score == null ? "neutral" : overview.avg_lo_score >= 75 ? "good" : overview.avg_lo_score >= 50 ? "warn" : "bad" },
+          { label: "Pending insights", value: pendingCount != null ? String(pendingCount) : "–", tone: pendingCount > 0 ? "warn" : "neutral" },
+        ]}
+        tabs={[
+          { key: "overview", label: "Class overview", Icon: TrendingUp },
+          { key: "fairness", label: "Fairness", Icon: Scale, count: fairnessAlerts.length || null },
+          { key: "activity", label: "Activity", Icon: Gamepad2 },
+          { key: "account", label: "Account", Icon: Settings },
+        ]}
+        tab={tab}
+        onTab={setTab}
+      />
 
       {error ? (
         <div className="glass rounded-2xl p-4 border border-destructive/30 bg-destructive/5 text-sm text-destructive flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" /> {error} (is analytics-service running on port 5010?)
+          <AlertTriangle className="h-4 w-4" /> {error}
         </div>
       ) : null}
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="tab-grid grid grid-cols-1 lg:grid-cols-2 gap-6">
         {
     /* Where the class is struggling - real, previously-unsurfaced data
        from analytics-service's class/overview (struggling_areas), broken
        down by Bloom's-taxonomy LO level across every student. */
   }
+        {tab === "overview" && (<>
         <div className="glass rounded-2xl p-5">
           <div className="text-sm font-semibold flex items-center gap-2 mb-4">
-            <TrendingUp className="h-4 w-4 text-primary" /> Where Your Class Is Struggling
+            <TrendingUp className="h-4 w-4 text-primary" /> Class average by learning level
           </div>
           {loading ? (
             <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
@@ -323,12 +319,14 @@ function TeacherProfileCard({ user }) {
             <p className="text-xs text-muted-foreground">No quiz data recorded across the class yet.</p>
           )}
         </div>
+        </>)}
 
         {
     /* Fairness/equity snapshot - real disparate-impact analysis already
        computed by analytics-service but never shown anywhere in the UI
        until now. */
   }
+        {tab === "fairness" && (<>
         <div className="glass rounded-2xl p-5">
           <div className="text-sm font-semibold flex items-center gap-2 mb-4">
             <Scale className="h-4 w-4 text-primary" /> Fairness & Equity Snapshot
@@ -360,13 +358,15 @@ function TeacherProfileCard({ user }) {
             <p className="text-xs text-muted-foreground">Not enough demographic data yet to compute fairness metrics.</p>
           )}
         </div>
+        </>)}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="tab-grid grid grid-cols-1 lg:grid-cols-2 gap-6">
         {
     /* Intervention effectiveness - condensed version of the same real
        metric the Teacher Console tracks, for an at-a-glance summary here. */
   }
+        {tab === "overview" && (<>
         <div className="glass rounded-2xl p-5">
           <div className="text-sm font-semibold flex items-center gap-2 mb-4">
             <Activity className="h-4 w-4 text-primary" /> Intervention Effectiveness
@@ -386,11 +386,13 @@ function TeacherProfileCard({ user }) {
             <p className="text-xs text-muted-foreground">No interventions recorded yet.</p>
           )}
         </div>
+        </>)}
 
         {
     /* Recent activity feed - real recommendation-engine history, not
        shown as a timeline anywhere else in the UI. */
   }
+        {tab === "activity" && (<>
         <div className="glass rounded-2xl p-5">
           <div className="text-sm font-semibold flex items-center gap-2 mb-4">
             <Gamepad2 className="h-4 w-4 text-primary" /> Recently Assigned Games
@@ -413,9 +415,10 @@ function TeacherProfileCard({ user }) {
             <p className="text-xs text-muted-foreground">No games assigned in the last 7 days.</p>
           )}
         </div>
+        </>)}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="tab-grid grid grid-cols-1 lg:grid-cols-2 gap-6">
         {
     /* Recommendation Effectiveness - distinct from "Intervention
        Effectiveness" above (that's emotion-backend's game-recommendation
@@ -423,6 +426,7 @@ function TeacherProfileCard({ user }) {
        recommendations: does approving a trend/stability/emotion/engagement
        insight actually correlate with improved subsequent LO scores. */
   }
+        {tab === "overview" && (<>
         <div className="glass rounded-2xl p-5">
           <div className="text-sm font-semibold flex items-center gap-2 mb-4">
             <Target className="h-4 w-4 text-primary" /> Recommendation Effectiveness
@@ -456,12 +460,14 @@ function TeacherProfileCard({ user }) {
             </p>
           )}
         </div>
+        </>)}
 
         {
     /* Fairness Alert History - persisted violations from
        fairness_audits (FR09), distinct from the live snapshot above which
        recomputes on every page load and has no memory of past findings. */
   }
+        {tab === "fairness" && (<>
         <div className="glass rounded-2xl p-5">
           <div className="text-sm font-semibold flex items-center gap-2 mb-4">
             <BellRing className="h-4 w-4 text-primary" /> Fairness Alert History
@@ -496,12 +502,16 @@ function TeacherProfileCard({ user }) {
             <p className="text-xs text-muted-foreground">No open fairness alerts - disparate-impact and variance-calibration checks are clean.</p>
           )}
         </div>
+        </>)}
       </div>
 
+      {tab === "overview" && (<>
       <p className="text-xs text-muted-foreground flex items-center gap-1.5">
         <Users className="h-3.5 w-3.5" /> Looking for a specific student's learning analytics? Open Teacher Console to browse the class
         and start a recommendation - individual student profiles are viewed from there.
       </p>
+      </>)}
+      {tab === "account" && <AccountSettings defaultExpanded />}
     </div>
   );
 }
@@ -523,6 +533,7 @@ function StudentAnalyticsView() {
   const [error, setError] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [recommendations, setRecommendations] = useState([]);
+  const [tab, setTab] = useState("overview");
 
   // Grade/demographic display metadata only - this is NOT a student picker,
   // it just looks up this student's own row for header display. A student
@@ -596,7 +607,10 @@ function StudentAnalyticsView() {
   const avgLo = sessionRows.length
     ? Math.round(sessionRows.reduce((sum, s) => sum + s.lo, 0) / sessionRows.length)
     : null;
-  const stabilityPercent = stabilityToPercent(stability?.std_dev);
+  // `volatility` is the fluctuation around the learner's own trend line; the
+  // plain std-dev also counts steady improvement as instability.
+  const fluctuation = stability?.volatility ?? stability?.std_dev;
+  const stabilityPercent = stabilityToPercent(fluctuation);
 
   const strongestCorrelation = correlation
     ? Object.entries(correlation)
@@ -624,30 +638,27 @@ function StudentAnalyticsView() {
       {
     /* Header - always this student's own profile, never a picker */
   }
-      <div className="glass rounded-2xl p-6 flex flex-wrap items-center gap-6">
-        <div
-    className="h-20 w-20 rounded-2xl flex items-center justify-center text-3xl font-display font-bold flex-shrink-0 overflow-hidden"
-    style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
-  >
-          {user?.avatarDataUrl ? (
-            <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" />
-          ) : (
-            displayName.slice(0, 2).toUpperCase()
-          )}
-        </div>
-        <div className="flex-1 min-w-[200px]">
-          <div className="text-xs uppercase tracking-[0.25em] text-muted-foreground mb-1">Student Profile</div>
-          <h1 className="font-display text-2xl sm:text-3xl font-bold">{displayName}</h1>
-          <div className="text-sm text-muted-foreground mt-1">
-            {ownProfile?.grade_level || ""} {ownProfile?.demographic_group ? `· ${ownProfile.demographic_group}` : ""}
-          </div>
-        </div>
-        <div className="flex gap-3 flex-wrap">
-          <Stat label="Avg LO" value={avgLo != null ? `${avgLo}%` : "–"} tone={avgLo == null ? "neutral" : avgLo >= 75 ? "good" : avgLo >= 50 ? "warn" : "bad"} />
-          <Stat label="Sessions" value={String(sessionRows.length)} tone="neutral" />
-          <Stat label="Stability" value={stabilityPercent != null ? (stabilityPercent >= 70 ? "High" : stabilityPercent >= 40 ? "Medium" : "Low") : "–"} tone={stabilityPercent == null ? "neutral" : stabilityPercent >= 70 ? "good" : "warn"} />
-        </div>
-      </div>
+      <ProfileHero
+        user={user}
+        name={displayName}
+        eyebrow="Student profile"
+        meta={[user?.email, ownProfile?.grade_level, user?.createdAt ? `Member since ${new Date(user.createdAt).toLocaleDateString(undefined, { month: "long", year: "numeric" })}` : null]}
+        stats={[
+          { label: "Average score", value: avgLo != null ? `${avgLo}%` : "–", tone: avgLo == null ? "neutral" : avgLo >= 75 ? "good" : avgLo >= 50 ? "warn" : "bad" },
+          { label: "Quizzes taken", value: String(sessionRows.length), tone: "neutral" },
+          { label: "Trend", value: trend?.available ? trend.direction.charAt(0).toUpperCase() + trend.direction.slice(1) : "–", tone: !trend?.available ? "neutral" : trend.direction === "improving" ? "good" : trend.direction === "declining" ? "bad" : "neutral" },
+          { label: "Consistency", value: stabilityPercent != null ? (stabilityPercent >= 70 ? "High" : stabilityPercent >= 40 ? "Medium" : "Low") : "–", tone: stabilityPercent == null ? "neutral" : stabilityPercent >= 70 ? "good" : "warn" },
+        ]}
+        tabs={[
+          { key: "overview", label: "Overview", Icon: TrendingUp },
+          { key: "lessons", label: "Lessons", Icon: Layers, count: lessonIntelligence.length || null },
+          { key: "emotions", label: "Emotions", Icon: Video },
+          { key: "support", label: "Recommendations", Icon: Sparkles, count: recommendations.length || null },
+          { key: "account", label: "Account", Icon: Settings },
+        ]}
+        tab={tab}
+        onTab={setTab}
+      />
 
       {sessionRows.length === 0 && !loading && !error ? (
         <div className="glass rounded-2xl p-4 border border-primary/20 bg-primary/5 text-sm text-muted-foreground">
@@ -657,7 +668,7 @@ function StudentAnalyticsView() {
 
       {error ? (
         <div className="glass rounded-2xl p-4 border border-destructive/30 bg-destructive/5 text-sm text-destructive flex items-center gap-2">
-          <AlertTriangle className="h-4 w-4" /> {error} (is analytics-service running on port 5010?)
+          <AlertTriangle className="h-4 w-4" /> {error}
         </div>
       ) : null}
 
@@ -667,6 +678,7 @@ function StudentAnalyticsView() {
         </div>
       ) : null}
 
+      {tab === "overview" && (<>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {
     /* LO Trend */
@@ -674,10 +686,17 @@ function StudentAnalyticsView() {
         <div className="glass rounded-2xl p-5 lg:col-span-2">
           <div className="flex items-center justify-between mb-4">
             <div className="text-sm font-semibold flex items-center gap-2">
-              <TrendingUp className="h-4 w-4 text-primary" /> LO Mastery Across Sessions
+              <TrendingUp className="h-4 w-4 text-primary" /> Quiz scores over time
               {trend?.available && (
-                <span className="text-[11px] font-normal text-muted-foreground ml-2">
-                  ({trend.direction}{trend.significant ? ", p=" + trend.p_value : ""})
+                <span
+                  className="ml-2 rounded-full px-2.5 py-0.5 text-[11px] font-semibold capitalize"
+                  style={{
+                    color: trend.direction === "improving" ? "var(--emotion-happy)" : trend.direction === "declining" ? "var(--destructive)" : "var(--muted-foreground)",
+                    background: `color-mix(in oklab, ${trend.direction === "improving" ? "var(--emotion-happy)" : trend.direction === "declining" ? "var(--destructive)" : "var(--muted-foreground)"} 14%, transparent)`,
+                  }}
+                  title={trend.significant ? `Statistically significant (p = ${trend.p_value})` : "Not a statistically significant change"}
+                >
+                  {trend.direction}
                 </span>
               )}
             </div>
@@ -706,37 +725,42 @@ function StudentAnalyticsView() {
   }
         <div className="glass rounded-2xl p-5 flex flex-col items-center text-center">
           <div className="text-sm font-semibold flex items-center gap-2 self-start">
-            <Activity className="h-4 w-4 text-primary" /> Stability Analysis
+            <Activity className="h-4 w-4 text-primary" /> Consistency
           </div>
           <div className="my-6">
-            <MasteryRing value={stabilityPercent ?? 0} size={170} label="Stability" sublabel={stability?.available ? `std dev ${stability.std_dev}` : "insufficient data"} />
+            <MasteryRing value={stabilityPercent ?? 0} size={170} label="Consistency" sublabel={stability?.available ? (stabilityPercent >= 70 ? "steady results" : stabilityPercent >= 40 ? "some ups and downs" : "large ups and downs") : "needs 2+ quizzes"} />
           </div>
           <div className="grid grid-cols-2 gap-3 w-full text-left">
             <div className="rounded-lg p-3 border border-border">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Std Dev</div>
-              <div className="font-display text-2xl font-bold">{stability?.available ? stability.std_dev : "–"}</div>
+              <div className="text-[11px] text-muted-foreground">Fluctuation</div>
+              <div className="font-display text-2xl font-bold tnum">{stability?.available && fluctuation != null ? Number(fluctuation).toFixed(1) : "–"}</div>
             </div>
             <div className="rounded-lg p-3 border border-border">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Variance</div>
-              <div className="font-display text-2xl font-bold">{stability?.available ? stability.variance : "–"}</div>
+              <div className="text-[11px] text-muted-foreground">Score spread</div>
+              <div className="font-display text-2xl font-bold tnum">{stability?.available ? Number(stability.std_dev).toFixed(1) : "–"}</div>
             </div>
           </div>
+          <p className="mt-4 text-xs text-muted-foreground text-left">
+            Fluctuation measures how much your scores jump around your own trend. Steady improvement does not count against you.
+          </p>
         </div>
       </div>
+      </>)}
 
       {
     /* Correlation scatter */
   }
+      {tab === "emotions" && (<>
       <div className="glass rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <div className="text-sm font-semibold">Negative Emotion % vs. Performance (per session)</div>
+          <div className="text-sm font-semibold flex items-center gap-2"><Target className="h-4 w-4 text-primary" /> Mood and quiz results</div>
           <div className="text-xs text-muted-foreground">
             {strongestCorrelation
               ? `${strongestCorrelation[0]}: r = ${strongestCorrelation[1].r} · ${strongestCorrelation[1].direction}`
-              : "no meaningful correlation detected yet"}
+              : "No clear link found yet"}
           </div>
         </div>
-        <div className="h-72">
+        <div className={scatterData.length > 0 ? "h-72" : "py-10"}>
           {scatterData.length > 0 ? (
             <ResponsiveContainer>
               <ScatterChart>
@@ -770,24 +794,27 @@ function StudentAnalyticsView() {
                 <RefreshCw className="h-5 w-5 animate-spin" />
               ) : (
                 <>
-                  <span>No emotion data tied to a quiz session yet.</span>
-                  <span className="text-xs mt-1">Quiz-taking doesn't capture webcam emotion - see Live Class Emotion History below for real emotion data from joined classes.</span>
+                  <Video className="h-8 w-8 mb-3 opacity-50" />
+                  <span className="font-medium text-foreground">Nothing to compare yet</span>
+                  <span className="text-xs mt-1 max-w-md">Your mood is read only during live classes. After you join a class and take its quiz, this chart shows how the two relate.</span>
                 </>
               )}
             </div>
           )}
         </div>
       </div>
+      </>)}
 
       {
     /* Difficulty vs Achievement - the 5th statistical analysis, only
        meaningful once sessions span 2+ difficulty-tagged lessons
        (adaptive-learning's LESSON_DIFFICULTY tags). */
   }
+      {tab === "lessons" && (<>
       <div className="glass rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-semibold flex items-center gap-2">
-            <BarChart3 className="h-4 w-4 text-primary" /> Difficulty vs. Achievement
+            <BarChart3 className="h-4 w-4 text-primary" /> Scores by lesson difficulty
           </div>
           {difficulty?.available && (
             <span className="text-[11px] text-muted-foreground">
@@ -824,20 +851,22 @@ function StudentAnalyticsView() {
             })}
           </div>
         ) : (
-          <p className="text-xs text-muted-foreground">
-            {difficulty?.reason || "Not enough difficulty-tagged sessions yet across 2+ difficulty levels."}
+          <p className="text-sm text-muted-foreground">
+            Take quizzes in lessons of at least two difficulty levels (easy, medium or hard) to see how difficulty affects your scores.
           </p>
         )}
       </div>
+      </>)}
 
       {
     /* Lesson-by-Lesson Intelligence (SO3/FR06) - groups by lesson_id
        (trend/stability/dominant emotion/verdict per lesson), distinct from
        the per-SESSION "Lesson-by-Lesson Breakdown" table further down. */
   }
+      {tab === "lessons" && (<>
       <div className="glass rounded-2xl p-5">
         <div className="text-sm font-semibold flex items-center gap-2 mb-4">
-          <Layers className="h-4 w-4 text-primary" /> Lesson-by-Lesson Intelligence
+          <Layers className="h-4 w-4 text-primary" /> How you are doing in each lesson
         </div>
         {loading ? (
           <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
@@ -848,9 +877,9 @@ function StudentAnalyticsView() {
             {lessonIntelligence.map((l) => {
               const verdictColor = l.verdict === "strength" ? "var(--emotion-happy)" : l.verdict === "weakness" ? "var(--emotion-confused)" : "var(--muted-foreground)";
               return (
-                <div key={l.lesson_id} className="p-3 rounded-lg border border-border/60 text-xs">
+                <div key={l.lesson_id} className="p-4 rounded-xl border border-border/60 bg-background/30 text-xs">
                   <div className="flex items-center justify-between mb-2">
-                    <span className="font-semibold capitalize">{l.lesson_id.replace(/-/g, " ")}</span>
+                    <span className="font-semibold capitalize text-sm">{l.lesson_id.replace(/-/g, " ")}</span>
                     <span
                       className="px-2 py-0.5 rounded-full text-[10px] font-medium capitalize"
                       style={{ background: `color-mix(in oklab, ${verdictColor} 15%, transparent)`, color: verdictColor }}
@@ -870,7 +899,7 @@ function StudentAnalyticsView() {
                       {l.avg_engagement != null && (
                         <span className="text-muted-foreground">{Math.round(l.avg_engagement * 100)}% engagement</span>
                       )}
-                      {l.is_unstable && <span className="text-emotion-confused">high variance</span>}
+                      {l.is_unstable && <span className="text-emotion-confused">results vary a lot</span>}
                     </div>
                   )}
                 </div>
@@ -881,15 +910,17 @@ function StudentAnalyticsView() {
           <p className="text-xs text-muted-foreground">No lesson data yet - take a quiz from Adaptive Learning and it'll show up here.</p>
         )}
       </div>
+      </>)}
 
       {
     /* Live Class Emotion History - real emotion data from "Join Live
        Class" sessions, kept separate from the quiz-score correlation
        chart above since quiz-taking itself never captures emotion. */
   }
+      {tab === "emotions" && (<>
       <div className="glass rounded-2xl p-5">
         <div className="text-sm font-semibold flex items-center gap-2 mb-4">
-          <Video className="h-4 w-4 text-primary" /> Live Class Emotion History
+          <Video className="h-4 w-4 text-primary" /> Your mood in live classes
         </div>
         {liveClassSessions.length > 0 ? (
           <div className="space-y-2">
@@ -912,18 +943,20 @@ function StudentAnalyticsView() {
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            No live-class sessions joined yet - emotion capture only runs while joined to a teacher's live class (webcam on).
+            You have not joined a live class yet. Your mood is read only while you are in a teacher's live class with the webcam on.
           </p>
         )}
       </div>
+      </>)}
 
       {
     /* Expert-in-the-loop recommendations */
   }
+      {tab === "support" && (<>
       <div className="glass rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-semibold flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-primary" /> Expert-Validated Recommendations
+            <Sparkles className="h-4 w-4 text-primary" /> Recommendations approved by your teacher
           </div>
           <button
             onClick={handleAnalyze}
@@ -931,14 +964,14 @@ function StudentAnalyticsView() {
             className="px-3 py-1.5 rounded-lg text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center gap-2"
           >
             {analyzing ? <RefreshCw className="h-3 w-3 animate-spin" /> : <Activity className="h-3 w-3" />}
-            Run Analysis
+            Check my progress
           </button>
         </div>
         {recommendations.length > 0 ? (
           <div className="space-y-2">
             {recommendations.map((r) => (
-              <div key={r.id} className="p-3 rounded-lg border border-border/60 text-sm">
-                <span className="text-[10px] uppercase tracking-widest text-muted-foreground">{r.insight_type}</span>
+              <div key={r.id} className="p-4 rounded-xl border border-primary/25 bg-primary/5 text-sm">
+                <span className="eyebrow">{String(r.insight_type || "").replace(/_/g, " ")}</span>
                 <p className="mt-1">{studentFacingRecommendationText(r)}</p>
                 <p className="text-xs text-muted-foreground mt-1">Reviewed by {r.reviewed_by}</p>
               </div>
@@ -946,34 +979,36 @@ function StudentAnalyticsView() {
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            No expert-approved recommendations yet. "Run Analysis" queues any statistically significant findings
-            for advisor review (see the Admin → pending recommendations queue).
+            No recommendations yet. "Check my progress" looks for significant patterns in your results and sends
+            them to your teacher, who approves anything before it appears here.
           </p>
         )}
       </div>
+      </>)}
 
       {
     /* Lesson breakdown */
   }
+      {tab === "lessons" && (<>
       <div className="glass rounded-2xl p-5">
         <div className="text-sm font-semibold mb-4 flex items-center gap-2">
-          <Calendar className="h-4 w-4 text-primary" /> Lesson-by-Lesson Breakdown
+          <Calendar className="h-4 w-4 text-primary" /> Every quiz you have taken
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-widest text-muted-foreground border-b border-border">
-                <th className="py-3 pr-4">Session</th>
+                <th className="py-3 pr-4">Quiz</th>
                 <th className="py-3 pr-4">Lesson</th>
-                <th className="py-3 pr-4">LO Score</th>
-                <th className="py-3 pr-4">Dominant Emotion</th>
-                <th className="py-3 pr-4">Negative %</th>
+                <th className="py-3 pr-4">Score</th>
+                <th className="py-3 pr-4">Main mood in class</th>
+                <th className="py-3 pr-4">Negative mood</th>
               </tr>
             </thead>
             <tbody>
               {sessionRows.map((s) => <tr key={s.session_id} className="border-b border-border/50 hover:bg-card/40">
                   <td className="py-3 pr-4 font-mono text-muted-foreground">{s.label}</td>
-                  <td className="py-3 pr-4 font-medium">{s.lesson_id}</td>
+                  <td className="py-3 pr-4 font-medium capitalize">{String(s.lesson_id || "").replace(/-/g, " ")}</td>
                   <td className="py-3 pr-4">
                     <div className="flex items-center gap-2">
                       <div className="h-1.5 w-20 rounded-full bg-secondary overflow-hidden">
@@ -994,17 +1029,78 @@ function StudentAnalyticsView() {
           </table>
         </div>
       </div>
+      </>)}
+      {tab === "account" && <AccountSettings defaultExpanded />}
     </div>;
 }
+// Shared header for both roles: who this is, the four numbers that matter,
+// and the tabs that split a long page into short, focused views.
+function ProfileHero({ user, name, eyebrow, meta, stats, tabs, tab, onTab }) {
+  const initials = initialsOf(name);
+  return (
+    <section className="glass rounded-3xl relative overflow-hidden">
+      <div
+        className="absolute inset-0 pointer-events-none"
+        style={{ background: "radial-gradient(50% 90% at 0% 0%, color-mix(in oklab, var(--teal) 15%, transparent), transparent 70%)" }}
+      />
+      <div className="relative p-6 sm:p-8 flex flex-wrap items-center gap-6">
+        <div
+          className="h-20 w-20 sm:h-24 sm:w-24 rounded-3xl flex items-center justify-center text-3xl font-display font-bold shrink-0 overflow-hidden"
+          style={{ background: "var(--gradient-primary)", color: "var(--primary-foreground)", boxShadow: "var(--shadow-glow)" }}
+        >
+          {user?.avatarDataUrl ? <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" /> : initials}
+        </div>
+        <div className="flex-1 min-w-[220px]">
+          <p className="eyebrow">{eyebrow}</p>
+          <h1 className="mt-1.5 font-display text-3xl sm:text-4xl font-bold tracking-tight">{name}</h1>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {meta.filter(Boolean).map((item) => (
+              <span key={item} className="rounded-full border border-border bg-background/40 px-3 py-1 text-xs text-muted-foreground">
+                {item}
+              </span>
+            ))}
+          </div>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 w-full xl:w-auto">
+          {stats.map((stat) => (
+            <Stat key={stat.label} {...stat} />
+          ))}
+        </div>
+      </div>
+      <div className="relative border-t border-border/60 px-3 sm:px-6">
+        <div role="tablist" aria-label="Profile sections" className="flex gap-1 overflow-x-auto no-scrollbar">
+          {tabs.map(({ key, label, Icon, count }) => {
+            const active = tab === key;
+            return (
+              <button
+                key={key}
+                type="button"
+                role="tab"
+                aria-selected={active}
+                onClick={() => onTab(key)}
+                className={`relative shrink-0 flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-colors ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
+              >
+                <Icon className={`h-4 w-4 ${active ? "text-primary" : ""}`} />
+                {label}
+                {count ? <span className="rounded-full bg-primary/15 px-1.5 text-[11px] font-semibold text-primary tnum">{count}</span> : null}
+                {active && <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full" style={{ background: "var(--gradient-primary)" }} />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Stat({ label, value, tone }) {
-  const color = tone === "good" ? "var(--emotion-happy)" : tone === "warn" || tone === "bad" ? "var(--emotion-confused)" : "var(--teal)";
-  return <div
-    className="rounded-xl px-4 py-3 border border-border min-w-[100px]"
-    style={{ background: `color-mix(in oklab, ${color} 8%, transparent)` }}
-  >
-      <div className="text-[10px] uppercase tracking-widest text-muted-foreground">{label}</div>
-      <div className="font-display text-xl font-bold" style={{ color }}>{value}</div>
-    </div>;
+  const color = tone === "good" ? "var(--emotion-happy)" : tone === "warn" ? "var(--amber)" : tone === "bad" ? "var(--destructive)" : "var(--teal)";
+  return (
+    <div className="rounded-2xl px-4 py-3 border min-w-[112px]" style={{ borderColor: `color-mix(in oklab, ${color} 28%, var(--border))`, background: `color-mix(in oklab, ${color} 7%, transparent)` }}>
+      <div className="text-[11px] text-muted-foreground whitespace-nowrap">{label}</div>
+      <div className="mt-1 font-display text-2xl font-bold tnum" style={{ color }}>{value}</div>
+    </div>
+  );
 }
 export {
   Route

@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
+from app import service_auth
 from app.services.class_ws_manager import class_ws_manager
 from app.services.class_session import class_session_store
 from app.services.anonymize import anonymize_student_id
@@ -41,7 +42,11 @@ def _live_session_id() -> str | None:
 
 
 @router.websocket("/ws/class-session/teacher")
-async def teacher_socket(websocket: WebSocket, session_id: str):
+async def teacher_socket(websocket: WebSocket, session_id: str, token: str = ""):
+    # HTTP middleware does not cover WebSockets, so the token is checked here.
+    if service_auth.ENABLED and not service_auth.has_role(service_auth.identify(query_token=token), service_auth.TEACHER_ROLES):
+        await websocket.close(code=4401)
+        return
     if session_id != _live_session_id():
         await websocket.close(code=4001)
         return
@@ -73,7 +78,10 @@ async def teacher_socket(websocket: WebSocket, session_id: str):
 
 
 @router.websocket("/ws/class-session/student")
-async def student_socket(websocket: WebSocket, session_id: str, student_id: str, name: str = ""):
+async def student_socket(websocket: WebSocket, session_id: str, student_id: str, name: str = "", token: str = ""):
+    if service_auth.ENABLED and service_auth.identify(query_token=token) is None:
+        await websocket.close(code=4401)
+        return
     if session_id != _live_session_id():
         await websocket.close(code=4001)
         return

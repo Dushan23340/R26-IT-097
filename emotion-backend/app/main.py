@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from app.service_auth import protect_fastapi
 from app.config import settings
 from app.routes import analytics, recommendations, emotions, class_session, quiz_broadcast, message_broadcast, class_ws
 from app.services.analytics_service import aggregate_and_store
@@ -40,6 +41,9 @@ app = FastAPI(
     version=settings.APP_VERSION,
     lifespan=lifespan,
 )
+
+# Authentication (registered before CORS so CORS stays the outer layer).
+protect_fastapi(app)
 
 # CORS configuration for frontend integration
 app.add_middleware(

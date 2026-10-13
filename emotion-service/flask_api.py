@@ -20,6 +20,7 @@ import numpy as np
 import requests
 from flask import Flask, jsonify, request
 from flask_cors import CORS
+from service_auth import internal_headers, protect_flask
 
 # =========================================================
 # PATH SETUP
@@ -54,6 +55,9 @@ from emotion_service.anonymize import anonymize_student_id
 app = Flask(__name__)
 
 CORS(app, resources={r"/*": {"origins": "*"}})  # type: ignore
+# Every route except /health now needs the account service's JWT or the
+# internal service token (see service_auth.py).
+protect_flask(app)
 
 app.logger.setLevel(logging.INFO)
 
@@ -254,6 +258,7 @@ def _forward_to_analytics_service(student_id: str, smoothed_state: str, confiden
                 "emotion": emotion_code,
                 "confidence": float(confidence),
             },
+            headers=internal_headers(),
             timeout=2,
         )
     except requests.RequestException:
@@ -273,6 +278,7 @@ def _forward_invalid_to_analytics_service(student_id: str, reason: str) -> None:
         requests.post(
             f"{ANALYTICS_SERVICE_URL}/emotions/invalid",
             json={"student_id": str(student_id), "reason": reason},
+            headers=internal_headers(),
             timeout=2,
         )
     except requests.RequestException:

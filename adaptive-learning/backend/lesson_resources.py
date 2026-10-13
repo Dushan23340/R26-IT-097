@@ -37,7 +37,7 @@ import os
 # machine's LAN IP explicitly, and scripts/set-lan-ip.sh rewrites the IP
 # literal below (same as it does for emotion-backend's CORS config) for a
 # manual restart without that env var.
-_SELF_URL = os.environ.get("ADAPTIVE_LEARNING_SELF_URL", "http://127.0.0.1:5005")
+_SELF_URL = os.environ.get("ADAPTIVE_LEARNING_SELF_URL", "http://192.168.8.106:5005")
 
 
 def _note_url(lesson_id: str, lo_name: str) -> str:

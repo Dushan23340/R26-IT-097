@@ -13,8 +13,10 @@ import { Route as TrackFieldAnalyticsRouteImport } from './routes/track-field-an
 import { Route as TimeGuardiansRoundingClockRouteImport } from './routes/time-guardians-rounding-clock'
 import { Route as TeacherRouteImport } from './routes/teacher'
 import { Route as SignupRouteImport } from './routes/signup'
+import { Route as SetSorterStationRouteImport } from './routes/set-sorter-station'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PirateNavigatorRouteImport } from './routes/pirate-navigator'
+import { Route as PercentMarketDashRouteImport } from './routes/percent-market-dash'
 import { Route as PatternIslandsRouteImport } from './routes/pattern-islands'
 import { Route as MagiciansTriangleHouseRouteImport } from './routes/magicians-triangle-house'
 import { Route as LoginRouteImport } from './routes/login'
@@ -26,6 +28,7 @@ import { Route as FishTankShopRouteImport } from './routes/fish-tank-shop'
 import { Route as EquationsEcoRouteImport } from './routes/equations-eco'
 import { Route as EcoBloomsLandSaleRouteImport } from './routes/eco-blooms-land-sale'
 import { Route as DarkRoomEscapeRouteImport } from './routes/dark-room-escape'
+import { Route as BinaryCodeBreakerRouteImport } from './routes/binary-code-breaker'
 import { Route as AlchemistsPotionLabRouteImport } from './routes/alchemists-potion-lab'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
@@ -51,6 +54,11 @@ const SignupRoute = SignupRouteImport.update({
   path: '/signup',
   getParentRoute: () => rootRouteImport,
 })
+const SetSorterStationRoute = SetSorterStationRouteImport.update({
+  id: '/set-sorter-station',
+  path: '/set-sorter-station',
+  getParentRoute: () => rootRouteImport,
+})
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
@@ -59,6 +67,11 @@ const ProfileRoute = ProfileRouteImport.update({
 const PirateNavigatorRoute = PirateNavigatorRouteImport.update({
   id: '/pirate-navigator',
   path: '/pirate-navigator',
+  getParentRoute: () => rootRouteImport,
+})
+const PercentMarketDashRoute = PercentMarketDashRouteImport.update({
+  id: '/percent-market-dash',
+  path: '/percent-market-dash',
   getParentRoute: () => rootRouteImport,
 })
 const PatternIslandsRoute = PatternIslandsRouteImport.update({
@@ -118,6 +131,11 @@ const DarkRoomEscapeRoute = DarkRoomEscapeRouteImport.update({
   path: '/dark-room-escape',
   getParentRoute: () => rootRouteImport,
 })
+const BinaryCodeBreakerRoute = BinaryCodeBreakerRouteImport.update({
+  id: '/binary-code-breaker',
+  path: '/binary-code-breaker',
+  getParentRoute: () => rootRouteImport,
+})
 const AlchemistsPotionLabRoute = AlchemistsPotionLabRouteImport.update({
   id: '/alchemists-potion-lab',
   path: '/alchemists-potion-lab',
@@ -138,6 +156,7 @@ const rootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   AlchemistsPotionLabRoute: AlchemistsPotionLabRoute,
+  BinaryCodeBreakerRoute: BinaryCodeBreakerRoute,
   DarkRoomEscapeRoute: DarkRoomEscapeRoute,
   EcoBloomsLandSaleRoute: EcoBloomsLandSaleRoute,
   EquationsEcoRoute: EquationsEcoRoute,
@@ -149,8 +168,10 @@ const rootRouteChildren = {
   LoginRoute: LoginRoute,
   MagiciansTriangleHouseRoute: MagiciansTriangleHouseRoute,
   PatternIslandsRoute: PatternIslandsRoute,
+  PercentMarketDashRoute: PercentMarketDashRoute,
   PirateNavigatorRoute: PirateNavigatorRoute,
   ProfileRoute: ProfileRoute,
+  SetSorterStationRoute: SetSorterStationRoute,
   SignupRoute: SignupRoute,
   TeacherRoute: TeacherRoute,
   TimeGuardiansRoundingClockRoute: TimeGuardiansRoundingClockRoute,

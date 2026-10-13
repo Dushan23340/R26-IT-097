@@ -1,6 +1,7 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from typing import Dict
 
+from app.service_auth import TEACHER_ROLES, fastapi_require_role
 from app.services.message_broadcast import message_broadcast_store
 
 router = APIRouter(prefix="/message-broadcast", tags=["message-broadcast"])
@@ -12,7 +13,7 @@ async def get_message_broadcast_state() -> Dict:
     return message_broadcast_store.get_state()
 
 
-@router.post("/send")
+@router.post("/send", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def send_message_broadcast(body: Dict) -> Dict:
     """Body: {"message": "...", "sent_by": "..."}."""
     message = (body.get("message") or "").strip()
@@ -22,7 +23,7 @@ async def send_message_broadcast(body: Dict) -> Dict:
     return {"success": True, **message_broadcast_store.get_state()}
 
 
-@router.post("/clear")
+@router.post("/clear", dependencies=[Depends(fastapi_require_role(*TEACHER_ROLES))])
 async def clear_message_broadcast() -> Dict:
     message_broadcast_store.clear()
     return {"success": True, "is_active": False}

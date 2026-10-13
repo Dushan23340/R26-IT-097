@@ -47,9 +47,11 @@ function SettingsCard({ icon: Icon, title, children }) {
   );
 }
 
-function AccountSettings() {
+// `defaultExpanded` lets the profile page's Account tab show the settings
+// open, instead of behind the Show/Hide toggle.
+function AccountSettings({ defaultExpanded = false } = {}) {
   const { user, updateUser } = useAuth();
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(defaultExpanded);
   const fileInputRef = useRef(null);
 
   const [name, setName] = useState(user?.name || "");

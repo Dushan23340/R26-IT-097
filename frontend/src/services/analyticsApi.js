@@ -1,4 +1,5 @@
 import axios from "axios"
+import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 
 const ANALYTICS_BASE_URL =
   import.meta.env.VITE_ANALYTICS_API_URL || "http://127.0.0.1:8000"
@@ -7,6 +8,20 @@ const analyticsClient = axios.create({
   baseURL: ANALYTICS_BASE_URL.replace(/\/$/, ""),
   timeout: 10000,
 })
+
+// Attach the logged-in user's token to every request (see lib/authHeaders.js).
+analyticsClient.interceptors.request.use((config) => {
+  Object.assign(config.headers, authHeaders());
+  return config;
+})
+analyticsClient.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) handleUnauthorized();
+    return Promise.reject(error);
+  }
+)
+
 
 async function sendEmotionEvent({
   studentId,
