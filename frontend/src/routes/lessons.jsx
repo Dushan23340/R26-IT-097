@@ -21,7 +21,7 @@ import {
   MessageSquare,
 } from "lucide-react";
 import { toast } from "sonner";
-import { adaptiveApiService } from "@/lib/adaptiveApi";
+import { resourceUrl, adaptiveApiService } from "@/lib/adaptiveApi";
 import { useAuth } from "@/lib/auth";
 
 const Route = createFileRoute("/lessons")({
@@ -941,7 +941,7 @@ function LessonsPage() {
                           <p className="mt-2 text-xs text-muted-foreground">{res.rationale.join(" · ")}</p>
                           <div className="mt-auto pt-4 flex items-center justify-between gap-2">
                             <a
-                              href={res.url}
+                              href={resourceUrl(res.url)}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-xs font-semibold text-primary hover:bg-primary/20 transition-colors"

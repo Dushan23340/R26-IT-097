@@ -1,6 +1,17 @@
 import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 const ADAPTIVE_API_BASE = import.meta.env.VITE_ADAPTIVE_API_URL || "http://localhost:5005/api";
 
+// Short-notes PDF links come back from the service as absolute URLs to this
+// machine's LAN address (http://<lan-ip>:5005/static/notes/...). Opened
+// through the single public link that address is unreachable, so send the
+// same path through the /svc/learn route instead. On the LAN (absolute
+// VITE_ADAPTIVE_API_URL) links are returned unchanged.
+export function resourceUrl(url) {
+  if (!ADAPTIVE_API_BASE.startsWith("/") || typeof url !== "string") return url;
+  const match = url.match(/^https?:\/\/[^/]+(\/static\/notes\/.+)$/);
+  return match ? ADAPTIVE_API_BASE.replace(/\/api$/, "") + match[1] : url;
+}
+
 async function parseBody(response) {
   const text = await response.text();
   if (!text) return {};

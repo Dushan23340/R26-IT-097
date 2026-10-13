@@ -5,7 +5,10 @@ const ICE_SERVERS = [{ urls: "stun:stun.l.google.com:19302" }];
 
 function wsUrl(path) {
   const base = import.meta.env.VITE_EMOTION_API_URL || "http://localhost:8000";
-  return base.replace(/^http/, "ws") + path;
+  // A relative base ("/svc/class", used behind the single public link)
+  // has no scheme of its own: take it from the page's address.
+  const absolute = base.startsWith("/") ? window.location.origin + base : base;
+  return absolute.replace(/^http/, "ws") + path;
 }
 
 /**

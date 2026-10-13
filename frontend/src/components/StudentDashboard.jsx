@@ -28,7 +28,7 @@ import { EMOTIONS } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
 import { useStudentScreenShare } from "@/hooks/useStudentScreenShare";
 import ClassChat from "@/components/ClassChat";
-import { adaptiveApiService } from "@/lib/adaptiveApi";
+import { resourceUrl, adaptiveApiService } from "@/lib/adaptiveApi";
 import { studentProfileApi } from "@/lib/studentProfileApi";
 import { emotionApi } from "@/lib/emotionApi";
 import EmotionDetector from "@/components/EmotionDetector";
@@ -885,7 +885,7 @@ function StudentDashboard() {
                   </p>
 
                   <a
-                    href={res.url}
+                    href={resourceUrl(res.url)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="w-full px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors flex items-center justify-center gap-2"
