@@ -1,13 +1,19 @@
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { verifyToken } from "./utils/jwt.js";
 import dotenv from "dotenv";
 import { fileURLToPath } from "url";
 import path from "path";
 import { connectToDatabase } from "./config/database.js";
 import authRoutes from "./routes/auth.js";
 import usersRoutes from "./routes/users.js";
+import notificationRoutes from "./routes/notifications.js";
+import feedbackRoutes from "./routes/feedback.js";
+import privacyRoutes from "./routes/privacy.js";
+import systemRoutes from "./routes/system.js";
+import { ensureSchema } from "./config/schema.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,12 +63,15 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Internal-Token"],
   }),
 );
 
 const windowMs = Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000;
-const generalLimit = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
+// Per signed-in user, not per IP: a whole class shares one school IP, and
+// the inbox (30 s) and status page (15 s) poll in the background, so a
+// per-IP budget of 100 would lock every student out within minutes.
+const generalLimit = Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 600;
 const authLimitDefault = process.env.NODE_ENV === "production" ? 40 : 500;
 const authLimit = Number(process.env.AUTH_RATE_LIMIT_MAX_REQUESTS) || authLimitDefault;
 
@@ -75,9 +84,14 @@ const json429 = (msg) => ({
 const generalLimiter = rateLimit({
   windowMs,
   limit: generalLimit,
-  message: json429("Too many requests from this IP, please try again later."),
+  message: json429("Too many requests. Please wait a moment and try again."),
   standardHeaders: "draft-7",
   legacyHeaders: false,
+  keyGenerator: (req) => {
+    const [scheme, token] = (req.headers.authorization || "").split(" ");
+    const user = scheme === "Bearer" && token ? verifyToken(token) : null;
+    return user?.userId ? `user:${user.userId}` : `ip:${ipKeyGenerator(req.ip)}`;
+  },
   skip: (req) =>
     req.method === "OPTIONS" ||
     req.originalUrl.startsWith("/api/auth"),
@@ -103,6 +117,10 @@ app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", usersRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/feedback", feedbackRoutes);
+app.use("/api/privacy", privacyRoutes);
+app.use("/api/system", systemRoutes);
 
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -119,6 +137,7 @@ app.use((err, req, res, next) => {
 async function startServer() {
   try {
     await connectToDatabase();
+    await ensureSchema();
 
     app.listen(PORT, () => {
       console.log(`\n🚀 Server running on port ${PORT}`);

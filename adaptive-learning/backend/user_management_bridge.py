@@ -15,6 +15,8 @@ import threading
 
 import requests
 
+from service_auth import internal_headers
+
 USER_MANAGEMENT_URL = os.environ.get("USER_MANAGEMENT_SERVICE_URL", "http://127.0.0.1:3001")
 _TIMEOUT = 3
 
@@ -24,6 +26,7 @@ def _push(student_ids: list[str], lesson_title: str) -> None:
         requests.post(
             f"{USER_MANAGEMENT_URL}/api/users/notify/quiz-unlocked",
             json={"student_ids": student_ids, "lesson_title": lesson_title},
+            headers=internal_headers(),
             timeout=_TIMEOUT,
         )
     except requests.RequestException:

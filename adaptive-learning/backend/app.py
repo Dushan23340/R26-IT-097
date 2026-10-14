@@ -35,6 +35,7 @@ import advisor_recommendations
 import lesson_progress
 import attempt_state
 import help_requests
+import student_data
 import user_management_bridge
 from mastery import score_submission, score_generated_submission
 from semantic_recommender import recommend_resources
@@ -598,6 +599,21 @@ def delete_attempt_state(student_id):
     mirroring lessons.jsx's clearProgress()."""
     attempt_state.clear(student_id)
     return jsonify({"success": True})
+
+
+@app.route("/api/students/<student_id>/data", methods=["GET"])
+def export_student_data(student_id):
+    """Privacy centre: everything this service holds for one student (see
+    student_data.py). The student themself or another service (the account
+    service assembling a full export) may call it - service_auth's
+    ownership check on <student_id> enforces that."""
+    return jsonify({"success": True, "data": student_data.export(student_id)})
+
+
+@app.route("/api/students/<student_id>/data", methods=["DELETE"])
+def erase_student_data(student_id):
+    """Privacy centre: delete everything this service holds for one student."""
+    return jsonify({"success": True, "removed": student_data.erase(student_id)})
 
 
 @app.route("/api/lessons/<lesson_id>/help-request", methods=["POST"])

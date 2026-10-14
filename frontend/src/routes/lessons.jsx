@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { resourceUrl, adaptiveApiService } from "@/lib/adaptiveApi";
 import { useAuth } from "@/lib/auth";
+import { useT } from "@/lib/i18n";
 
 const Route = createFileRoute("/lessons")({
   head: () => ({
@@ -91,6 +92,7 @@ function clearProgress(studentId) {
 }
 
 function LessonsPage() {
+  const t = useT();
   const { user } = useAuth();
   const search = Route.useSearch();
   const navigate = Route.useNavigate();
@@ -555,17 +557,17 @@ function LessonsPage() {
         <div className="relative flex flex-wrap items-end justify-between gap-6">
           <div className="min-w-0">
             <p className="eyebrow flex items-center gap-2">
-              <BookOpen className="h-3.5 w-3.5" /> Adaptive Learning
+              <BookOpen className="h-3.5 w-3.5" /> {t("Adaptive Learning")}
             </p>
             <h1 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight">
-              {screen === "quiz" && quiz ? quiz.title : screen === "results" ? `${resultLessonTitle}: your results` : "Choose a lesson"}
+              {screen === "quiz" && quiz ? quiz.title : screen === "results" ? `${resultLessonTitle}: ${t("your results")}` : t("Choose a lesson")}
             </h1>
             <p className="mt-2 text-sm text-muted-foreground max-w-2xl">
               {screen === "quiz"
-                ? "Answer what you can, then submit. Each question is tagged with the level of thinking it checks."
+                ? t("Answer what you can, then submit. Each question is tagged with the level of thinking it checks.")
                 : screen === "results"
-                ? "See how you did at each level, then work through the resources chosen for your gaps."
-                : "Every quiz is made fresh for you: 12 questions across Remember, Understand and Apply."}
+                ? t("See how you did at each level, then work through the resources chosen for your gaps.")
+                : t("Every quiz is made fresh for you: 12 questions across Remember, Understand and Apply.")}
             </p>
           </div>
           <ol className="flex items-center gap-2 text-xs font-medium" aria-label="Progress">
@@ -580,7 +582,7 @@ function LessonsPage() {
                   >
                     {done ? <CheckCircle2 className="h-3.5 w-3.5" /> : i + 1}
                   </span>
-                  <span className={`hidden sm:inline ${current ? "text-foreground" : "text-muted-foreground"}`}>{s.label}</span>
+                  <span className={`hidden sm:inline ${current ? "text-foreground" : "text-muted-foreground"}`}>{t(s.label)}</span>
                   {i < STEPS.length - 1 && <span className="h-px w-5 sm:w-8 bg-border" />}
                 </li>
               );
@@ -599,11 +601,11 @@ function LessonsPage() {
       {screen === "select" && (
         <section>
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="font-display text-lg font-bold">Lessons</h2>
+            <h2 className="font-display text-lg font-bold">{t("Lessons")}</h2>
             {!loadingLessons && lessons.length > 0 && (
               <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-primary" /> {availableCount} ready</span>
-                <span className="flex items-center gap-1.5"><Lock className="h-3 w-3" /> {lessons.length - availableCount} locked</span>
+                <span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-primary" /> {availableCount} {t("ready")}</span>
+                <span className="flex items-center gap-1.5"><Lock className="h-3 w-3" /> {lessons.length - availableCount} {t("locked")}</span>
               </div>
             )}
           </div>
@@ -653,7 +655,7 @@ function LessonsPage() {
                           resumable ? "border-amber/40 bg-amber/10 text-amber" : canTake ? "border-primary/40 bg-primary/10 text-primary" : "border-border text-muted-foreground"
                         }`}
                       >
-                        {resumable ? "In progress" : canTake ? "Ready" : "Locked"}
+                        {t(resumable ? "In progress" : canTake ? "Ready" : "Locked")}
                       </span>
                     </div>
                     <div className="mt-4 text-[11px] uppercase tracking-[0.14em] text-muted-foreground">{lesson.subject}</div>
@@ -666,9 +668,9 @@ function LessonsPage() {
                         </span>
                       ) : canTake ? (
                         <span className="flex items-center justify-between gap-2">
-                          <span className="text-xs text-muted-foreground">{lesson.question_count} questions</span>
+                          <span className="text-xs text-muted-foreground">{lesson.question_count} {t("questions")}</span>
                           <span className="flex items-center gap-1.5 font-semibold text-primary">
-                            Start quiz <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
+                            {t("Start quiz")} <ArrowRight className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                           </span>
                         </span>
                       ) : (
@@ -682,7 +684,7 @@ function LessonsPage() {
           )}
           <p className="mt-5 flex items-start gap-2 text-xs text-muted-foreground">
             <Monitor className="h-3.5 w-3.5 mt-0.5 shrink-0 text-primary" />
-            A quiz opens after you attend the lesson's live class and your teacher unlocks it.
+            {t("A quiz opens after you attend the lesson's live class and your teacher unlocks it.")}
           </p>
         </section>
       )}
@@ -752,7 +754,7 @@ function LessonsPage() {
           {/* Progress and submit: stays in view while scrolling the questions */}
           <aside className="glass-strong rounded-2xl border border-border p-5 lg:sticky lg:top-24 order-first lg:order-none">
             <div className="flex items-center justify-between">
-              <p className="eyebrow">Your progress</p>
+              <p className="eyebrow">{t("Your progress")}</p>
               <span className="text-xs text-muted-foreground tnum">{answeredCount}/{totalQuestions}</span>
             </div>
             <div className="mt-3 h-2 rounded-full bg-secondary overflow-hidden" role="progressbar" aria-valuemin={0} aria-valuemax={totalQuestions} aria-valuenow={answeredCount}>
@@ -795,7 +797,7 @@ function LessonsPage() {
               onClick={backToLessons}
               className="mt-3 w-full h-11 rounded-xl text-sm font-medium border border-border/60 hover:bg-secondary transition-colors"
             >
-              Back to Lessons
+              {t("Back to Lessons")}
             </button>
             <p className="mt-3 text-[11px] text-muted-foreground text-center">Your answers are saved. You can come back and resume.</p>
           </aside>
@@ -852,7 +854,7 @@ function LessonsPage() {
                     <div className="flex items-center justify-between">
                       <span className="text-sm font-semibold">{LO_LABELS[lo] || lo}</span>
                       <span className="flex items-center gap-1 text-xs font-semibold" style={{ color: tier.colour }}>
-                        <tier.Icon className="h-3.5 w-3.5" /> {tier.label}
+                        <tier.Icon className="h-3.5 w-3.5" /> {t(tier.label)}
                       </span>
                     </div>
                     <div className="mt-3 flex items-end justify-between">
@@ -1060,7 +1062,7 @@ function LessonsPage() {
                     disabled={loadingQuiz}
                     className="px-2 py-2 text-xs font-medium text-muted-foreground hover:text-primary transition-colors underline disabled:opacity-50"
                   >
-                    Retake anyway
+                    {t("Retake anyway")}
                   </button>
                 )}
               </div>
@@ -1081,7 +1083,7 @@ function LessonsPage() {
                 style={{ background: "var(--gradient-primary)" }}
               >
                 {allResourcesCompleted ? <TrendingUp className="h-4 w-4" /> : <Lock className="h-4 w-4" />}
-                Retake Quiz
+                {t("Retake Quiz")}
                 <span className="text-xs font-normal opacity-80">
                   ({completedResourceIds.size}/{allResourceIds.length} resources completed)
                 </span>
@@ -1095,7 +1097,7 @@ function LessonsPage() {
               onClick={backToLessons}
               className="ml-auto px-5 py-2.5 rounded-xl text-sm font-medium border border-border/60 hover:bg-secondary transition-colors"
             >
-              Try Another Lesson
+              {t("Try Another Lesson")}
             </button>
           </div>
         </div>

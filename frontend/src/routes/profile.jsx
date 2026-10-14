@@ -17,13 +17,20 @@ import { Activity, TrendingUp, Calendar, Settings, RefreshCw, AlertTriangle, Spa
 import { EmotionBadge } from "@/components/EmotionBadge";
 import { MasteryRing } from "@/components/MasteryRing";
 import { AccountSettings } from "@/components/AccountSettings";
+import { BadgeGrid, useBadges } from "@/components/Achievements";
+import { PrivacyPanel } from "@/components/Privacy";
+import { useT } from "@/lib/i18n";
+import { Award, Lock } from "lucide-react";
 import { studentProfileApi } from "@/lib/studentProfileApi";
 import { emotionApi } from "@/lib/emotionApi";
 import { toEmotionKey } from "@/lib/emotions";
 import { useAuth } from "@/lib/auth";
 import { initialsOf } from "@/components/AppHeader";
 
+const TAB_KEYS = ["overview", "lessons", "emotions", "support", "achievements", "fairness", "activity", "privacy", "account"];
 const Route = createFileRoute("/profile")({
+  // ?tab=achievements / ?tab=privacy - links from notifications open that tab.
+  validateSearch: (search) => ({ tab: TAB_KEYS.includes(search.tab) ? search.tab : undefined }),
   head: () => ({
     meta: [
       { title: "Student Analytics — AdaptiveMind" },
@@ -201,7 +208,8 @@ function TeacherProfileCard({ user }) {
   const [resolvingAlertId, setResolvingAlertId] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [tab, setTab] = useState("overview");
+  const initialTab = Route.useSearch().tab;
+  const [tab, setTab] = useState(initialTab || "overview");
 
   useEffect(() => {
     let cancelled = false;
@@ -269,6 +277,7 @@ function TeacherProfileCard({ user }) {
           { key: "overview", label: "Class overview", Icon: TrendingUp },
           { key: "fairness", label: "Fairness", Icon: Scale, count: fairnessAlerts.length || null },
           { key: "activity", label: "Activity", Icon: Gamepad2 },
+          { key: "privacy", label: "Privacy", Icon: Lock },
           { key: "account", label: "Account", Icon: Settings },
         ]}
         tab={tab}
@@ -504,6 +513,7 @@ function TeacherProfileCard({ user }) {
         and start a recommendation - individual student profiles are viewed from there.
       </p>
       </>)}
+      {tab === "privacy" && <PrivacyPanel />}
       {tab === "account" && <AccountSettings defaultExpanded />}
     </div>
   );
@@ -526,7 +536,8 @@ function StudentAnalyticsView() {
   const [error, setError] = useState(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [recommendations, setRecommendations] = useState([]);
-  const [tab, setTab] = useState("overview");
+  const initialTab = Route.useSearch().tab;
+  const [tab, setTab] = useState(initialTab || "overview");
 
   // Grade/demographic display metadata only - this is NOT a student picker,
   // it just looks up this student's own row for header display. A student
@@ -578,6 +589,8 @@ function StudentAnalyticsView() {
       cancelled = true;
     };
   }, [selectedId]);
+
+  const badges = useBadges({ userId: selectedId, history, lessonCount: 6, ready: !loading });
 
   const sessionRows = useMemo(() => {
     if (!history) return [];
@@ -647,6 +660,8 @@ function StudentAnalyticsView() {
           { key: "lessons", label: "Lessons", Icon: Layers, count: lessonIntelligence.length || null },
           { key: "emotions", label: "Emotions", Icon: Video },
           { key: "support", label: "Recommendations", Icon: Sparkles, count: recommendations.length || null },
+          { key: "achievements", label: "Achievements", Icon: Award, count: badges.filter((b) => b.earned).length || null },
+          { key: "privacy", label: "Privacy", Icon: Lock },
           { key: "account", label: "Account", Icon: Settings },
         ]}
         tab={tab}
@@ -1019,12 +1034,15 @@ function StudentAnalyticsView() {
         </div>
       </div>
       </>)}
+      {tab === "achievements" && <BadgeGrid badges={badges} />}
+      {tab === "privacy" && <PrivacyPanel />}
       {tab === "account" && <AccountSettings defaultExpanded />}
     </div>;
 }
 // Shared header for both roles: who this is, the four numbers that matter,
 // and the tabs that split a long page into short, focused views.
 function ProfileHero({ user, name, eyebrow, meta, stats, tabs, tab, onTab }) {
+  const t = useT();
   const initials = initialsOf(name);
   return (
     <section className="glass rounded-3xl relative overflow-hidden">
@@ -1040,7 +1058,7 @@ function ProfileHero({ user, name, eyebrow, meta, stats, tabs, tab, onTab }) {
           {user?.avatarDataUrl ? <img src={user.avatarDataUrl} alt="" className="h-full w-full object-cover" /> : initials}
         </div>
         <div className="flex-1 min-w-[220px]">
-          <p className="eyebrow">{eyebrow}</p>
+          <p className="eyebrow">{t(eyebrow)}</p>
           <h1 className="mt-1.5 font-display text-3xl sm:text-4xl font-bold tracking-tight">{name}</h1>
           <div className="mt-3 flex flex-wrap gap-2">
             {meta.filter(Boolean).map((item) => (
@@ -1070,7 +1088,7 @@ function ProfileHero({ user, name, eyebrow, meta, stats, tabs, tab, onTab }) {
                 className={`relative shrink-0 flex items-center gap-2 px-4 py-3.5 text-sm font-medium transition-colors ${active ? "text-foreground" : "text-muted-foreground hover:text-foreground"}`}
               >
                 <Icon className={`h-4 w-4 ${active ? "text-primary" : ""}`} />
-                {label}
+                {t(label)}
                 {count ? <span className="rounded-full bg-primary/15 px-1.5 text-[11px] font-semibold text-primary tnum">{count}</span> : null}
                 {active && <span className="absolute inset-x-3 -bottom-px h-0.5 rounded-full" style={{ background: "var(--gradient-primary)" }} />}
               </button>
@@ -1083,10 +1101,11 @@ function ProfileHero({ user, name, eyebrow, meta, stats, tabs, tab, onTab }) {
 }
 
 function Stat({ label, value, tone }) {
+  const t = useT();
   const color = tone === "good" ? "var(--emotion-happy)" : tone === "warn" ? "var(--amber)" : tone === "bad" ? "var(--destructive)" : "var(--teal)";
   return (
     <div className="rounded-2xl px-4 py-3 border min-w-[112px]" style={{ borderColor: `color-mix(in oklab, ${color} 28%, var(--border))`, background: `color-mix(in oklab, ${color} 7%, transparent)` }}>
-      <div className="text-[11px] text-muted-foreground whitespace-nowrap">{label}</div>
+      <div className="text-[11px] text-muted-foreground whitespace-nowrap">{t(label)}</div>
       <div className="mt-1 font-display text-2xl font-bold tnum" style={{ color }}>{value}</div>
     </div>
   );
