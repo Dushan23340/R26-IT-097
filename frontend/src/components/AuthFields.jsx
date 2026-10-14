@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { AlertCircle, CheckCircle2, Eye, EyeOff } from "lucide-react";
+import { useT } from "@/lib/i18n";
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -84,6 +85,7 @@ function Field({ id, label, icon: Icon, error, hint, valid, ...props }) {
 }
 
 function PasswordField({ id, label, icon: Icon, error, hint, valid, ...props }) {
+  const t = useT();
   const [shown, setShown] = useState(false);
   return (
     <div>
@@ -106,7 +108,7 @@ function PasswordField({ id, label, icon: Icon, error, hint, valid, ...props }) 
         <button
           type="button"
           onClick={() => setShown((s) => !s)}
-          aria-label={shown ? "Hide password" : "Show password"}
+          aria-label={shown ? t("Hide password") : t("Show password")}
           className="absolute right-2 top-1/2 -translate-y-1/2 h-8 w-8 grid place-items-center rounded-lg text-muted-foreground hover:text-foreground hover:bg-white/5"
         >
           {shown ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -138,6 +140,7 @@ const STRENGTH = [
 ];
 
 function PasswordStrength({ password }) {
+  const t = useT();
   if (!password) return null;
   const score = password.length < 6 ? 0 : Math.max(1, passwordScore(password));
   const [label, colour] = STRENGTH[score];
@@ -149,8 +152,8 @@ function PasswordStrength({ password }) {
         ))}
       </div>
       <p className="mt-1.5 text-xs text-muted-foreground">
-        Password strength: <span className="font-medium text-foreground">{label}</span>
-        {score < 3 && password.length >= 6 ? " - add a capital letter, a number or a symbol" : ""}
+        {t("Password strength:")} <span className="font-medium text-foreground">{t(label)}</span>
+        {score < 3 && password.length >= 6 ? ` - ${t("add a capital letter, a number or a symbol")}` : ""}
       </p>
     </div>
   );

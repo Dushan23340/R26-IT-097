@@ -6,8 +6,8 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --font-display: "Poppins", sans-serif;
-  --font-sans: "Poppins", sans-serif;
+  --font-display: "Poppins", "Noto Sans Sinhala", sans-serif;
+  --font-sans: "Poppins", "Noto Sans Sinhala", sans-serif;
 
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
@@ -473,3 +473,42 @@ textarea[aria-invalid="true"]:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   .page-enter, .cascade > *, .field-error, .field-valid-icon, .shake { animation: none !important; }
 }
+
+/* Notification bell: a short ring when there is something unread */
+@keyframes bell-ring {
+  0%, 60%, 100% { transform: rotate(0); }
+  10%, 30% { transform: rotate(14deg); }
+  20%, 40% { transform: rotate(-12deg); }
+  50% { transform: rotate(6deg); }
+}
+.bell-ring { transform-origin: 50% 2px; animation: bell-ring 1.4s ease-in-out 0.3s 2; }
+
+/* Printing a report (Reports page → "Print / Save as PDF"): plain black on
+   white, only the report itself. Screen styles are unchanged. */
+@media print {
+  @page { margin: 14mm; }
+  html, body { background: #fff !important; color: #111 !important; }
+  body::before, header, nav, footer, .no-print, [data-sonner-toaster], .top-progress { display: none !important; }
+  main { padding: 0 !important; max-width: none !important; }
+  .page-enter, .cascade > * { animation: none !important; }
+  .print-area {
+    background: #fff !important;
+    box-shadow: none !important;
+    border: none !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    color: #111 !important;
+  }
+  .print-area * { color: #111 !important; border-color: #ccc !important; box-shadow: none !important; }
+  .print-area .text-muted-foreground, .print-area .eyebrow { color: #555 !important; }
+  .print-area [style*="gradient"] { background: #333 !important; }
+  .print-area .bg-secondary { background: #e5e7eb !important; }
+  .print-area table { page-break-inside: auto; }
+  .print-area tr { page-break-inside: avoid; }
+}
+
+/* Sinhala has no capitals, and wide letter-spacing splits its combined
+   characters apart - keep the small "eyebrow" labels tight in Sinhala. */
+html[lang="si"] .eyebrow,
+html[lang="si"] [class*="tracking-["],
+html[lang="si"] .uppercase { letter-spacing: 0 !important; }

@@ -7,6 +7,8 @@ import { ActiveGameBanner } from "@/components/ActiveGameBanner";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { Toaster } from "@/components/ui/sonner";
 import { TopProgress } from "@/components/TopProgress";
+import { I18nProvider, useT } from "@/lib/i18n";
+import { NotificationsProvider } from "@/lib/notifications";
 import { homeFor } from "@/lib/roles";
 
 // Pages anyone may open. Everything else needs a signed-in user.
@@ -14,7 +16,7 @@ const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password"];
 // Pages that belong to one role. A user of the other role is sent to their
 // own home instead of seeing a page built for someone else.
 const STUDENT_ONLY = ["/", "/lessons"];
-const TEACHER_ONLY = ["/teacher"];
+const TEACHER_ONLY = ["/teacher", "/reports", "/status"];
 
 function NotFoundComponent() {
   return (
@@ -137,6 +139,7 @@ function Guard({ children }) {
 }
 
 function Shell() {
+  const t = useT();
   const { pathname } = useLocation();
   const { user } = useAuth();
   const isAuthPage = PUBLIC_PATHS.includes(pathname);
@@ -154,7 +157,7 @@ function Shell() {
   return (
     <div className="min-h-screen flex flex-col">
       <AppHeader />
-      <main className={`flex-1 w-full mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 ${user ? "pb-28 md:pb-10" : ""}`}>
+      <main className={`flex-1 w-full mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-8 ${user ? "pb-28 lg:pb-10" : ""}`}>
         <Guard>
           {/* Keyed on the path so every page change replays the entry animation */}
           <div key={pathname} className="page-enter">
@@ -162,10 +165,10 @@ function Shell() {
           </div>
         </Guard>
       </main>
-      <footer className="hidden md:block border-t border-border/50">
+      <footer className="hidden lg:block border-t border-border/50">
         <div className="mx-auto max-w-[1400px] px-4 sm:px-6 lg:px-8 py-5 flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <span>
-            Adaptive<span className="text-gradient-primary font-semibold">Mind</span> · Emotion-aware adaptive learning
+            Adaptive<span className="text-gradient-primary font-semibold">Mind</span> · {t("Emotion-aware adaptive learning")}
           </span>
           <span>R26-IT-097 · SLIIT Faculty of Computing</span>
         </div>
@@ -178,10 +181,14 @@ function Shell() {
 function RootComponent() {
   return (
     <AuthProvider>
-      <TopProgress />
-      <ConnectionWatcher />
-      <Shell />
-      <Toaster />
+      <I18nProvider>
+        <NotificationsProvider>
+          <TopProgress />
+          <ConnectionWatcher />
+          <Shell />
+          <Toaster />
+        </NotificationsProvider>
+      </I18nProvider>
     </AuthProvider>
   );
 }

@@ -1,11 +1,15 @@
 import { Link, useLocation } from "@tanstack/react-router";
-import { GraduationCap, Users, UserCircle, ShieldCheck, Sparkles, LogOut, LogIn, BookOpen } from "lucide-react";
+import { GraduationCap, Users, UserCircle, ShieldCheck, Sparkles, LogOut, LogIn, BookOpen, BarChart3, Activity } from "lucide-react";
 import { useAuth } from "@/lib/auth";
+import { LanguageToggle, useT } from "@/lib/i18n";
+import { NotificationBell } from "@/components/NotificationBell";
 
 const allTabs = [
   { to: "/", label: "Dashboard", short: "Home", icon: GraduationCap, roles: ["student"] },
   { to: "/lessons", label: "Adaptive Learning", short: "Learn", icon: BookOpen, roles: ["student"] },
   { to: "/teacher", label: "Teacher Console", short: "Console", icon: Users, roles: ["teacher"] },
+  { to: "/reports", label: "Reports", short: "Reports", icon: BarChart3, roles: ["teacher"] },
+  { to: "/status", label: "System", short: "System", icon: Activity, roles: ["teacher"] },
   { to: "/profile", label: "Profile", short: "Profile", icon: UserCircle, roles: ["student", "teacher"] },
   { to: "/admin", label: "Admin", short: "Admin", icon: ShieldCheck, roles: ["admin"] },
 ];
@@ -20,6 +24,7 @@ function initialsOf(name = "") {
 }
 
 function Brand() {
+  const t = useT();
   return (
     <Link to="/" className="flex items-center gap-3 group shrink-0">
       <div
@@ -32,13 +37,14 @@ function Brand() {
         <div className="font-display text-lg font-bold leading-tight">
           Adaptive<span className="text-gradient-primary">Mind</span>
         </div>
-        <div className="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Emotion-Aware Learning</div>
+        <div className="hidden min-[400px]:block text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{t("Emotion-Aware Learning")}</div>
       </div>
     </Link>
   );
 }
 
 function AppHeader() {
+  const t = useT();
   const { pathname } = useLocation();
   const { user, logout } = useAuth();
 
@@ -54,14 +60,14 @@ function AppHeader() {
           <Brand />
 
           {tabs.length > 0 && (
-            <nav aria-label="Main" className="hidden md:flex glass rounded-full p-1 items-center gap-1">
-              {tabs.map((t) => {
-                const active = pathname === t.to;
-                const Icon = t.icon;
+            <nav aria-label="Main" className="hidden lg:flex glass rounded-full p-1 items-center gap-1">
+              {tabs.map((tab) => {
+                const active = pathname === tab.to;
+                const Icon = tab.icon;
                 return (
                   <Link
-                    key={t.to}
-                    to={t.to}
+                    key={tab.to}
+                    to={tab.to}
                     aria-current={active ? "page" : undefined}
                     className={`relative px-4 py-2 rounded-full text-sm font-medium flex items-center gap-2 transition-colors ${
                       active ? "text-primary-foreground" : "text-muted-foreground hover:text-foreground hover:bg-white/5"
@@ -69,7 +75,7 @@ function AppHeader() {
                     style={active ? { background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" } : undefined}
                   >
                     <Icon className="h-4 w-4" />
-                    {t.label}
+                    {t(tab.label)}
                   </Link>
                 );
               })}
@@ -77,11 +83,15 @@ function AppHeader() {
           )}
 
           {user ? (
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5 sm:gap-2">
+              <div className="hidden sm:block">
+                <LanguageToggle />
+              </div>
+              <NotificationBell />
               <Link
                 to="/profile"
-                className="flex items-center gap-3 rounded-full py-1 pl-1 pr-1 md:pr-4 border border-transparent hover:border-border hover:bg-white/5 transition-colors"
-                title="Your profile"
+                className="flex items-center gap-3 rounded-full py-1 pl-1 pr-1 xl:pr-4 border border-transparent hover:border-border hover:bg-white/5 transition-colors"
+                title={t("Your profile")}
               >
                 {user.avatarDataUrl ? (
                   <img src={user.avatarDataUrl} alt="" className="h-9 w-9 rounded-full object-cover ring-2 ring-primary/40" />
@@ -94,18 +104,18 @@ function AppHeader() {
                     {initialsOf(user.name)}
                   </span>
                 )}
-                <span className="hidden md:block text-left leading-tight">
+                <span className="hidden xl:block text-left leading-tight">
                   <span className="block text-sm font-medium max-w-[160px] truncate">{user.name}</span>
-                  <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">{user.role}</span>
+                  <span className="block text-[10px] font-semibold uppercase tracking-[0.14em] text-primary">{t(user.role)}</span>
                 </span>
               </Link>
               <button
                 onClick={logout}
-                title="Log out"
+                title={t("Log out")}
                 className="flex items-center gap-2 h-10 px-3 rounded-full text-sm font-medium text-muted-foreground border border-transparent hover:text-destructive hover:border-destructive/40 hover:bg-destructive/10 transition-colors"
               >
                 <LogOut className="h-4 w-4" />
-                <span className="hidden lg:inline">Logout</span>
+                <span className="hidden xl:inline">{t("Logout")}</span>
               </button>
             </div>
           ) : (
@@ -115,34 +125,34 @@ function AppHeader() {
                 className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium border border-border hover:border-primary transition-colors"
               >
                 <LogIn className="h-4 w-4" />
-                <span className="hidden sm:inline">Sign In</span>
+                <span className="hidden sm:inline">{t("Sign In")}</span>
               </Link>
               <Link
                 to="/signup"
                 className="flex items-center gap-2 px-4 py-2 rounded-full text-sm font-semibold text-primary-foreground"
                 style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
               >
-                Sign Up
+                {t("Sign Up")}
               </Link>
             </div>
           )}
         </div>
       </header>
 
-      {/* Phone and small tablet: the same destinations as a bottom tab bar. */}
+      {/* Phone and tablet: the same destinations as a bottom tab bar. */}
       {tabs.length > 0 && (
         <nav
           aria-label="Main"
-          className="md:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/70 bg-background/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
+          className="lg:hidden fixed bottom-0 inset-x-0 z-40 border-t border-border/70 bg-background/90 backdrop-blur-xl pb-[env(safe-area-inset-bottom)]"
         >
           <div className="grid" style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}>
-            {tabs.map((t) => {
-              const active = pathname === t.to;
-              const Icon = t.icon;
+            {tabs.map((tab) => {
+              const active = pathname === tab.to;
+              const Icon = tab.icon;
               return (
                 <Link
-                  key={t.to}
-                  to={t.to}
+                  key={tab.to}
+                  to={tab.to}
                   aria-current={active ? "page" : undefined}
                   className={`flex flex-col items-center gap-1 py-2.5 text-[11px] font-medium ${active ? "text-primary" : "text-muted-foreground"}`}
                 >
@@ -152,7 +162,7 @@ function AppHeader() {
                   >
                     <Icon className="h-[18px] w-[18px]" />
                   </span>
-                  {t.short}
+                  {t(tab.short)}
                 </Link>
               );
             })}

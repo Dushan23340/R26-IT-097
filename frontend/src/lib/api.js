@@ -15,7 +15,7 @@ async function parseBody(response) {
   }
 }
 
-async function request(endpoint, options = {}) {
+async function request(endpoint, { background = false, ...options } = {}) {
   const url = `${API_BASE_URL}${endpoint}`;
   const config = {
     headers: {
@@ -31,7 +31,7 @@ async function request(endpoint, options = {}) {
       Authorization: `Bearer ${token}`,
     };
   }
-  const response = await trackedFetch("account service", url, config);
+  const response = await trackedFetch("account service", url, config, { background });
   const data = await parseBody(response);
 
   if (!response.ok) {
@@ -53,7 +53,8 @@ async function request(endpoint, options = {}) {
   return data;
 }
 const api = {
-  get: (endpoint) => request(endpoint, { method: "GET" }),
+  // { background: true } for polling: no loading bar for requests the user didn't start.
+  get: (endpoint, { background = false } = {}) => request(endpoint, { method: "GET", background }),
   post: (endpoint, body) => request(endpoint, {
     method: "POST",
     body: JSON.stringify(body)
@@ -62,8 +63,9 @@ const api = {
     method: "PUT",
     body: JSON.stringify(body)
   }),
-  delete: (endpoint) => request(endpoint, { method: "DELETE" })
+  delete: (endpoint, body) => request(endpoint, body === undefined ? { method: "DELETE" } : { method: "DELETE", body: JSON.stringify(body) })
 };
 export {
-  api
+  api,
+  API_BASE_URL
 };

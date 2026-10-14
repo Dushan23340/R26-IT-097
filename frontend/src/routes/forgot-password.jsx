@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { AuthLayout } from "@/components/AuthLayout";
 import { EMAIL_PATTERN, Field, Notice, PasswordField, PasswordStrength, replayAnimation, useLiveValidation } from "@/components/AuthFields";
 import { CodeField, DeliveryNote, ResendLink } from "@/components/VerifyCodeStep";
+import { useT } from "@/lib/i18n";
 
 const Route = createFileRoute("/forgot-password")({
   head: () => ({ meta: [{ title: "Reset password — AdaptiveMind" }] }),
@@ -16,6 +17,7 @@ const PRIMARY =
   "w-full h-12 rounded-xl text-base font-semibold text-primary-foreground flex items-center justify-center gap-2 transition-[filter,transform] hover:brightness-110 active:translate-y-px disabled:opacity-60";
 
 function ForgotPasswordPage() {
+  const t = useT();
   const router = useRouter();
   const { forgotPassword, resetPassword } = useAuth();
   const [step, setStep] = useState(1); // 1 = ask for e-mail, 2 = code + new password
@@ -30,8 +32,8 @@ function ForgotPasswordPage() {
 
   const emailForm = useLiveValidation(
     ({ email }) => {
-      if (!email.trim()) return { email: "Enter your e-mail address" };
-      if (!EMAIL_PATTERN.test(email.trim())) return { email: "Enter a valid e-mail address" };
+      if (!email.trim()) return { email: t("Enter your e-mail address") };
+      if (!EMAIL_PATTERN.test(email.trim())) return { email: t("Enter a valid e-mail address") };
       return {};
     },
     { email }
@@ -39,10 +41,10 @@ function ForgotPasswordPage() {
   const resetForm = useLiveValidation(
     ({ code, password, confirm }) => {
       const errors = {};
-      if (code.length !== 6) errors.code = "Enter the 6-digit code";
-      if (password.length < 6) errors.password = "Use at least 6 characters";
-      if (!confirm) errors.confirm = "Type your new password again";
-      else if (confirm !== password) errors.confirm = "The two passwords do not match";
+      if (code.length !== 6) errors.code = t("Enter the 6-digit code");
+      if (password.length < 6) errors.password = t("Use at least 6 characters");
+      if (!confirm) errors.confirm = t("Type your new password again");
+      else if (confirm !== password) errors.confirm = t("The two passwords do not match");
       return errors;
     },
     { code, password, confirm }
@@ -64,7 +66,7 @@ function ForgotPasswordPage() {
       replayAnimation(cardRef.current);
       return;
     }
-    toast.success("Reset code sent", { description: `Check ${email.trim()} for a 6-digit code.` });
+    toast.success(t("Reset code sent"), { description: t("Check {email} for a 6-digit code.", { email: email.trim() }) });
     setDelivery(result.delivery || "email");
     setStep(2);
   };
@@ -84,7 +86,7 @@ function ForgotPasswordPage() {
       replayAnimation(cardRef.current);
       return;
     }
-    toast.success("Password changed", { description: "Sign in with your new password." });
+    toast.success(t("Password changed"), { description: t("Sign in with your new password.") });
     router.navigate({ to: "/login", replace: true });
   };
 
@@ -93,7 +95,7 @@ function ForgotPasswordPage() {
       <div ref={cardRef} className="glass rounded-3xl p-7 sm:p-9">
         <Link to="/login" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
-          Back to sign in
+          {t("Back to sign in")}
         </Link>
         <div className="mt-4 h-12 w-12 rounded-2xl grid place-items-center bg-primary/10 border border-primary/30">
           <KeyRound className="h-6 w-6 text-primary" />
@@ -101,27 +103,27 @@ function ForgotPasswordPage() {
 
         {step === 1 ? (
           <div key="email" className="page-enter">
-            <h2 className="mt-4 text-3xl font-bold tracking-tight">Forgot your password?</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Enter the e-mail of your account. We will send a 6-digit code to reset it.</p>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight">{t("Forgot your password?")}</h2>
+            <p className="mt-2 text-sm text-muted-foreground">{t("Enter the e-mail of your account. We will send a 6-digit code to reset it.")}</p>
             <form onSubmit={requestCode} noValidate className="mt-6 space-y-4">
-              <Field id="email" label="E-mail address" icon={Mail} type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={emailForm.blur("email")} error={fieldErrors.email} valid={emailForm.valid("email")} />
+              <Field id="email" label={t("E-mail address")} icon={Mail} type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={emailForm.blur("email")} error={fieldErrors.email} valid={emailForm.valid("email")} />
               {error && <Notice>{error}</Notice>}
               <button type="submit" disabled={busy} className={PRIMARY} style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                {busy ? "Sending..." : "Send reset code"}
+                {busy ? t("Sending...") : t("Send reset code")}
                 {!busy && <ArrowRight className="h-4 w-4" />}
               </button>
             </form>
           </div>
         ) : (
           <div key="reset" className="page-enter">
-            <h2 className="mt-4 text-3xl font-bold tracking-tight">Choose a new password</h2>
+            <h2 className="mt-4 text-3xl font-bold tracking-tight">{t("Choose a new password")}</h2>
             <div className="mt-2">
               {delivery === "server-log" ? (
                 <DeliveryNote delivery={delivery} email={email} />
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  If an account exists for <span className="font-medium text-foreground">{email}</span>, a 6-digit code is on its way. It expires in 10 minutes.
+                  {t("If an account exists for")} <span className="font-medium text-foreground">{email}</span>, {t("a 6-digit code is on its way. It expires in 10 minutes.")}
                 </p>
               )}
             </div>
@@ -131,14 +133,14 @@ function ForgotPasswordPage() {
                 {fieldErrors.code && <p key={fieldErrors.code} className="field-error mt-1.5 text-xs text-destructive">{fieldErrors.code}</p>}
               </div>
               <div>
-                <PasswordField id="password" label="New password" icon={Lock} autoComplete="new-password" placeholder="At least 6 characters" value={password} onChange={(e) => setPassword(e.target.value)} onBlur={resetForm.blur("password")} error={fieldErrors.password} />
+                <PasswordField id="password" label={t("New password")} icon={Lock} autoComplete="new-password" placeholder={t("At least 6 characters")} value={password} onChange={(e) => setPassword(e.target.value)} onBlur={resetForm.blur("password")} error={fieldErrors.password} />
                 <PasswordStrength password={password} />
               </div>
-              <PasswordField id="confirm" label="Confirm new password" icon={Lock} autoComplete="new-password" placeholder="Type it again" value={confirm} onChange={(e) => setConfirm(e.target.value)} onBlur={resetForm.blur("confirm")} error={fieldErrors.confirm} valid={resetForm.valid("confirm")} />
+              <PasswordField id="confirm" label={t("Confirm new password")} icon={Lock} autoComplete="new-password" placeholder={t("Type it again")} value={confirm} onChange={(e) => setConfirm(e.target.value)} onBlur={resetForm.blur("confirm")} error={fieldErrors.confirm} valid={resetForm.valid("confirm")} />
               {error && <Notice>{error}</Notice>}
               <button type="submit" disabled={busy} className={PRIMARY} style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
-                {busy ? "Saving..." : "Change password"}
+                {busy ? t("Saving...") : t("Change password")}
               </button>
             </form>
             <div className="mt-5">

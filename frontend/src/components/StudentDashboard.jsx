@@ -33,6 +33,12 @@ import { resourceUrl, adaptiveApiService } from "@/lib/adaptiveApi";
 import { studentProfileApi } from "@/lib/studentProfileApi";
 import { emotionApi } from "@/lib/emotionApi";
 import EmotionDetector from "@/components/EmotionDetector";
+import { NotificationBell } from "@/components/NotificationBell";
+import { BadgeStrip, useBadges } from "@/components/Achievements";
+import { SurveyPrompt } from "@/components/SurveyPrompt";
+import { ConsentDialog, WebcamOffNotice } from "@/components/Privacy";
+import { platformApi } from "@/lib/platformApi";
+import { useI18n } from "@/lib/i18n";
 
 const SUBJECT_MASTERY_THRESHOLD = 75; // matches mastery.py's MASTERY_THRESHOLD
 
@@ -50,6 +56,7 @@ const RESOURCE_TYPE_ACTION = {
 };
 
 function StudentDashboard() {
+  const { t, lang } = useI18n();
   const { user } = useAuth();
   const studentId = String(user?.id ?? user?._id ?? user?.email ?? "anonymous");
   const [emotion, setEmotion] = useState("neutral");
@@ -182,7 +189,20 @@ function StudentDashboard() {
     }
   }, [classSession, inLiveClass]);
 
+  // Webcam consent is asked once, before the first live class. Joining
+  // goes ahead whatever the answer; "no" just keeps the webcam off.
+  const [consentOpen, setConsentOpen] = useState(false);
+  const [joinAfterConsent, setJoinAfterConsent] = useState(false);
   function handleJoinClassSession() {
+    if (!classSession) return;
+    if (user?.webcamConsent == null) {
+      setJoinAfterConsent(true);
+      setConsentOpen(true);
+      return;
+    }
+    joinClassSession();
+  }
+  function joinClassSession() {
     if (!classSession) return;
     emotionApi.joinClassSession(studentId, classSession.session_id, user?.name).catch(() => {
       // best-effort - joining the UI still works even if the join call fails
@@ -317,13 +337,45 @@ function StudentDashboard() {
     if (s.includes("angry")) return "angry";
     return "neutral";
   };
-  // No notification backend exists yet - this used to be 3 hardcoded fake
-  // items shown to every student regardless of their real activity. Left
-  // empty (with a real empty state below) rather than fabricated content.
-  const notifications = [];
+  // Achievements, worked out from the same quiz history as the stats above.
+  const badges = useBadges({ userId: studentId, history, lessonCount: lessons.length || 6, ready: !loadingHistory && !loadingLessons });
+
+  // Teacher broadcasts and approved recommendations also go to the inbox
+  // (the server ignores repeats), so they are still there after the
+  // dashboard banner is dismissed.
+  useEffect(() => {
+    if (!messageBroadcast?.broadcast_id) return;
+    platformApi
+      .reportEvent({ kind: "message", title: `Message from ${messageBroadcast.sent_by || "your teacher"}`, body: messageBroadcast.message, link: "/", dedupeKey: String(messageBroadcast.broadcast_id) })
+      .catch(() => {});
+  }, [messageBroadcast?.broadcast_id]);
+  useEffect(() => {
+    for (const rec of advisorRecommendations) {
+      if (!rec?.id) continue;
+      platformApi
+        .reportEvent({ kind: "recommendation", title: "New advice from your teacher", body: rec.text, link: "/", dedupeKey: String(rec.id) })
+        .catch(() => {});
+    }
+  }, [advisorRecommendations]);
+
+  const consentDialog = (
+    <ConsentDialog
+      open={consentOpen}
+      onOpenChange={(open) => {
+        setConsentOpen(open);
+        if (!open) setJoinAfterConsent(false);
+      }}
+      onDecide={() => {
+        setConsentOpen(false);
+        if (joinAfterConsent) joinClassSession();
+        setJoinAfterConsent(false);
+      }}
+    />
+  );
   const currentEmotion = EMOTIONS[emotion];
   if (inLiveClass && currentLiveClass) {
     return <div className="min-h-screen bg-background">
+        {consentDialog}
         {
       /* Live Class Header */
     }
@@ -338,13 +390,7 @@ function StudentDashboard() {
                 <div className="h-2 w-2 rounded-full bg-destructive animate-pulse" />
                 LIVE
               </div>
-              <button
-      onClick={() => setShowNotifications(!showNotifications)}
-      className="relative p-2 rounded-full hover:bg-secondary transition-colors"
-    >
-                <Bell className="h-5 w-5" />
-                {notifications.length > 0 && <div className="absolute top-1 right-1 h-2.5 w-2.5 rounded-full bg-primary border-2 border-background" />}
-              </button>
+              <NotificationBell />
             </div>
           </div>
         </div>
@@ -414,6 +460,11 @@ function StudentDashboard() {
       /* Webcam & Emotion */
     }
               <div className="glass rounded-2xl p-4">
+                {user?.webcamConsent === false ? (
+                  <div className="mb-3">
+                    <WebcamOffNotice onChange={() => setConsentOpen(true)} />
+                  </div>
+                ) : (
                 <EmotionDetector
                   className="mb-3"
                   studentId={user?.id ?? user?._id ?? user?.email ?? "default_student"}
@@ -445,6 +496,7 @@ function StudentDashboard() {
                     )
                   }}
                 />
+                )}
                 <div className="text-center">
                   <p className="text-sm font-medium mb-1">You</p>
                   <div
@@ -482,32 +534,7 @@ function StudentDashboard() {
       </div>;
   }
   return <div className="space-y-6 stagger-children max-w-7xl mx-auto">
-      {
-    /* Notifications Panel */
-  }
-      {showNotifications && <div className="fixed top-20 right-6 z-50 w-80 glass rounded-2xl shadow-2xl border border-border/60">
-          <div className="p-4 border-b border-border/60 flex items-center justify-between">
-            <h3 className="font-semibold">Notifications</h3>
-            <button onClick={() => setShowNotifications(false)} className="p-1 hover:bg-secondary rounded-full">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          <div className="max-h-96 overflow-y-auto">
-            {notifications.length === 0 ? <div className="p-6 text-center text-sm text-muted-foreground">
-                You're all caught up - no notifications yet.
-              </div> : notifications.map((notif) => <div key={notif.id} className="p-4 border-b border-border/40 last:border-b-0 hover:bg-secondary/30 transition-colors">
-                <div className="flex gap-3">
-                  {notif.type === "success" && <CheckCircle2 className="h-5 w-5 text-emotion-happy flex-shrink-0 mt-0.5" />}
-                  {notif.type === "warning" && <AlertCircle className="h-5 w-5 text-emotion-confused flex-shrink-0 mt-0.5" />}
-                  {notif.type === "info" && <Bell className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />}
-                  <div className="flex-1">
-                    <p className="text-sm">{notif.message}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{notif.time}</p>
-                  </div>
-                </div>
-              </div>)}
-          </div>
-        </div>}
+      {consentDialog}
 
       {
     /* 1. Top Header - Simple Summary */
@@ -520,18 +547,18 @@ function StudentDashboard() {
         <div className="relative flex flex-wrap items-center justify-between gap-6">
           <div className="min-w-0">
             <p className="eyebrow">
-              {new Date().toLocaleDateString(undefined, { weekday: "long", day: "numeric", month: "long" })}
+              {new Date().toLocaleDateString(lang === "si" ? "si-LK" : undefined, { weekday: "long", day: "numeric", month: "long" })}
             </p>
             <h1 className="mt-2 font-display text-3xl sm:text-4xl font-bold tracking-tight">
-              {new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening"},{" "}
+              {t(new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening")},{" "}
               <span className="text-gradient-primary">{user?.name?.split(" ")[0] || "Student"}</span>
             </h1>
             <p className="mt-2 text-muted-foreground">
               {avgScore == null
-                ? "Take a lesson quiz to start tracking your progress."
+                ? t("Take a lesson quiz to start tracking your progress.")
                 : avgScore >= 70
-                ? "You are doing well. Keep the momentum going."
-                : "Keep practising. Your recommended resources are below."}
+                ? t("You are doing well. Keep the momentum going.")
+                : t("Keep practising. Your recommended resources are below.")}
             </p>
             <div className="mt-5 flex flex-wrap gap-3">
               <Link
@@ -540,11 +567,11 @@ function StudentDashboard() {
                 style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
               >
                 <Play className="h-4 w-4" />
-                Continue learning
+                {t("Continue learning")}
               </Link>
               <a href="#quizzes" className="inline-flex items-center gap-2 rounded-xl border border-border px-5 py-2.5 text-sm font-semibold hover:border-primary/60 transition-colors">
                 <FileText className="h-4 w-4" />
-                Browse quizzes
+                {t("Browse quizzes")}
               </a>
             </div>
           </div>
@@ -560,7 +587,7 @@ function StudentDashboard() {
               <div className="h-[92px] w-[92px] rounded-full grid place-items-center text-center" style={{ background: "var(--card)" }}>
                 <div>
                   <div className="text-2xl font-bold tnum leading-none">{loadingHistory || avgScore == null ? "–" : `${avgScore}%`}</div>
-                  <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">Overall</div>
+                  <div className="mt-1 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">{t("Overall")}</div>
                 </div>
               </div>
             </div>
@@ -571,18 +598,18 @@ function StudentDashboard() {
           {[
             { label: "Quizzes completed", value: loadingHistory ? "–" : quizzesCompleted, Icon: FileText },
             { label: "Average score", value: loadingHistory || avgScore == null ? "–" : `${avgScore}%`, Icon: Target },
-            { label: "Study streak", value: loadingHistory ? "–" : `${studyStreak} ${studyStreak === 1 ? "day" : "days"}`, Icon: Award },
+            { label: "Study streak", value: loadingHistory ? "–" : `${studyStreak} ${t(studyStreak === 1 ? "day" : "days")}`, Icon: Award },
           ].map(({ label, value, Icon }) => (
             <div key={label} className="rounded-2xl border border-border/70 bg-background/35 p-4">
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Icon className="h-3.5 w-3.5 text-primary" />
-                {label}
+                {t(label)}
               </div>
               <div className="mt-2 text-2xl font-bold tnum">{value}</div>
             </div>
           ))}
           <div className="rounded-2xl border p-4" style={{ borderColor: `color-mix(in oklab, ${currentEmotion.color} 40%, transparent)`, background: `color-mix(in oklab, ${currentEmotion.color} 9%, transparent)` }}>
-            <div className="text-xs text-muted-foreground">Current state</div>
+            <div className="text-xs text-muted-foreground">{t("Current state")}</div>
             <div className="mt-2 flex items-center gap-2 text-2xl font-bold" style={{ color: currentEmotion.color }}>
               <span aria-hidden="true">{currentEmotion.emoji}</span>
               <span className="text-xl">{currentEmotion.label}</span>
@@ -590,6 +617,10 @@ function StudentDashboard() {
           </div>
         </div>
       </section>
+
+      <SurveyPrompt minQuizzes={1} quizzesDone={quizzesCompleted} />
+
+      <BadgeStrip badges={badges} />
 
       {
     /* Real live-class broadcast - the teacher's actual "Start Class" on
@@ -615,7 +646,7 @@ function StudentDashboard() {
             }}
           >
             <Play className="h-4 w-4" />
-            Join Live Class
+            {t("Join Live Class")}
           </button>
         </div>
       )}
@@ -646,7 +677,7 @@ function StudentDashboard() {
               }}
             >
               <Play className="h-4 w-4" />
-              Take Quiz Now
+              {t("Take Quiz Now")}
             </Link>
             <button
               onClick={() => setDismissedQuizBroadcastId(quizBroadcast.broadcast_id)}
@@ -687,7 +718,7 @@ function StudentDashboard() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-display text-xl font-bold flex items-center gap-2">
               <Video className="h-5 w-5 text-primary" />
-              Live Activity
+              {t("Live Activity")}
             </h2>
           </div>
 
@@ -723,13 +754,13 @@ function StudentDashboard() {
                 }}
               >
                 <Play className="h-4 w-4" />
-                Join Now
+                {t("Join Now")}
               </Link>
             </div>
           ) : (
             <div className="text-center py-8 text-sm text-muted-foreground">
               <Video className="h-8 w-8 mx-auto mb-2 opacity-30" />
-              No live activity right now - your teacher will start one from the Teacher Console when needed.
+              {t("No live activity right now - your teacher will start one from the Teacher Console when needed.")}
             </div>
           )}
         </div>
@@ -767,14 +798,14 @@ function StudentDashboard() {
       <div className="glass rounded-2xl p-6">
         <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
           <Award className="h-5 w-5 text-primary" />
-          Your Progress
+          {t("Your Progress")}
         </h2>
 
         {loadingHistory ? (
           <SkeletonRows rows={3} />
         ) : progressBySubject.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
-            No quiz results yet - take a lesson quiz to see your progress by subject.
+            {t("No quiz results yet - take a lesson quiz to see your progress by subject.")}
           </p>
         ) : (
           <div className="cascade grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -814,7 +845,7 @@ function StudentDashboard() {
       <div className="glass rounded-2xl p-6">
         <h2 className="font-display text-xl font-bold mb-4 flex items-center gap-2">
           <BookOpen className="h-5 w-5 text-primary" />
-          Recommended for You
+          {t("Recommended for You")}
         </h2>
 
         {!loadingRecommendations && advisorRecommendations.length > 0 && (
@@ -845,19 +876,19 @@ function StudentDashboard() {
               to="/lessons"
               className="inline-block px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors"
             >
-              Try Another Lesson
+              {t("Try Another Lesson")}
             </Link>
           </div>
         ) : recommendations.length === 0 ? (
           <div className="text-center py-8">
             <p className="text-sm text-muted-foreground mb-3">
-              No recommendations yet - take a lesson quiz and we'll suggest resources for anything you haven't mastered.
+              {t("No recommendations yet - take a lesson quiz and we'll suggest resources for anything you haven't mastered.")}
             </p>
             <Link
               to="/lessons"
               className="inline-block px-4 py-2 rounded-lg text-sm font-medium border border-primary text-primary hover:bg-primary/10 transition-colors"
             >
-              Go to Adaptive Learning
+              {t("Go to Adaptive Learning")}
             </Link>
           </div>
         ) : (
@@ -904,7 +935,7 @@ function StudentDashboard() {
         <div className="mb-5 flex flex-wrap items-end justify-between gap-2">
           <h2 className="font-display text-xl font-bold flex items-center gap-2">
             <FileText className="h-5 w-5 text-primary" />
-            Available Quizzes
+            {t("Available Quizzes")}
           </h2>
           {!loadingLessons && lessons.length > 0 && (
             <span className="text-xs text-muted-foreground">{lessons.length} lessons · a new quiz every attempt</span>
@@ -937,7 +968,7 @@ function StudentDashboard() {
                   {lesson.question_count} questions
                 </p>
                 <span className="mt-4 inline-flex items-center gap-1.5 text-sm font-semibold text-primary">
-                  Start quiz
+                  {t("Start quiz")}
                   <Play className="h-3.5 w-3.5 transition-transform group-hover:translate-x-0.5" />
                 </span>
               </Link>

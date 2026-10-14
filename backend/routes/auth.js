@@ -9,6 +9,7 @@ import {
   MIN_OTP_REQUEST_INTERVAL_SECONDS,
 } from "../utils/jwt.js";
 import { isEmailConfigured, sendOtpEmail } from "../services/email.js";
+import { notifySafe } from "../services/notifications.js";
 
 const router = express.Router();
 
@@ -95,6 +96,16 @@ router.post("/signup", async (req, res) => {
     console.log("💾 Saving user to PostgreSQL...");
     const mustVerify = verificationRequired();
     const user = await userRepo.create({ email, password, name, role, isEmailVerified: !mustVerify });
+    notifySafe(user.id, {
+      kind: "welcome",
+      title: `Welcome to AdaptiveMind, ${String(name).trim().split(" ")[0]}`,
+      body:
+        role === "teacher"
+          ? "Start a live class from the Teacher Console, unlock quizzes and review recommendations for your students."
+          : "Join your teacher's live class, then take the lesson quiz. Your quizzes adapt to how you are doing.",
+      link: role === "teacher" ? "/teacher" : "/",
+      dedupeKey: "welcome",
+    });
     console.log("✅ User saved successfully:", user.id);
 
     if (mustVerify) {
@@ -278,6 +289,11 @@ router.post("/reset-password", async (req, res) => {
     if (problem) return res.status(400).json({ success: false, message: problem });
 
     await userRepo.resetPasswordWithOtp(user.id, newPassword);
+    notifySafe(user.id, {
+      kind: "security",
+      title: "Your password was reset",
+      body: "Your password was reset with an e-mailed code. If this wasn't you, reset it again and tell your teacher.",
+    });
     res.json({ success: true, message: "Password changed. You can now sign in with the new password." });
   } catch (error) {
     console.error("Reset password error:", error.message);

@@ -14,6 +14,10 @@ export function toPublicUser(row) {
     createdAt: row.created_at,
     avatarDataUrl: row.avatar_data_url || null,
     notificationPreferences: { quizUnlocked: row.notification_quiz_unlocked },
+    // null = not asked yet, true/false = the student's answer
+    webcamConsent: row.webcam_consent ?? null,
+    webcamConsentAt: row.webcam_consent_at || null,
+    language: row.language || "en",
   };
 }
 
@@ -162,4 +166,24 @@ export async function comparePassword(candidatePassword, passwordHash) {
   } catch {
     return false;
   }
+}
+
+export async function setWebcamConsent(id, consent) {
+  const { rows } = await query(
+    "UPDATE core.users SET webcam_consent = $2, webcam_consent_at = now(), updated_at = now() WHERE id = $1 RETURNING *",
+    [id, Boolean(consent)]
+  );
+  return rows[0] || null;
+}
+
+export async function setLanguage(id, language) {
+  const { rows } = await query(
+    "UPDATE core.users SET language = $2, updated_at = now() WHERE id = $1 RETURNING *",
+    [id, language]
+  );
+  return rows[0] || null;
+}
+
+export async function deleteUser(id) {
+  await query("DELETE FROM core.users WHERE id = $1", [id]);
 }

@@ -1,10 +1,12 @@
 import { Link } from "@tanstack/react-router";
 import { Check, GraduationCap, Sparkles, Users } from "lucide-react";
 import { ROLES } from "@/lib/roles";
+import { LanguageToggle, useT } from "@/lib/i18n";
 
 const ROLE_ICON = { student: GraduationCap, teacher: Users };
 
 function Logo({ size = "md" }) {
+  const t = useT();
   const box = size === "lg" ? "h-12 w-12" : "h-10 w-10";
   return (
     <Link to="/login" className="inline-flex items-center gap-3">
@@ -15,7 +17,7 @@ function Logo({ size = "md" }) {
         <span className="block font-display text-xl font-bold leading-tight">
           Adaptive<span className="text-gradient-primary">Mind</span>
         </span>
-        <span className="block text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Emotion-Aware Learning</span>
+        <span className="block text-[10px] uppercase tracking-[0.2em] text-muted-foreground">{t("Emotion-Aware Learning")}</span>
       </span>
     </Link>
   );
@@ -23,18 +25,19 @@ function Logo({ size = "md" }) {
 
 // A small, clearly illustrative preview of what each role sees after signing in.
 function RolePreview({ role }) {
+  const t = useT();
   if (role === "teacher") {
     const rows = [["Bored", 34, true], ["Normal", 25], ["Happy", 21], ["Confused", 12], ["Frustrated", 8]];
     return (
       <div className="glass-strong rounded-2xl p-5 border border-border">
         <div className="flex items-center justify-between">
-          <p className="eyebrow">Class emotion · live</p>
-          <span className="rounded-full border border-amber/40 bg-amber/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber">Bored 34%</span>
+          <p className="eyebrow">{t("Class emotion · live")}</p>
+          <span className="rounded-full border border-amber/40 bg-amber/10 px-2.5 py-0.5 text-[11px] font-semibold text-amber">{t("Bored")} 34%</span>
         </div>
         <div className="mt-4 space-y-2.5">
           {rows.map(([label, pct, hot]) => (
             <div key={label} className="grid grid-cols-[84px_1fr_36px] items-center gap-3 text-xs">
-              <span>{label}</span>
+              <span>{t(label)}</span>
               <span className="h-1.5 rounded-full bg-secondary overflow-hidden">
                 <span className="block h-full rounded-full" style={{ width: `${pct}%`, background: hot ? "var(--gradient-accent)" : "var(--gradient-primary)" }} />
               </span>
@@ -48,7 +51,7 @@ function RolePreview({ role }) {
   const tiers = [["5/5", "Good", "Remember", "text-emotion-happy"], ["3/5", "Average", "Understand", "text-amber"], ["1/2", "Average", "Apply", "text-amber"]];
   return (
     <div className="glass-strong rounded-2xl p-5 border border-border">
-      <p className="eyebrow">Your mastery · last quiz</p>
+      <p className="eyebrow">{t("Your mastery · last quiz")}</p>
       <div className="mt-4 grid grid-cols-3 gap-3">
         {tiers.map(([score, tier, level, colour]) => (
           <div key={level} className="rounded-xl border border-border bg-background/40 p-3 text-center">
@@ -63,6 +66,7 @@ function RolePreview({ role }) {
 }
 
 function AuthLayout({ role, children }) {
+  const t = useT();
   const info = ROLES[role] || ROLES.student;
   return (
     <div className="min-h-screen grid lg:grid-cols-[minmax(0,1.05fr)_minmax(0,1fr)]">
@@ -79,9 +83,9 @@ function AuthLayout({ role, children }) {
         <Logo size="lg" />
 
         <div key={role} className="max-w-lg animate-fade-in">
-          <p className="eyebrow">For {info.label.toLowerCase()}s</p>
+          <p className="eyebrow">{t(`For ${info.label.toLowerCase()}s`)}</p>
           <h1 className="mt-3 text-4xl xl:text-5xl font-bold leading-[1.08] tracking-tight">
-            {info.headline[0]} <span className="text-gradient-warm">{info.headline[1]}</span>
+            {t(info.headline[0])} <span className="text-gradient-warm">{t(info.headline[1])}</span>
           </h1>
           <ul className="mt-8 space-y-5">
             {info.points.map(([title, text]) => (
@@ -90,23 +94,24 @@ function AuthLayout({ role, children }) {
                   <Check className="h-3.5 w-3.5 text-primary" strokeWidth={3} />
                 </span>
                 <span>
-                  <span className="block font-semibold">{title}</span>
-                  <span className="block text-sm text-muted-foreground">{text}</span>
+                  <span className="block font-semibold">{t(title)}</span>
+                  <span className="block text-sm text-muted-foreground">{t(text)}</span>
                 </span>
               </li>
             ))}
           </ul>
           <div className="mt-9">
             <RolePreview role={role} />
-            <p className="mt-2 text-[11px] text-muted-foreground">Illustrative preview with sample values.</p>
+            <p className="mt-2 text-[11px] text-muted-foreground">{t("Illustrative preview with sample values.")}</p>
           </div>
         </div>
 
-        <p className="text-xs text-muted-foreground">R26-IT-097 · SLIIT Faculty of Computing · Research prototype</p>
+        <p className="text-xs text-muted-foreground">R26-IT-097 · {t("SLIIT Faculty of Computing · Research prototype")}</p>
       </aside>
 
       {/* Form panel */}
-      <main className="flex flex-col items-center justify-center px-5 py-10 sm:px-10">
+      <main className="relative flex flex-col items-center justify-center px-5 py-10 sm:px-10">
+        <LanguageToggle className="absolute right-5 top-5" />
         <div className="lg:hidden mb-8">
           <Logo />
         </div>
@@ -118,6 +123,7 @@ function AuthLayout({ role, children }) {
 
 // Two large cards (sign-up) or a compact segmented control (sign-in).
 function RolePicker({ value, onChange, compact = false }) {
+  const t = useT();
   if (compact) {
     return (
       <div role="radiogroup" aria-label="I am a" className="grid grid-cols-2 gap-1 rounded-full border border-border bg-background/40 p-1">
@@ -135,7 +141,7 @@ function RolePicker({ value, onChange, compact = false }) {
               style={active ? { background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" } : undefined}
             >
               <Icon className="h-4 w-4" />
-              {r.label}
+              {t(r.label)}
             </button>
           );
         })}
@@ -161,8 +167,8 @@ function RolePicker({ value, onChange, compact = false }) {
             <span className={`h-10 w-10 rounded-xl grid place-items-center ${active ? "text-primary-foreground" : "text-primary bg-primary/10"}`} style={active ? { background: "var(--gradient-primary)" } : undefined}>
               <Icon className="h-5 w-5" />
             </span>
-            <span className="mt-3 block font-semibold">{r.label}</span>
-            <span className="mt-0.5 block text-xs text-muted-foreground leading-snug">{r.tagline}</span>
+            <span className="mt-3 block font-semibold">{t(r.label)}</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground leading-snug">{t(r.tagline)}</span>
             {active && (
               <span className="absolute right-3 top-3 h-5 w-5 rounded-full grid place-items-center bg-primary">
                 <Check className="h-3 w-3 text-primary-foreground" strokeWidth={3.5} />
