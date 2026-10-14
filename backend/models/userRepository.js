@@ -54,15 +54,71 @@ export async function findManyByIdsWithQuizNotificationsOn(ids) {
   return rows;
 }
 
-export async function create({ name, email, password, role }) {
+export async function create({ name, email, password, role, isEmailVerified = true }) {
   const passwordHash = await bcrypt.hash(password, await bcrypt.genSalt(SALT_ROUNDS));
   const { rows } = await query(
     `INSERT INTO core.users (name, email, password_hash, role, is_email_verified)
-     VALUES ($1, $2, $3, $4, true)
+     VALUES ($1, $2, $3, $4, $5)
      RETURNING *`,
-    [name.trim(), email.toLowerCase().trim(), passwordHash, role],
+    [name.trim(), email.toLowerCase().trim(), passwordHash, role, isEmailVerified],
   );
   return rows[0];
+}
+
+// ---- one-time codes (e-mail verification and password reset) ----
+// A 6-digit code, valid for a limited time and a limited number of wrong
+// guesses. One code proves control of the mailbox, whichever flow asked
+// for it, so the same columns serve both.
+
+export async function setOtp(id, otp, expiresAt) {
+  await query(
+    `UPDATE core.users
+     SET email_verification_otp = $2, email_verification_otp_expires = $3,
+         otp_attempts = 0, last_otp_request = now(), updated_at = now()
+     WHERE id = $1`,
+    [id, otp, expiresAt],
+  );
+}
+
+export async function clearOtp(id) {
+  await query(
+    `UPDATE core.users
+     SET email_verification_otp = NULL, email_verification_otp_expires = NULL, otp_attempts = 0, updated_at = now()
+     WHERE id = $1`,
+    [id],
+  );
+}
+
+export async function recordFailedOtpAttempt(id) {
+  const { rows } = await query(
+    "UPDATE core.users SET otp_attempts = otp_attempts + 1 WHERE id = $1 RETURNING otp_attempts",
+    [id],
+  );
+  return rows[0]?.otp_attempts ?? 0;
+}
+
+export async function markEmailVerified(id) {
+  const { rows } = await query(
+    `UPDATE core.users
+     SET is_email_verified = true, email_verification_otp = NULL, email_verification_otp_expires = NULL,
+         otp_attempts = 0, updated_at = now()
+     WHERE id = $1 RETURNING *`,
+    [id],
+  );
+  return rows[0] || null;
+}
+
+// Sets the new password, consumes the code and marks the mailbox verified
+// (the code proved it) in one statement.
+export async function resetPasswordWithOtp(id, newPassword) {
+  const passwordHash = await bcrypt.hash(newPassword, await bcrypt.genSalt(SALT_ROUNDS));
+  await query(
+    `UPDATE core.users
+     SET password_hash = $2, is_email_verified = true, email_verification_otp = NULL,
+         email_verification_otp_expires = NULL, otp_attempts = 0, updated_at = now()
+     WHERE id = $1`,
+    [id, passwordHash],
+  );
 }
 
 export async function updateProfile(id, { name, email }) {

@@ -42,7 +42,12 @@ async function request(endpoint, options = {}) {
         : null) ||
       response.statusText ||
       "Request failed";
-    throw new Error(msg);
+    // Keep the response body on the error: some refusals carry more than a
+    // message (e.g. login's { requiresVerification, email, delivery }).
+    const err = new Error(msg);
+    err.status = response.status;
+    err.data = data;
+    throw err;
   }
   return data;
 }

@@ -11,7 +11,7 @@ const allTabs = [
 ];
 
 // Pages that bring their own full-screen layout and brand panel.
-const AUTH_PATHS = ["/login", "/signup"];
+const AUTH_PATHS = ["/login", "/signup", "/forgot-password"];
 
 function initialsOf(name = "") {
   const parts = name.trim().split(/\s+/).filter(Boolean);

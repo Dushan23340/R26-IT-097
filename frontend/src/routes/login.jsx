@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { ROLES, homeFor } from "@/lib/roles";
 import { AuthLayout, RolePicker } from "@/components/AuthLayout";
 import { EMAIL_PATTERN, Field, Notice, PasswordField } from "@/components/AuthFields";
+import { VerifyCodeStep } from "@/components/VerifyCodeStep";
 
 const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign in — AdaptiveMind" }] }),
@@ -14,7 +15,9 @@ const Route = createFileRoute("/login")({
 
 function LoginPage() {
   const router = useRouter();
-  const { login } = useAuth();
+  const { login, verifyOtp, resendOtp } = useAuth();
+  // Set when the password was right but the e-mail is not verified yet.
+  const [pending, setPending] = useState(null);
   // The role tab only changes what this screen shows. The account itself
   // decides the role: after sign-in the user always lands on the home of the
   // role their account really has.
@@ -47,12 +50,21 @@ function LoginPage() {
     const result = await login(email.trim(), password);
     setIsLoading(false);
 
+    if (result.requiresVerification) {
+      setPending({ email: result.email || email.trim(), delivery: result.delivery });
+      return;
+    }
     if (!result.success || !result.user) {
       setError(result.message || "Sign in failed. Please try again.");
       return;
     }
+    finishSignIn(result.user);
+  };
+
+  const finishSignIn = (signedInUser) => {
     // The route guard moves a signed-in user off this page at once, so the
     // confirmation is a toast (it stays visible across the redirect).
+    const result = { user: signedInUser };
     const actualRole = result.user.role;
     const destination = actualRole === "teacher" ? "Teacher Console" : "dashboard";
     if (actualRole !== role && ROLES[actualRole]) {
@@ -67,6 +79,20 @@ function LoginPage() {
   return (
     <AuthLayout role={role}>
       <div className="glass rounded-3xl p-7 sm:p-9">
+        {pending ? (
+          <VerifyCodeStep
+            email={pending.email}
+            delivery={pending.delivery}
+            backLabel="Back to sign in"
+            onBack={() => setPending(null)}
+            onResend={() => resendOtp(pending.email)}
+            onVerify={async (code) => {
+              const verified = await verifyOtp(pending.email, code);
+              if (verified.success && verified.user) finishSignIn(verified.user);
+              return verified;
+            }}
+          />
+        ) : (<>
         <p className="eyebrow">Welcome back</p>
         <h2 className="mt-2 text-3xl font-bold tracking-tight">Sign in</h2>
         <p className="mt-2 text-sm text-muted-foreground">Choose how you use AdaptiveMind, then enter your details.</p>
@@ -97,6 +123,11 @@ function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
             error={fieldErrors.password}
           />
+          <div className="-mt-1 text-right">
+            <Link to="/forgot-password" className="text-sm font-medium text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
 
           {error && <Notice>{error}</Notice>}
 
@@ -119,6 +150,7 @@ function LoginPage() {
             Create an account
           </Link>
         </p>
+        </>)}
       </div>
     </AuthLayout>
   );

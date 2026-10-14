@@ -24,6 +24,7 @@ import { Route as LessonsRouteImport } from './routes/lessons'
 import { Route as LaserHeistParallelMuseumRouteImport } from './routes/laser-heist-parallel-museum'
 import { Route as FractionRoomRouteImport } from './routes/fraction-room'
 import { Route as FractionChefRecipeRescueRouteImport } from './routes/fraction-chef-recipe-rescue'
+import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FishTankShopRouteImport } from './routes/fish-tank-shop'
 import { Route as EquationsEcoRouteImport } from './routes/equations-eco'
 import { Route as EcoBloomsLandSaleRouteImport } from './routes/eco-blooms-land-sale'
@@ -111,6 +112,11 @@ const FractionChefRecipeRescueRoute =
     path: '/fraction-chef-recipe-rescue',
     getParentRoute: () => rootRouteImport,
   })
+const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
+  id: '/forgot-password',
+  path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+})
 const FishTankShopRoute = FishTankShopRouteImport.update({
   id: '/fish-tank-shop',
   path: '/fish-tank-shop',
@@ -161,6 +167,7 @@ const rootRouteChildren = {
   EcoBloomsLandSaleRoute: EcoBloomsLandSaleRoute,
   EquationsEcoRoute: EquationsEcoRoute,
   FishTankShopRoute: FishTankShopRoute,
+  ForgotPasswordRoute: ForgotPasswordRoute,
   FractionChefRecipeRescueRoute: FractionChefRecipeRescueRoute,
   FractionRoomRoute: FractionRoomRoute,
   LaserHeistParallelMuseumRoute: LaserHeistParallelMuseumRoute,

@@ -6,6 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { ROLES, homeFor } from "@/lib/roles";
 import { AuthLayout, RolePicker } from "@/components/AuthLayout";
 import { EMAIL_PATTERN, Field, Notice, PasswordField, PasswordStrength } from "@/components/AuthFields";
+import { VerifyCodeStep } from "@/components/VerifyCodeStep";
 
 const Route = createFileRoute("/signup")({
   head: () => ({ meta: [{ title: "Create account — AdaptiveMind" }] }),
@@ -15,7 +16,7 @@ const Route = createFileRoute("/signup")({
 function Steps({ step }) {
   return (
     <ol className="flex items-center gap-2 text-xs font-medium" aria-label="Progress">
-      {["Your role", "Your details"].map((label, i) => {
+      {["Your role", "Your details", "Verify e-mail"].map((label, i) => {
         const n = i + 1;
         const done = step > n;
         const current = step === n;
@@ -27,8 +28,8 @@ function Steps({ step }) {
             >
               {n}
             </span>
-            <span className={current ? "text-foreground" : "text-muted-foreground"}>{label}</span>
-            {n === 1 && <span className="mx-1 h-px w-8 bg-border" />}
+            <span className={`${current ? "text-foreground" : "text-muted-foreground hidden sm:inline"}`}>{label}</span>
+            {n < 3 && <span className="mx-1 h-px w-4 sm:w-6 bg-border" />}
           </li>
         );
       })}
@@ -38,7 +39,9 @@ function Steps({ step }) {
 
 function SignupPage() {
   const router = useRouter();
-  const { signup } = useAuth();
+  const { signup, verifyOtp, resendOtp } = useAuth();
+  // Set when the account was created but its e-mail must be verified first.
+  const [pending, setPending] = useState(null);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "student" });
   const [fieldErrors, setFieldErrors] = useState({});
@@ -78,6 +81,11 @@ function SignupPage() {
       setError(result.message || "Could not create the account. Please try again.");
       return;
     }
+    if (result.requiresVerification) {
+      setPending({ email: result.email || form.email.trim(), delivery: result.delivery });
+      setStep(3);
+      return;
+    }
     if (result.user && result.token) {
       // Signed in already (lib/auth.jsx keeps the token the sign-up returns).
       toast.success(`Welcome to AdaptiveMind, ${result.user.name?.split(" ")[0] || "there"}`, {
@@ -96,7 +104,25 @@ function SignupPage() {
       <div className="glass rounded-3xl p-7 sm:p-9">
         <Steps step={step} />
 
-        {step === 1 ? (
+        {step === 3 && pending ? (
+          <div className="mt-4">
+            <VerifyCodeStep
+              email={pending.email}
+              delivery={pending.delivery}
+              onResend={() => resendOtp(pending.email)}
+              onVerify={async (code) => {
+                const verified = await verifyOtp(pending.email, code);
+                if (verified.success && verified.user) {
+                  toast.success(`Welcome to AdaptiveMind, ${verified.user.name?.split(" ")[0] || "there"}`, {
+                    description: `Your ${verified.user.role} account is ready.`,
+                  });
+                  router.navigate({ to: homeFor(verified.user.role), replace: true });
+                }
+                return verified;
+              }}
+            />
+          </div>
+        ) : step === 1 ? (
           <>
             <h2 className="mt-6 text-3xl font-bold tracking-tight">Create your account</h2>
             <p className="mt-2 text-sm text-muted-foreground">First, tell us how you will use AdaptiveMind.</p>

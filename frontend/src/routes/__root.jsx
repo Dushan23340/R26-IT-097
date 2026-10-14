@@ -8,7 +8,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { homeFor } from "@/lib/roles";
 
 // Pages anyone may open. Everything else needs a signed-in user.
-const PUBLIC_PATHS = ["/login", "/signup"];
+const PUBLIC_PATHS = ["/login", "/signup", "/forgot-password"];
 // Pages that belong to one role. A user of the other role is sent to their
 // own home instead of seeing a page built for someone else.
 const STUDENT_ONLY = ["/", "/lessons"];

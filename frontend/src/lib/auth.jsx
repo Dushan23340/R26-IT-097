@@ -83,7 +83,7 @@ function AuthProvider({ children }) {
       return response;
     } catch (error) {
       console.error("\u274C Login error:", error.message);
-      return { success: false, message: error.message || "Login failed" };
+      return { success: false, message: error.message || "Login failed", ...(error.data?.requiresVerification ? { requiresVerification: true, email: error.data.email, delivery: error.data.delivery } : {}) };
     }
   };
   const verifyOtp = async (email, otp) => {
@@ -109,6 +109,20 @@ function AuthProvider({ children }) {
       return { success: false, message: error.message || "Failed to resend OTP" };
     }
   };
+  const forgotPassword = async (email) => {
+    try {
+      return await api.post("/auth/forgot-password", { email });
+    } catch (error) {
+      return { success: false, message: error.message || "Could not start the password reset" };
+    }
+  };
+  const resetPassword = async (email, otp, newPassword) => {
+    try {
+      return await api.post("/auth/reset-password", { email, otp, newPassword });
+    } catch (error) {
+      return { success: false, message: error.message || "Could not reset the password" };
+    }
+  };
   // Shared by every Account Settings form (profile info, avatar,
   // notification prefs) - each PUTs to its own routes/users.js endpoint,
   // then hands the returned user object here to update context +
@@ -126,7 +140,7 @@ function AuthProvider({ children }) {
     // is the one place that reliably gets you off a protected page.
     router.navigate({ to: "/login" });
   };
-  return <AuthContext.Provider value={{ user, isLoading, signup, login, verifyOtp, logout, resendOtp, updateUser }}>
+  return <AuthContext.Provider value={{ user, isLoading, signup, login, verifyOtp, logout, resendOtp, forgotPassword, resetPassword, updateUser }}>
       {children}
     </AuthContext.Provider>;
 }
