@@ -109,6 +109,10 @@ function LessonsPage() {
   const [loadingQuiz, setLoadingQuiz] = useState(false);
   const [answers, setAnswers] = useState({});
   const [submitting, setSubmitting] = useState(false);
+  // Set after "Submit" was pressed with blank answers: those cards get an
+  // amber outline until they are answered or the quiz changes.
+  const [flagUnanswered, setFlagUnanswered] = useState(false);
+  const submitQuizRef = useRef(null);
   const [result, setResult] = useState(null);
   // Resource completion is gated: the retake quiz only unlocks once every
   // recommended resource for this attempt's weak LOs has been marked done.
@@ -396,6 +400,9 @@ function LessonsPage() {
         return;
       }
       setError(e.message || "Failed to submit quiz");
+      toast.error("Your quiz wasn't submitted", {
+        description: `${e.message || "Something went wrong"}. Your answers are still here - try again.`,
+      });
     } finally {
       setSubmitting(false);
     }
@@ -437,9 +444,35 @@ function LessonsPage() {
   // screen from server attempt-state, where the full question list was
   // never persisted) - it has no .questions until startLesson() fetches
   // the real quiz, so guard the field, not just the object.
-  const answeredCount = quiz?.questions
-    ? quiz.questions.filter((q) => answers[q.id] != null && String(answers[q.id]).trim() !== "").length
-    : 0;
+  const isAnswered = (q) => answers[q.id] != null && String(answers[q.id]).trim() !== "";
+  const answeredCount = quiz?.questions ? quiz.questions.filter(isAnswered).length : 0;
+
+  useEffect(() => setFlagUnanswered(false), [quiz]);
+  submitQuizRef.current = submitQuiz;
+
+  // Submitting with blanks asks first: the blank cards are outlined, the page
+  // scrolls to the first one, and a toast offers "Submit anyway".
+  function requestSubmit() {
+    if (!quiz?.questions || submitting) return;
+    const blankIndex = quiz.questions.findIndex((q) => !isAnswered(q));
+    if (blankIndex === -1) {
+      toast.dismiss("quiz-unanswered");
+      submitQuiz();
+      return;
+    }
+    const blanks = quiz.questions.length - answeredCount;
+    setFlagUnanswered(true);
+    document.getElementById(`question-${blankIndex + 1}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+    toast.warning(`${blanks} question${blanks === 1 ? " is" : "s are"} still unanswered`, {
+      id: "quiz-unanswered",
+      description: "Blank answers count as wrong. Answer them, or submit anyway.",
+      duration: 8000,
+      action: {
+        label: "Submit anyway",
+        onClick: () => submitQuizRef.current?.(),
+      },
+    });
+  }
 
   // Deduped, not flatMap - the same resource id often covers multiple weak
   // LOs at once (e.g. one teacher-validated video for the whole lesson), so
@@ -581,7 +614,7 @@ function LessonsPage() {
           ) : lessons.length === 0 ? (
             <div className="glass rounded-2xl p-10 text-center text-sm text-muted-foreground">No lessons available.</div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <div className="cascade grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {lessons.map((lesson, i) => {
                 const lessonAccess = access[lesson.lesson_id];
                 const canTake = lessonAccess?.can_take_quiz ?? false;
@@ -659,13 +692,13 @@ function LessonsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_320px] gap-6 items-start">
           <div className="space-y-4">
             {quiz.questions.map((q, idx) => {
-              const answered = Boolean(answers[q.id]);
+              const answered = isAnswered(q);
               const tone = toneOf(q.lo_level);
               return (
                 <div
                   key={q.id}
                   id={`question-${idx + 1}`}
-                  className={`glass rounded-2xl p-5 sm:p-6 scroll-mt-28 border ${answered ? "border-primary/35" : "border-border/60"}`}
+                  className={`glass rounded-2xl p-5 sm:p-6 scroll-mt-28 border ${answered ? "border-primary/35" : "border-border/60"} ${flagUnanswered && !answered ? "needs-answer" : ""}`}
                 >
                   <div className="flex flex-wrap items-center gap-2 mb-3">
                     <span
@@ -727,7 +760,7 @@ function LessonsPage() {
             </div>
             <div className="mt-4 grid grid-cols-6 gap-1.5">
               {quiz.questions.map((q, idx) => {
-                const answered = Boolean(answers[q.id]);
+                const answered = isAnswered(q);
                 return (
                   <a
                     key={q.id}
@@ -746,13 +779,13 @@ function LessonsPage() {
             <div className="hairline my-5" />
             <button
               type="button"
-              onClick={submitQuiz}
+              onClick={requestSubmit}
               disabled={submitting || answeredCount === 0}
               className="w-full h-12 rounded-xl text-sm font-semibold text-primary-foreground flex items-center justify-center gap-2 transition-[filter,transform] hover:brightness-110 active:translate-y-px disabled:opacity-50"
               style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}
             >
               {submitting ? <RefreshCw className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
-              Submit Quiz
+              {submitting ? "Marking your answers..." : "Submit Quiz"}
             </button>
             {answeredCount > 0 && answeredCount < totalQuestions && (
               <p className="mt-2 text-xs text-muted-foreground text-center">{totalQuestions - answeredCount} unanswered. Blank answers count as wrong.</p>
@@ -806,7 +839,7 @@ function LessonsPage() {
               </div>
             </div>
 
-            <div className="mt-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="cascade mt-7 grid grid-cols-1 sm:grid-cols-3 gap-3">
               {Object.entries(result.lo_scores).sort(byLevel).map(([lo, data]) => {
                 const tier = tierInfo(data.mastery_tier);
                 const pct = data.total_count ? Math.round((data.correct_count / data.total_count) * 100) : 0;
@@ -841,7 +874,7 @@ function LessonsPage() {
                 <TrendingUp className="h-4 w-4 text-primary" />
                 <h2 className="font-semibold">Progress since your last attempt</h2>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              <div className="cascade grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {previousResult.weak_los.map((lo) => {
                   const before = previousResult.lo_scores[lo]?.percentile_mastery_score ?? 0;
                   const after = result.lo_scores[lo]?.percentile_mastery_score ?? 0;
@@ -907,7 +940,7 @@ function LessonsPage() {
                   }
                 }
                 return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  <div className="cascade grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Array.from(byResource.values()).map(({ res, los }) => {
                       const TypeIcon = RESOURCE_TYPE_ICONS[res.type] || FileText;
                       const done = completedResourceIds.has(res.id);

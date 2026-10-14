@@ -139,6 +139,7 @@ function AuthProvider({ children }) {
     // null and redirect itself - not every route has that guard, so this
     // is the one place that reliably gets you off a protected page.
     router.navigate({ to: "/login" });
+    toast.success("Signed out", { description: "See you next time." });
   };
   return <AuthContext.Provider value={{ user, isLoading, signup, login, verifyOtp, logout, resendOtp, forgotPassword, resetPassword, updateUser }}>
       {children}

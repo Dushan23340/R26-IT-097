@@ -1,3 +1,4 @@
+import { SkeletonRows } from "@/components/LoadingSkeleton";
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { toast } from "sonner";
@@ -1246,7 +1247,10 @@ function TeacherDashboard() {
         ) : (
           <div className="text-center py-8 text-muted-foreground">
             {isLive ? (
-              <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
+              <>
+                <SkeletonRows rows={2} className="text-left" />
+                <p className="mt-3 text-xs">Waiting for the first emotion readings from students...</p>
+              </>
             ) : (
               <>
                 <Eye className="h-8 w-8 mx-auto mb-2 opacity-30" />
@@ -1460,9 +1464,7 @@ function TeacherDashboard() {
             {studentsError} (is emotion-service running on port 5002?)
           </div>
         ) : !liveStudentsLoaded ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <RefreshCw className="h-6 w-6 animate-spin mx-auto mb-2" />
-          </div>
+          <SkeletonRows rows={4} />
         ) : students.length === 0 ? (
           <div className="text-center py-8 text-muted-foreground text-sm">
             {isLive

@@ -101,7 +101,7 @@ function AdminView() {
       {
     /* Summary cards */
   }
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="cascade grid grid-cols-2 lg:grid-cols-4 gap-4">
         {summary.map((s) => {
     const Icon = s.icon;
     return <div key={s.label} className="glass rounded-2xl p-5">
@@ -114,7 +114,7 @@ function AdminView() {
                   <Icon className="h-4 w-4" />
                 </div>
               </div>
-              <div className="font-display text-3xl font-bold" style={{ color: s.tone }}>{loading ? "…" : s.value}</div>
+              <div className="font-display text-3xl font-bold" style={{ color: s.tone }}>{loading ? <span className="skeleton inline-block h-8 w-16 align-middle" /> : s.value}</div>
             </div>;
   })}
       </div>

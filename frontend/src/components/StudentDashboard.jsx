@@ -1,3 +1,4 @@
+import { SkeletonRows } from "@/components/LoadingSkeleton";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -566,7 +567,7 @@ function StudentDashboard() {
           </div>
         </div>
 
-        <div className="relative mt-7 grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="cascade relative mt-7 grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: "Quizzes completed", value: loadingHistory ? "–" : quizzesCompleted, Icon: FileText },
             { label: "Average score", value: loadingHistory || avgScore == null ? "–" : `${avgScore}%`, Icon: Target },
@@ -770,15 +771,13 @@ function StudentDashboard() {
         </h2>
 
         {loadingHistory ? (
-          <div className="py-8 flex justify-center text-muted-foreground">
-            <RefreshCw className="h-5 w-5 animate-spin" />
-          </div>
+          <SkeletonRows rows={3} />
         ) : progressBySubject.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">
             No quiz results yet - take a lesson quiz to see your progress by subject.
           </p>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="cascade grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {progressBySubject.map((item) => <div
     key={item.subject}
     className={`p-4 rounded-xl border ${item.weak ? "border-destructive/30 bg-destructive/5" : "border-border/60"}`}
@@ -836,9 +835,7 @@ function StudentDashboard() {
         )}
 
         {loadingRecommendations ? (
-          <div className="py-8 flex justify-center text-muted-foreground">
-            <RefreshCw className="h-5 w-5 animate-spin" />
-          </div>
+          <SkeletonRows rows={3} />
         ) : recommendations.length === 0 && masteredLessonTitle ? (
           <div className="text-center py-8">
             <p className="text-sm text-muted-foreground mb-3">
@@ -864,7 +861,7 @@ function StudentDashboard() {
             </Link>
           </div>
         ) : (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="cascade grid grid-cols-1 md:grid-cols-3 gap-4">
             {recommendations.map((res) => {
               const TypeIcon = RESOURCE_TYPE_ICON[res.type] || FileText;
               return (
@@ -921,7 +918,7 @@ function StudentDashboard() {
         ) : lessons.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-8">No lessons available.</p>
         ) : (
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="cascade grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {lessons.map((lesson, i) => (
               <Link
                 key={lesson.lesson_id}

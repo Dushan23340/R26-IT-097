@@ -1,3 +1,4 @@
+import { trackedFetch } from "@/lib/network";
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 async function parseBody(response) {
@@ -30,7 +31,7 @@ async function request(endpoint, options = {}) {
       Authorization: `Bearer ${token}`,
     };
   }
-  const response = await fetch(url, config);
+  const response = await trackedFetch("account service", url, config);
   const data = await parseBody(response);
 
   if (!response.ok) {

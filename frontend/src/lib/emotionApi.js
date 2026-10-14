@@ -1,3 +1,4 @@
+import { trackedFetch } from "@/lib/network";
 import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 const EMOTION_API_URL = import.meta.env.VITE_EMOTION_API_URL || "http://localhost:8000";
 
@@ -11,7 +12,7 @@ async function request(endpoint, options = {}) {
     },
     ...options,
   };
-  const response = await fetch(url, config);
+  const response = await trackedFetch("class emotion service", url, config);
   const data = await response.json().catch(() => ({}));
   if (response.status === 401) handleUnauthorized();
   if (!response.ok) {

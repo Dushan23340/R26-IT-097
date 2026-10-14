@@ -1,10 +1,10 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, KeyRound, Loader2, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { AuthLayout } from "@/components/AuthLayout";
-import { EMAIL_PATTERN, Field, Notice, PasswordField, PasswordStrength } from "@/components/AuthFields";
+import { EMAIL_PATTERN, Field, Notice, PasswordField, PasswordStrength, replayAnimation, useLiveValidation } from "@/components/AuthFields";
 import { CodeField, DeliveryNote, ResendLink } from "@/components/VerifyCodeStep";
 
 const Route = createFileRoute("/forgot-password")({
@@ -24,25 +24,47 @@ function ForgotPasswordPage() {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-  const [fieldErrors, setFieldErrors] = useState({});
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const cardRef = useRef(null);
+
+  const emailForm = useLiveValidation(
+    ({ email }) => {
+      if (!email.trim()) return { email: "Enter your e-mail address" };
+      if (!EMAIL_PATTERN.test(email.trim())) return { email: "Enter a valid e-mail address" };
+      return {};
+    },
+    { email }
+  );
+  const resetForm = useLiveValidation(
+    ({ code, password, confirm }) => {
+      const errors = {};
+      if (code.length !== 6) errors.code = "Enter the 6-digit code";
+      if (password.length < 6) errors.password = "Use at least 6 characters";
+      if (!confirm) errors.confirm = "Type your new password again";
+      else if (confirm !== password) errors.confirm = "The two passwords do not match";
+      return errors;
+    },
+    { code, password, confirm }
+  );
+  const fieldErrors = step === 1 ? emailForm.errors : resetForm.errors;
 
   const requestCode = async (e) => {
     e.preventDefault();
     setError("");
-    if (!EMAIL_PATTERN.test(email.trim())) {
-      setFieldErrors({ email: "Enter a valid e-mail address" });
+    if (!emailForm.check()) {
+      replayAnimation(cardRef.current);
       return;
     }
-    setFieldErrors({});
     setBusy(true);
     const result = await forgotPassword(email.trim());
     setBusy(false);
     if (!result.success) {
       setError(result.message);
+      replayAnimation(cardRef.current);
       return;
     }
+    toast.success("Reset code sent", { description: `Check ${email.trim()} for a 6-digit code.` });
     setDelivery(result.delivery || "email");
     setStep(2);
   };
@@ -50,17 +72,16 @@ function ForgotPasswordPage() {
   const submitNewPassword = async (e) => {
     e.preventDefault();
     setError("");
-    const errors = {};
-    if (code.length !== 6) errors.code = "Enter the 6-digit code";
-    if (password.length < 6) errors.password = "Use at least 6 characters";
-    if (confirm !== password) errors.confirm = "The two passwords do not match";
-    setFieldErrors(errors);
-    if (Object.keys(errors).length) return;
+    if (!resetForm.check()) {
+      replayAnimation(cardRef.current);
+      return;
+    }
     setBusy(true);
     const result = await resetPassword(email.trim(), code, password);
     setBusy(false);
     if (!result.success) {
       setError(result.message);
+      replayAnimation(cardRef.current);
       return;
     }
     toast.success("Password changed", { description: "Sign in with your new password." });
@@ -69,7 +90,7 @@ function ForgotPasswordPage() {
 
   return (
     <AuthLayout role="student">
-      <div className="glass rounded-3xl p-7 sm:p-9">
+      <div ref={cardRef} className="glass rounded-3xl p-7 sm:p-9">
         <Link to="/login" className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" />
           Back to sign in
@@ -79,11 +100,11 @@ function ForgotPasswordPage() {
         </div>
 
         {step === 1 ? (
-          <>
+          <div key="email" className="page-enter">
             <h2 className="mt-4 text-3xl font-bold tracking-tight">Forgot your password?</h2>
             <p className="mt-2 text-sm text-muted-foreground">Enter the e-mail of your account. We will send a 6-digit code to reset it.</p>
             <form onSubmit={requestCode} noValidate className="mt-6 space-y-4">
-              <Field id="email" label="E-mail address" icon={Mail} type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} error={fieldErrors.email} />
+              <Field id="email" label="E-mail address" icon={Mail} type="email" autoComplete="email" placeholder="you@example.com" value={email} onChange={(e) => setEmail(e.target.value)} onBlur={emailForm.blur("email")} error={fieldErrors.email} valid={emailForm.valid("email")} />
               {error && <Notice>{error}</Notice>}
               <button type="submit" disabled={busy} className={PRIMARY} style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
@@ -91,9 +112,9 @@ function ForgotPasswordPage() {
                 {!busy && <ArrowRight className="h-4 w-4" />}
               </button>
             </form>
-          </>
+          </div>
         ) : (
-          <>
+          <div key="reset" className="page-enter">
             <h2 className="mt-4 text-3xl font-bold tracking-tight">Choose a new password</h2>
             <div className="mt-2">
               {delivery === "server-log" ? (
@@ -107,13 +128,13 @@ function ForgotPasswordPage() {
             <form onSubmit={submitNewPassword} noValidate className="mt-6 space-y-4">
               <div>
                 <CodeField value={code} onChange={setCode} error={fieldErrors.code} />
-                {fieldErrors.code && <p className="mt-1.5 text-xs text-destructive">{fieldErrors.code}</p>}
+                {fieldErrors.code && <p key={fieldErrors.code} className="field-error mt-1.5 text-xs text-destructive">{fieldErrors.code}</p>}
               </div>
               <div>
-                <PasswordField id="password" label="New password" icon={Lock} autoComplete="new-password" placeholder="At least 6 characters" value={password} onChange={(e) => setPassword(e.target.value)} error={fieldErrors.password} />
+                <PasswordField id="password" label="New password" icon={Lock} autoComplete="new-password" placeholder="At least 6 characters" value={password} onChange={(e) => setPassword(e.target.value)} onBlur={resetForm.blur("password")} error={fieldErrors.password} />
                 <PasswordStrength password={password} />
               </div>
-              <PasswordField id="confirm" label="Confirm new password" icon={Lock} autoComplete="new-password" placeholder="Type it again" value={confirm} onChange={(e) => setConfirm(e.target.value)} error={fieldErrors.confirm} />
+              <PasswordField id="confirm" label="Confirm new password" icon={Lock} autoComplete="new-password" placeholder="Type it again" value={confirm} onChange={(e) => setConfirm(e.target.value)} onBlur={resetForm.blur("confirm")} error={fieldErrors.confirm} valid={resetForm.valid("confirm")} />
               {error && <Notice>{error}</Notice>}
               <button type="submit" disabled={busy} className={PRIMARY} style={{ background: "var(--gradient-primary)", boxShadow: "var(--shadow-glow)" }}>
                 {busy ? <Loader2 className="h-5 w-5 animate-spin" /> : null}
@@ -123,7 +144,7 @@ function ForgotPasswordPage() {
             <div className="mt-5">
               <ResendLink onResend={() => forgotPassword(email.trim())} />
             </div>
-          </>
+          </div>
         )}
       </div>
     </AuthLayout>

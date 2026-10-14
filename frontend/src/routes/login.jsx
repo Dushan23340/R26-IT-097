@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowRight, Loader2, Lock, Mail } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { ROLES, homeFor } from "@/lib/roles";
 import { AuthLayout, RolePicker } from "@/components/AuthLayout";
-import { EMAIL_PATTERN, Field, Notice, PasswordField } from "@/components/AuthFields";
+import { EMAIL_PATTERN, Field, Notice, PasswordField, replayAnimation, useLiveValidation } from "@/components/AuthFields";
 import { VerifyCodeStep } from "@/components/VerifyCodeStep";
 
 const Route = createFileRoute("/login")({
@@ -24,7 +24,18 @@ function LoginPage() {
   const [role, setRole] = useState("student");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fieldErrors, setFieldErrors] = useState({});
+  const cardRef = useRef(null);
+  const form = useLiveValidation(
+    ({ email, password }) => {
+      const errors = {};
+      if (!email.trim()) errors.email = "Enter your e-mail address";
+      else if (!EMAIL_PATTERN.test(email.trim())) errors.email = "Enter a valid e-mail address";
+      if (!password) errors.password = "Enter your password";
+      return errors;
+    },
+    { email, password }
+  );
+  const fieldErrors = form.errors;
   // "?expired=1" is set by lib/authHeaders.js when a saved session's token
   // was rejected, so the user knows why they are back on this page.
   const [error, setError] = useState(() =>
@@ -39,12 +50,10 @@ function LoginPage() {
     e.preventDefault();
     setError("");
     setSuccess("");
-    const errors = {};
-    if (!email.trim()) errors.email = "Enter your e-mail address";
-    else if (!EMAIL_PATTERN.test(email.trim())) errors.email = "Enter a valid e-mail address";
-    if (!password) errors.password = "Enter your password";
-    setFieldErrors(errors);
-    if (Object.keys(errors).length) return;
+    if (!form.check()) {
+      replayAnimation(cardRef.current);
+      return;
+    }
 
     setIsLoading(true);
     const result = await login(email.trim(), password);
@@ -56,6 +65,7 @@ function LoginPage() {
     }
     if (!result.success || !result.user) {
       setError(result.message || "Sign in failed. Please try again.");
+      replayAnimation(cardRef.current);
       return;
     }
     finishSignIn(result.user);
@@ -78,7 +88,7 @@ function LoginPage() {
 
   return (
     <AuthLayout role={role}>
-      <div className="glass rounded-3xl p-7 sm:p-9">
+      <div ref={cardRef} className="glass rounded-3xl p-7 sm:p-9">
         {pending ? (
           <VerifyCodeStep
             email={pending.email}
@@ -111,7 +121,9 @@ function LoginPage() {
             placeholder={role === "teacher" ? "teacher@school.lk" : "you@example.com"}
             value={email}
             onChange={(e) => setEmail(e.target.value)}
+            onBlur={form.blur("email")}
             error={fieldErrors.email}
+            valid={form.valid("email")}
           />
           <PasswordField
             id="password"

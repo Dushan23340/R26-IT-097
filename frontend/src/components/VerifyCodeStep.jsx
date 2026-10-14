@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { ArrowLeft, Loader2, MailCheck, ShieldCheck } from "lucide-react";
-import { Notice } from "@/components/AuthFields";
+import { Notice, replayAnimation } from "@/components/AuthFields";
 
 const RESEND_SECONDS = 60;
 
@@ -64,7 +65,12 @@ function ResendLink({ onResend }) {
     const result = await onResend();
     setBusy(false);
     setNote({ ok: Boolean(result?.success), text: result?.success ? "A new code is on its way." : result?.message || "Could not send a new code." });
-    if (result?.success) setWait(RESEND_SECONDS);
+    if (result?.success) {
+      setWait(RESEND_SECONDS);
+      toast.success("New code sent", { description: "Codes expire after 10 minutes." });
+    } else {
+      toast.error(result?.message || "Could not send a new code.");
+    }
   };
   return (
     <div className="text-center text-sm text-muted-foreground">
@@ -86,20 +92,33 @@ function VerifyCodeStep({ email, delivery, onVerify, onResend, onBack, backLabel
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const submit = async (e) => {
-    e.preventDefault();
-    if (code.length !== 6) {
+  const formRef = useRef(null);
+  const verify = async (value) => {
+    if (busy) return;
+    if (value.length !== 6) {
       setError("Enter the 6-digit code");
+      replayAnimation(formRef.current);
       return;
     }
     setBusy(true);
     setError("");
-    const result = await onVerify(code);
+    const result = await onVerify(value);
     setBusy(false);
     if (!result?.success) {
       setError(result?.message || "That code is not correct.");
       setCode("");
+      replayAnimation(formRef.current);
     }
+  };
+  const submit = (e) => {
+    e.preventDefault();
+    verify(code);
+  };
+  // The sixth digit (typed or pasted) submits straight away.
+  const onCodeChange = (value) => {
+    setCode(value);
+    if (error) setError("");
+    if (value.length === 6) verify(value);
   };
   return (
     <div>
@@ -116,8 +135,8 @@ function VerifyCodeStep({ email, delivery, onVerify, onResend, onBack, backLabel
       <div className="mt-2">
         <DeliveryNote delivery={delivery} email={email} />
       </div>
-      <form onSubmit={submit} noValidate className="mt-6 space-y-4">
-        <CodeField value={code} onChange={setCode} error={error} />
+      <form ref={formRef} onSubmit={submit} noValidate className="mt-6 space-y-4">
+        <CodeField value={code} onChange={onCodeChange} error={error} />
         {error && <Notice>{error}</Notice>}
         <button
           type="submit"

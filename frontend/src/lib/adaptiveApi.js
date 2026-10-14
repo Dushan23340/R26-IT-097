@@ -1,3 +1,4 @@
+import { trackedFetch } from "@/lib/network";
 import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 const ADAPTIVE_API_BASE = import.meta.env.VITE_ADAPTIVE_API_URL || "http://localhost:5005/api";
 
@@ -28,7 +29,7 @@ async function request(endpoint, options = {}) {
     headers: { "Content-Type": "application/json", ...authHeaders(), ...options.headers },
     ...options,
   };
-  const response = await fetch(url, config);
+  const response = await trackedFetch("adaptive learning service", url, config);
   const data = await parseBody(response);
   if (response.status === 401) handleUnauthorized();
   if (!response.ok) {

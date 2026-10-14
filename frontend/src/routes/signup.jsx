@@ -1,11 +1,11 @@
 import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, Loader2, Lock, Mail, ShieldCheck, User } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/lib/auth";
 import { ROLES, homeFor } from "@/lib/roles";
 import { AuthLayout, RolePicker } from "@/components/AuthLayout";
-import { EMAIL_PATTERN, Field, Notice, PasswordField, PasswordStrength } from "@/components/AuthFields";
+import { EMAIL_PATTERN, Field, Notice, PasswordField, PasswordStrength, replayAnimation, useLiveValidation } from "@/components/AuthFields";
 import { VerifyCodeStep } from "@/components/VerifyCodeStep";
 
 const Route = createFileRoute("/signup")({
@@ -44,7 +44,7 @@ function SignupPage() {
   const [pending, setPending] = useState(null);
   const [step, setStep] = useState(1);
   const [form, setForm] = useState({ name: "", email: "", password: "", confirmPassword: "", role: "student" });
-  const [fieldErrors, setFieldErrors] = useState({});
+  const cardRef = useRef(null);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -53,7 +53,7 @@ function SignupPage() {
 
   // Same rules the account service enforces (validateSignupFields), checked
   // here first so the user sees the problem next to the field.
-  const validate = () => {
+  const validate = (form) => {
     const errors = {};
     const name = form.name.trim();
     if (name.length < 2) errors.name = "Enter your full name (at least 2 characters)";
@@ -65,13 +65,17 @@ function SignupPage() {
     else if (form.confirmPassword !== form.password) errors.confirmPassword = "The two passwords do not match";
     return errors;
   };
+  const live = useLiveValidation(validate, form);
+  const fieldErrors = live.errors;
+  const fieldProps = (key) => ({ onBlur: live.blur(key), error: fieldErrors[key], valid: live.valid(key) });
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    const errors = validate();
-    setFieldErrors(errors);
-    if (Object.keys(errors).length) return;
+    if (!live.check()) {
+      replayAnimation(cardRef.current);
+      return;
+    }
 
     setIsLoading(true);
     const result = await signup(form.email.trim(), form.password, form.name.trim(), form.role);
@@ -79,6 +83,7 @@ function SignupPage() {
 
     if (!result.success) {
       setError(result.message || "Could not create the account. Please try again.");
+      replayAnimation(cardRef.current);
       return;
     }
     if (result.requiresVerification) {
@@ -101,11 +106,11 @@ function SignupPage() {
 
   return (
     <AuthLayout role={form.role}>
-      <div className="glass rounded-3xl p-7 sm:p-9">
+      <div ref={cardRef} className="glass rounded-3xl p-7 sm:p-9">
         <Steps step={step} />
 
         {step === 3 && pending ? (
-          <div className="mt-4">
+          <div key="verify" className="mt-4 page-enter">
             <VerifyCodeStep
               email={pending.email}
               delivery={pending.delivery}
@@ -123,7 +128,7 @@ function SignupPage() {
             />
           </div>
         ) : step === 1 ? (
-          <>
+          <div key="role" className="page-enter">
             <h2 className="mt-6 text-3xl font-bold tracking-tight">Create your account</h2>
             <p className="mt-2 text-sm text-muted-foreground">First, tell us how you will use AdaptiveMind.</p>
             <div className="mt-6">
@@ -138,9 +143,9 @@ function SignupPage() {
               Continue as {info.label.toLowerCase()}
               <ArrowRight className="h-4 w-4" />
             </button>
-          </>
+          </div>
         ) : (
-          <>
+          <div key="details" className="page-enter">
             <button type="button" onClick={() => setStep(1)} className="mt-5 inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-4 w-4" />
               Change role
@@ -151,13 +156,13 @@ function SignupPage() {
             <p className="mt-2 text-sm text-muted-foreground">{info.tagline}.</p>
 
             <form onSubmit={handleSubmit} noValidate className="mt-6 space-y-4">
-              <Field id="name" label="Full name" icon={User} autoComplete="name" placeholder={form.role === "teacher" ? "Ms. Kumari Silva" : "Nimal Perera"} value={form.name} onChange={set("name")} error={fieldErrors.name} />
-              <Field id="email" label="E-mail address" icon={Mail} type="email" autoComplete="email" placeholder={form.role === "teacher" ? "teacher@school.lk" : "you@example.com"} value={form.email} onChange={set("email")} error={fieldErrors.email} />
+              <Field id="name" label="Full name" icon={User} autoComplete="name" placeholder={form.role === "teacher" ? "Ms. Kumari Silva" : "Nimal Perera"} value={form.name} onChange={set("name")} {...fieldProps("name")} />
+              <Field id="email" label="E-mail address" icon={Mail} type="email" autoComplete="email" placeholder={form.role === "teacher" ? "teacher@school.lk" : "you@example.com"} value={form.email} onChange={set("email")} {...fieldProps("email")} />
               <div>
-                <PasswordField id="password" label="Password" icon={Lock} autoComplete="new-password" placeholder="At least 6 characters" value={form.password} onChange={set("password")} error={fieldErrors.password} />
+                <PasswordField id="password" label="Password" icon={Lock} autoComplete="new-password" placeholder="At least 6 characters" value={form.password} onChange={set("password")} onBlur={live.blur("password")} error={fieldErrors.password} />
                 <PasswordStrength password={form.password} />
               </div>
-              <PasswordField id="confirmPassword" label="Confirm password" icon={Lock} autoComplete="new-password" placeholder="Type it again" value={form.confirmPassword} onChange={set("confirmPassword")} error={fieldErrors.confirmPassword} />
+              <PasswordField id="confirmPassword" label="Confirm password" icon={Lock} autoComplete="new-password" placeholder="Type it again" value={form.confirmPassword} onChange={set("confirmPassword")} {...fieldProps("confirmPassword")} />
 
               {form.role === "student" && (
                 <div className="flex gap-3 rounded-xl border border-border bg-background/30 p-3 text-xs text-muted-foreground">
@@ -178,7 +183,7 @@ function SignupPage() {
                 {isLoading ? "Creating account..." : `Create ${info.label.toLowerCase()} account`}
               </button>
             </form>
-          </>
+          </div>
         )}
 
         <div className="hairline my-6" />

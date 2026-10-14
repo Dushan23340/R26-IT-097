@@ -3,8 +3,32 @@ import { Settings, User, KeyRound, Bell, Camera, RefreshCw } from "lucide-react"
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { EMAIL_PATTERN, useLiveValidation } from "@/components/AuthFields";
 
 const AVATAR_TARGET_PX = 128;
+const AVATAR_TYPES = ["image/png", "image/jpeg", "image/webp"];
+const AVATAR_MAX_MB = 5;
+
+// Compact input with an inline, animated error - the settings cards are too
+// small for the full-size auth fields.
+function SettingsInput({ id, error, ...props }) {
+  return (
+    <div>
+      <input
+        id={id}
+        aria-invalid={error ? "true" : undefined}
+        aria-describedby={error ? `${id}-error` : undefined}
+        className="input-field w-full text-sm"
+        {...props}
+      />
+      {error && (
+        <p id={`${id}-error`} key={error} className="field-error mt-1 text-[11px] text-destructive">
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 // Resizes/compresses in the browser before upload - keeps the Mongo
 // document small without needing a server-side upload library (multer)
@@ -68,13 +92,42 @@ function AccountSettings({ defaultExpanded = false } = {}) {
   const [quizUnlocked, setQuizUnlocked] = useState(user?.notificationPreferences?.quizUnlocked ?? true);
   const [savingNotifications, setSavingNotifications] = useState(false);
 
+  const profileForm = useLiveValidation(
+    ({ name, email }) => {
+      const errors = {};
+      if (name.trim().length < 2) errors.name = "Name must be at least 2 characters";
+      else if (name.trim().length > 100) errors.name = "Name must be 100 characters or fewer";
+      if (!email.trim()) errors.email = "Enter your e-mail address";
+      else if (!EMAIL_PATTERN.test(email.trim())) errors.email = "Enter a valid e-mail address";
+      return errors;
+    },
+    { name, email }
+  );
+  const passwordForm = useLiveValidation(
+    ({ currentPassword, newPassword, confirmPassword }) => {
+      const errors = {};
+      if (!currentPassword) errors.currentPassword = "Enter your current password";
+      if (newPassword.length < 6) errors.newPassword = "Use at least 6 characters";
+      else if (newPassword === currentPassword) errors.newPassword = "Choose a password different from the current one";
+      if (!confirmPassword) errors.confirmPassword = "Type the new password again";
+      else if (confirmPassword !== newPassword) errors.confirmPassword = "The two passwords do not match";
+      return errors;
+    },
+    { currentPassword, newPassword, confirmPassword }
+  );
+
   if (!user) return null;
 
   async function handleSaveProfile(e) {
     e.preventDefault();
+    if (!profileForm.check()) return;
+    if (name.trim() === (user.name || "") && email.trim() === (user.email || "")) {
+      toast.info("Nothing to save", { description: "Your name and e-mail are unchanged." });
+      return;
+    }
     setSavingProfile(true);
     try {
-      const res = await api.put(`/users/${user.id}`, { name, email });
+      const res = await api.put(`/users/${user.id}`, { name: name.trim(), email: email.trim() });
       updateUser(res.user);
       toast.success("Profile updated");
     } catch (err) {
@@ -86,10 +139,7 @@ function AccountSettings({ defaultExpanded = false } = {}) {
 
   async function handleChangePassword(e) {
     e.preventDefault();
-    if (newPassword !== confirmPassword) {
-      toast.error("New password and confirmation don't match");
-      return;
-    }
+    if (!passwordForm.check()) return;
     setSavingPassword(true);
     try {
       await api.post(`/users/${user.id}/change-password`, { currentPassword, newPassword });
@@ -97,6 +147,7 @@ function AccountSettings({ defaultExpanded = false } = {}) {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      passwordForm.reset();
     } catch (err) {
       toast.error(err.message || "Couldn't change password");
     } finally {
@@ -107,6 +158,16 @@ function AccountSettings({ defaultExpanded = false } = {}) {
   async function handleAvatarChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (!AVATAR_TYPES.includes(file.type)) {
+      toast.error("Unsupported image type", { description: "Choose a PNG, JPEG or WebP picture." });
+      e.target.value = "";
+      return;
+    }
+    if (file.size > AVATAR_MAX_MB * 1024 * 1024) {
+      toast.error("That picture is too large", { description: `Choose one smaller than ${AVATAR_MAX_MB} MB.` });
+      e.target.value = "";
+      return;
+    }
     setUploadingAvatar(true);
     try {
       const avatarDataUrl = await fileToResizedJpegDataUrl(file);
@@ -140,9 +201,11 @@ function AccountSettings({ defaultExpanded = false } = {}) {
     try {
       const res = await api.put(`/users/${user.id}/notifications`, { quizUnlocked: checked });
       updateUser(res.user);
+      toast.success(checked ? "Quiz e-mails turned on" : "Quiz e-mails turned off");
     } catch (err) {
       setQuizUnlocked(!checked);
       toast.error(err.message || "Couldn't update notification preference");
+      return;
     } finally {
       setSavingNotifications(false);
     }
@@ -162,24 +225,30 @@ function AccountSettings({ defaultExpanded = false } = {}) {
       </button>
 
       {expanded && (
-        <div className="mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="cascade mt-5 grid grid-cols-1 md:grid-cols-2 gap-4">
           <SettingsCard icon={User} title="Profile info">
-            <form onSubmit={handleSaveProfile} className="space-y-2">
-              <input
+            <form onSubmit={handleSaveProfile} noValidate className="space-y-2">
+              <SettingsInput
+                id="settings-name"
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
+                onBlur={profileForm.blur("name")}
                 placeholder="Name"
-                className="input-field w-full text-sm"
-                required
+                aria-label="Name"
+                autoComplete="name"
+                error={profileForm.errors.name}
               />
-              <input
+              <SettingsInput
+                id="settings-email"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
+                onBlur={profileForm.blur("email")}
                 placeholder="Email"
-                className="input-field w-full text-sm"
-                required
+                aria-label="E-mail address"
+                autoComplete="email"
+                error={profileForm.errors.email}
               />
               <button
                 type="submit"
@@ -193,35 +262,38 @@ function AccountSettings({ defaultExpanded = false } = {}) {
           </SettingsCard>
 
           <SettingsCard icon={KeyRound} title="Change password">
-            <form onSubmit={handleChangePassword} className="space-y-2">
-              <input
+            <form onSubmit={handleChangePassword} noValidate className="space-y-2">
+              <SettingsInput
+                id="settings-current-password"
                 type="password"
                 value={currentPassword}
                 onChange={(e) => setCurrentPassword(e.target.value)}
                 placeholder="Current password"
-                className="input-field w-full text-sm"
+                aria-label="Current password"
                 autoComplete="current-password"
-                required
+                error={passwordForm.errors.currentPassword}
               />
-              <input
+              <SettingsInput
+                id="settings-new-password"
                 type="password"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                placeholder="New password"
-                className="input-field w-full text-sm"
+                onBlur={passwordForm.blur("newPassword")}
+                placeholder="New password (at least 6 characters)"
+                aria-label="New password"
                 autoComplete="new-password"
-                minLength={6}
-                required
+                error={passwordForm.errors.newPassword}
               />
-              <input
+              <SettingsInput
+                id="settings-confirm-password"
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
+                onBlur={passwordForm.blur("confirmPassword")}
                 placeholder="Confirm new password"
-                className="input-field w-full text-sm"
+                aria-label="Confirm new password"
                 autoComplete="new-password"
-                minLength={6}
-                required
+                error={passwordForm.errors.confirmPassword}
               />
               <button
                 type="submit"
@@ -272,7 +344,7 @@ function AccountSettings({ defaultExpanded = false } = {}) {
                     </button>
                   )}
                 </div>
-                <p className="text-[10px] text-muted-foreground mt-1">PNG, JPEG or WebP</p>
+                <p className="text-[10px] text-muted-foreground mt-1">PNG, JPEG or WebP, up to {AVATAR_MAX_MB} MB</p>
               </div>
             </div>
           </SettingsCard>

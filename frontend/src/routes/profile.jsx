@@ -1,3 +1,4 @@
+import { SkeletonChart, SkeletonRows } from "@/components/LoadingSkeleton";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
@@ -292,9 +293,7 @@ function TeacherProfileCard({ user }) {
             <TrendingUp className="h-4 w-4 text-primary" /> Class average by learning level
           </div>
           {loading ? (
-            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-              <RefreshCw className="h-5 w-5 animate-spin" />
-            </div>
+            <SkeletonRows rows={3} />
           ) : strugglingAreas.length > 0 ? (
             <div className="space-y-3">
               {strugglingAreas.map((area) => (
@@ -332,9 +331,7 @@ function TeacherProfileCard({ user }) {
             <Scale className="h-4 w-4 text-primary" /> Fairness & Equity Snapshot
           </div>
           {loading ? (
-            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-              <RefreshCw className="h-5 w-5 animate-spin" />
-            </div>
+            <SkeletonRows rows={3} />
           ) : fairness?.available ? (
             <div>
               <div className={`text-xs font-medium mb-3 ${fairness.fair ? "text-emotion-happy" : "text-emotion-confused"}`}>
@@ -432,9 +429,7 @@ function TeacherProfileCard({ user }) {
             <Target className="h-4 w-4 text-primary" /> Recommendation Effectiveness
           </div>
           {loading ? (
-            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-              <RefreshCw className="h-5 w-5 animate-spin" />
-            </div>
+            <SkeletonRows rows={3} />
           ) : recEffectiveness?.length > 0 ? (
             <div className="space-y-3">
               {recEffectiveness.map((row) => (
@@ -473,9 +468,7 @@ function TeacherProfileCard({ user }) {
             <BellRing className="h-4 w-4 text-primary" /> Fairness Alert History
           </div>
           {loading ? (
-            <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-              <RefreshCw className="h-5 w-5 animate-spin" />
-            </div>
+            <SkeletonRows rows={3} />
           ) : fairnessAlerts.length > 0 ? (
             <div className="space-y-2">
               {fairnessAlerts.map((alert) => (
@@ -714,7 +707,7 @@ function StudentAnalyticsView() {
               </ResponsiveContainer>
             ) : (
               <div className="h-full flex items-center justify-center text-sm text-muted-foreground">
-                {loading ? <RefreshCw className="h-5 w-5 animate-spin" /> : "No session data yet."}
+                {loading ? <SkeletonChart /> : "No session data yet."}
               </div>
             )}
           </div>
@@ -791,7 +784,7 @@ function StudentAnalyticsView() {
           ) : (
             <div className="h-full flex flex-col items-center justify-center text-sm text-muted-foreground text-center px-6">
               {loading ? (
-                <RefreshCw className="h-5 w-5 animate-spin" />
+                <SkeletonChart />
               ) : (
                 <>
                   <Video className="h-8 w-8 mb-3 opacity-50" />
@@ -823,9 +816,7 @@ function StudentAnalyticsView() {
           )}
         </div>
         {loading ? (
-          <div className="h-16 flex items-center justify-center text-sm text-muted-foreground">
-            <RefreshCw className="h-5 w-5 animate-spin" />
-          </div>
+          <SkeletonRows rows={1} />
         ) : difficulty?.available ? (
           <div className="space-y-3">
             {["easy", "medium", "hard"].map((level) => {
@@ -869,11 +860,9 @@ function StudentAnalyticsView() {
           <Layers className="h-4 w-4 text-primary" /> How you are doing in each lesson
         </div>
         {loading ? (
-          <div className="h-32 flex items-center justify-center text-sm text-muted-foreground">
-            <RefreshCw className="h-5 w-5 animate-spin" />
-          </div>
+          <SkeletonRows rows={3} />
         ) : lessonIntelligence.length > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="cascade grid grid-cols-1 md:grid-cols-2 gap-3">
             {lessonIntelligence.map((l) => {
               const verdictColor = l.verdict === "strength" ? "var(--emotion-happy)" : l.verdict === "weakness" ? "var(--emotion-confused)" : "var(--muted-foreground)";
               return (

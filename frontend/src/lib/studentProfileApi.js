@@ -1,3 +1,4 @@
+import { trackedFetch } from "@/lib/network";
 import { authHeaders, handleUnauthorized } from "@/lib/authHeaders";
 // Client for analytics-service (IT22197146) - Student Profile Management &
 // Advanced Statistical Progress Analytics. Distinct from lib/emotionApi.js
@@ -7,12 +8,18 @@ const STUDENT_PROFILE_API_BASE =
 
 async function request(endpoint, options = {}) {
   const url = `${STUDENT_PROFILE_API_BASE}${endpoint}`;
-  const response = await fetch(url, {
+  const response = await trackedFetch("analytics service", url, {
     headers: { "Content-Type": "application/json", ...authHeaders(), ...options.headers },
     ...options,
   });
   const text = await response.text();
-  const data = text ? JSON.parse(text) : {};
+  // A proxy error page (HTML) must not surface as "Unexpected token <".
+  let data = {};
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { message: `The analytics service returned an error (${response.status}).` };
+  }
   if (response.status === 401) handleUnauthorized();
   if (!response.ok) {
     throw new Error(data.error || data.message || response.statusText || "Request failed");
