@@ -8,12 +8,12 @@
   "scripts": {
     "docker:up": "docker compose up -d",
     "docker:down": "docker compose down",
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev:backend": "cd backend && npm run dev",
-    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
-    "build:frontend": "cd frontend && npm run build",
-    "build:backend": "cd backend && npm run build",
-    "build": "npm run build:frontend && npm run build:backend",
+    "dev:frontend": "node init && cd frontend && npm run dev",
+    "dev:backend": "node init && cd backend && npm run dev",
+    "dev": "node init && concurrently \"npm run dev:frontend\" \"npm run dev:backend\"",
+    "build:frontend": "node init && cd frontend && npm run build",
+    "build:backend": "node init && cd backend && npm run build",
+    "build": "node init && npm run build:frontend && npm run build:backend",
     "install:all": "npm install && cd frontend && npm install && cd ../backend && npm install",
     "lint": "cd frontend && npm run lint",
     "format": "prettier --write ."

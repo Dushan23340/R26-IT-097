@@ -12,12 +12,15 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TrackFieldAnalyticsRouteImport } from './routes/track-field-analytics'
 import { Route as TimeGuardiansRoundingClockRouteImport } from './routes/time-guardians-rounding-clock'
 import { Route as TeacherRouteImport } from './routes/teacher'
+import { Route as StatusRouteImport } from './routes/status'
 import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SetSorterStationRouteImport } from './routes/set-sorter-station'
+import { Route as ReportsRouteImport } from './routes/reports'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PirateNavigatorRouteImport } from './routes/pirate-navigator'
 import { Route as PercentMarketDashRouteImport } from './routes/percent-market-dash'
 import { Route as PatternIslandsRouteImport } from './routes/pattern-islands'
+import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MagiciansTriangleHouseRouteImport } from './routes/magicians-triangle-house'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LessonsRouteImport } from './routes/lessons'
@@ -26,6 +29,7 @@ import { Route as FractionRoomRouteImport } from './routes/fraction-room'
 import { Route as FractionChefRecipeRescueRouteImport } from './routes/fraction-chef-recipe-rescue'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
 import { Route as FishTankShopRouteImport } from './routes/fish-tank-shop'
+import { Route as FeedbackRouteImport } from './routes/feedback'
 import { Route as EquationsEcoRouteImport } from './routes/equations-eco'
 import { Route as EcoBloomsLandSaleRouteImport } from './routes/eco-blooms-land-sale'
 import { Route as DarkRoomEscapeRouteImport } from './routes/dark-room-escape'
@@ -50,6 +54,11 @@ const TeacherRoute = TeacherRouteImport.update({
   path: '/teacher',
   getParentRoute: () => rootRouteImport,
 })
+const StatusRoute = StatusRouteImport.update({
+  id: '/status',
+  path: '/status',
+  getParentRoute: () => rootRouteImport,
+})
 const SignupRoute = SignupRouteImport.update({
   id: '/signup',
   path: '/signup',
@@ -58,6 +67,11 @@ const SignupRoute = SignupRouteImport.update({
 const SetSorterStationRoute = SetSorterStationRouteImport.update({
   id: '/set-sorter-station',
   path: '/set-sorter-station',
+  getParentRoute: () => rootRouteImport,
+})
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
   getParentRoute: () => rootRouteImport,
 })
 const ProfileRoute = ProfileRouteImport.update({
@@ -78,6 +92,11 @@ const PercentMarketDashRoute = PercentMarketDashRouteImport.update({
 const PatternIslandsRoute = PatternIslandsRouteImport.update({
   id: '/pattern-islands',
   path: '/pattern-islands',
+  getParentRoute: () => rootRouteImport,
+})
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
   getParentRoute: () => rootRouteImport,
 })
 const MagiciansTriangleHouseRoute = MagiciansTriangleHouseRouteImport.update({
@@ -120,6 +139,11 @@ const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
 const FishTankShopRoute = FishTankShopRouteImport.update({
   id: '/fish-tank-shop',
   path: '/fish-tank-shop',
+  getParentRoute: () => rootRouteImport,
+})
+const FeedbackRoute = FeedbackRouteImport.update({
+  id: '/feedback',
+  path: '/feedback',
   getParentRoute: () => rootRouteImport,
 })
 const EquationsEcoRoute = EquationsEcoRouteImport.update({
@@ -166,6 +190,7 @@ const rootRouteChildren = {
   DarkRoomEscapeRoute: DarkRoomEscapeRoute,
   EcoBloomsLandSaleRoute: EcoBloomsLandSaleRoute,
   EquationsEcoRoute: EquationsEcoRoute,
+  FeedbackRoute: FeedbackRoute,
   FishTankShopRoute: FishTankShopRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   FractionChefRecipeRescueRoute: FractionChefRecipeRescueRoute,
@@ -174,12 +199,15 @@ const rootRouteChildren = {
   LessonsRoute: LessonsRoute,
   LoginRoute: LoginRoute,
   MagiciansTriangleHouseRoute: MagiciansTriangleHouseRoute,
+  NotificationsRoute: NotificationsRoute,
   PatternIslandsRoute: PatternIslandsRoute,
   PercentMarketDashRoute: PercentMarketDashRoute,
   PirateNavigatorRoute: PirateNavigatorRoute,
   ProfileRoute: ProfileRoute,
+  ReportsRoute: ReportsRoute,
   SetSorterStationRoute: SetSorterStationRoute,
   SignupRoute: SignupRoute,
+  StatusRoute: StatusRoute,
   TeacherRoute: TeacherRoute,
   TimeGuardiansRoundingClockRoute: TimeGuardiansRoundingClockRoute,
   TrackFieldAnalyticsRoute: TrackFieldAnalyticsRoute,

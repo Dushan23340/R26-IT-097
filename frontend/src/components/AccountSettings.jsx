@@ -1,9 +1,10 @@
 import { useRef, useState } from "react";
-import { Settings, User, KeyRound, Bell, Camera, RefreshCw } from "lucide-react";
+import { Settings, User, KeyRound, Bell, Camera, RefreshCw, Languages } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { EMAIL_PATTERN, useLiveValidation } from "@/components/AuthFields";
+import { LanguageToggle, useT } from "@/lib/i18n";
 
 const AVATAR_TARGET_PX = 128;
 const AVATAR_TYPES = ["image/png", "image/jpeg", "image/webp"];
@@ -74,6 +75,7 @@ function SettingsCard({ icon: Icon, title, children }) {
 // `defaultExpanded` lets the profile page's Account tab show the settings
 // open, instead of behind the Show/Hide toggle.
 function AccountSettings({ defaultExpanded = false } = {}) {
+  const t = useT();
   const { user, updateUser } = useAuth();
   const [expanded, setExpanded] = useState(defaultExpanded);
   const fileInputRef = useRef(null);
@@ -347,6 +349,11 @@ function AccountSettings({ defaultExpanded = false } = {}) {
                 <p className="text-[10px] text-muted-foreground mt-1">PNG, JPEG or WebP, up to {AVATAR_MAX_MB} MB</p>
               </div>
             </div>
+          </SettingsCard>
+
+          <SettingsCard icon={Languages} title={t("Language")}>
+            <p className="text-xs text-muted-foreground mb-3">{t("Menus and pages are shown in this language. Lesson and quiz content stays in English.")}</p>
+            <LanguageToggle />
           </SettingsCard>
 
           <SettingsCard icon={Bell} title="Notifications">

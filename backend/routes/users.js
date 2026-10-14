@@ -1,7 +1,8 @@
 import express from "express";
 import * as userRepo from "../models/userRepository.js";
 import { sendNotificationEmail } from "../services/email.js";
-import { requireSelf } from "../middleware/auth.js";
+import { requireInternal, requireSelf } from "../middleware/auth.js";
+import { notifySafe } from "../services/notifications.js";
 
 const router = express.Router();
 
@@ -9,7 +10,8 @@ const router = express.Router();
 // valid JWT for that same user (requireSelf, middleware/auth.js).
 // POST /notify/quiz-unlocked is the one exception - it's an internal
 // service-to-service call from adaptive-learning/backend, not a
-// logged-in user's own request, so there's no user token to check there.
+// logged-in user's own request, so it is checked with the shared
+// INTERNAL_SERVICE_TOKEN instead (it used to be open to anyone).
 
 const AVATAR_MAX_BYTES = 500 * 1024; // decoded size, keeps the Postgres row small
 
@@ -61,6 +63,11 @@ router.post("/:id/change-password", requireSelf, async (req, res) => {
     }
 
     await userRepo.updatePassword(req.params.id, newPassword);
+    notifySafe(req.params.id, {
+      kind: "security",
+      title: "Your password was changed",
+      body: "If this wasn't you, reset your password from the sign-in page straight away.",
+    });
 
     res.json({ success: true, message: "Password changed successfully" });
   } catch (error) {
@@ -136,13 +143,43 @@ router.put("/:id/notifications", requireSelf, async (req, res) => {
 // PostgreSQL user ids (the same value used as student_id everywhere else
 // in this app — was a Mongo ObjectId string before this migration, and
 // still is that exact same string value for every pre-existing account).
-router.post("/notify/quiz-unlocked", async (req, res) => {
+// PUT /:id/language  { language: "en" | "si" } - interface language,
+// remembered across devices.
+router.put("/:id/language", requireSelf, async (req, res) => {
+  try {
+    const { language } = req.body || {};
+    if (!["en", "si"].includes(language)) {
+      return res.status(400).json({ success: false, message: 'language must be "en" or "si"' });
+    }
+    const updated = await userRepo.setLanguage(req.params.id, language);
+    if (!updated) return res.status(404).json({ success: false, message: "User not found" });
+    res.json({ success: true, user: userRepo.toPublicUser(updated) });
+  } catch (error) {
+    console.error("❌ Language update error:", error);
+    res.status(500).json({ success: false, message: "Failed to save the language" });
+  }
+});
+
+router.post("/notify/quiz-unlocked", requireInternal, async (req, res) => {
   try {
     const { student_ids: studentIds, lesson_title: lessonTitle } = req.body;
     if (!Array.isArray(studentIds) || !lessonTitle) {
       return res.status(400).json({ success: false, message: "student_ids (array) and lesson_title are required" });
     }
 
+    // In-app inbox: every listed student, whatever their e-mail setting.
+    const day = new Date().toISOString().slice(0, 10);
+    for (const id of studentIds) {
+      notifySafe(String(id), {
+        kind: "quiz_unlocked",
+        title: `Quiz unlocked: ${lessonTitle}`,
+        body: "Your teacher has unlocked this quiz. You can take it now.",
+        link: "/lessons",
+        dedupeKey: `quiz_unlocked:${lessonTitle}:${day}`,
+      });
+    }
+
+    // E-mail: only students who left "quiz unlocked" e-mails switched on.
     const users = await userRepo.findManyByIdsWithQuizNotificationsOn(studentIds);
 
     let sent = 0;
